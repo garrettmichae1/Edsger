@@ -20,10 +20,6 @@ struct lilCApp: App {
                 _ = SoftwareKeyboard.shared
                 AppHaptics.prepare()
             }
-            .onOpenURL { url in
-                guard AgentRuntimeConfig.surfacesVisibleInThisRelease else { return }
-                _ = AgentKeychain.consumeGitHubCallback(url)
-            }
         }
     }
 }

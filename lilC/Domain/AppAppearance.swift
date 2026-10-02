@@ -92,7 +92,8 @@ final class AppearanceStore {
         } else {
             colorWay = .light
         }
-        syntaxColoring = defaults.bool(forKey: Self.syntaxColoringKey)
+        syntaxColoring = defaults.object(forKey: Self.syntaxColoringKey) == nil
+            ? true : defaults.bool(forKey: Self.syntaxColoringKey)
     }
 }
 

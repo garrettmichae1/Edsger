@@ -70,7 +70,7 @@ struct LocalCFile: Identifiable, Codable, Equatable, Sendable {
         code
             .split(whereSeparator: \.isNewline)
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-            .first { !$0.isEmpty } ?? "Empty C file"
+            .first { !$0.isEmpty } ?? (ProgrammingLanguage.allCases.first { $0.fileExtension == (name as NSString).pathExtension }.map { "Empty \($0.name) file" } ?? "Empty source file")
     }
 
     static func normalizedName(_ name: String) -> String {
@@ -131,7 +131,9 @@ enum LocalBrowserEntry: Identifiable {
 @Observable
 final class LocalCWorkspace {
     private let legacyStorageKey = "lilc.local.c.files"
-    private let selectedFileNameKey = "lilc.local.selected.file"
+    private var selectedFileNameKey: String { language.selectedFileKey }
+    let language: ProgrammingLanguage
+    private var scriptRun: (any LocalScriptRunning)?
     private let defaults: UserDefaults
     private let fileManager: FileManager
     private let directoryURL: URL
@@ -158,10 +160,11 @@ final class LocalCWorkspace {
         case allDone
     }
 
-    init(defaults: UserDefaults = .standard, fileManager: FileManager = .default, directoryURL: URL? = nil) {
+    init(defaults: UserDefaults = .standard, fileManager: FileManager = .default, directoryURL: URL? = nil, language: ProgrammingLanguage = .c) {
+        self.language = language
         self.defaults = defaults
         self.fileManager = fileManager
-        self.directoryURL = directoryURL ?? Self.defaultDirectoryURL(fileManager: fileManager)
+        self.directoryURL = directoryURL ?? Self.defaultDirectoryURL(fileManager: fileManager, language: language)
         self.lessonProgress = LessonProgressStore(defaults: defaults)
         self.quizProgress = QuizProgressStore(defaults: defaults)
         Self.prepareDirectory(self.directoryURL, fileManager: fileManager)
@@ -169,11 +172,13 @@ final class LocalCWorkspace {
             directoryURL: self.directoryURL,
             defaults: defaults,
             fileManager: fileManager,
-            legacyStorageKey: legacyStorageKey
+            legacyStorageKey: language == .c ? legacyStorageKey : "lilc.\(language.rawValue).files",
+            language: language
         )
+        output = "Local \(language.name) workspace ready."
         files = loadedFiles
         folders = Self.loadFolders(directoryURL: self.directoryURL, fileManager: fileManager, files: loadedFiles)
-        let selectedName = defaults.string(forKey: selectedFileNameKey)
+        let selectedName = defaults.string(forKey: language.selectedFileKey)
         selectedFileID = loadedFiles.first(where: { $0.relativePath == selectedName || $0.name == selectedName })?.id
             ?? loadedFiles[0].id
     }
@@ -187,7 +192,7 @@ final class LocalCWorkspace {
     }
 
     var isCurriculumCatalog: Bool {
-        FirstHourCurriculum.isCurriculumFolder(currentProjectPath)
+        language == .c && FirstHourCurriculum.isCurriculumFolder(currentProjectPath)
     }
 
     /// Files shown as editor tabs. Catalog folders are a shelf of standalone programs, so only the open file is a tab.
@@ -198,8 +203,8 @@ final class LocalCWorkspace {
         return files
             .filter { $0.folderPath == currentProjectPath }
             .sorted { lhs, rhs in
-                if lhs.name == "main.c" { return true }
-                if rhs.name == "main.c" { return false }
+                if lhs.name == language.mainFile { return true }
+                if rhs.name == language.mainFile { return false }
                 return lhs.name.localizedStandardCompare(rhs.name) == .orderedAscending
             }
     }
@@ -274,12 +279,12 @@ final class LocalCWorkspace {
 
     func openProject(_ folder: LocalCFolder) {
         browsePath = folder.relativePath
-        if !FirstHourCurriculum.isCurriculumFolder(folder.relativePath),
+        if !(language == .c && FirstHourCurriculum.isCurriculumFolder(folder.relativePath)),
            files.contains(where: { $0.folderPath == folder.relativePath }) == false {
-            createFile(in: folder.relativePath, named: "main.c")
+            createFile(in: folder.relativePath, named: language.mainFile)
         }
         let members = files.filter { $0.folderPath == folder.relativePath }
-        let preferred = members.first { $0.name == "main.c" }
+        let preferred = members.first { $0.name == language.mainFile }
             ?? members.first { $0.name.hasSuffix(".c") }
             ?? members.first
         if let preferred {
@@ -380,7 +385,7 @@ final class LocalCWorkspace {
                 try? fileManager.removeItem(at: url)
             }
         }
-        let starter = Self.starterFile
+        let starter = language == .c ? Self.starterFile : LocalCFile(relativePath: language.starterName, code: language.scriptStarter)
         files = [starter]
         folders = []
         browsePath = ""
@@ -401,6 +406,7 @@ final class LocalCWorkspace {
     /// Copies a first-hour lesson into `lessons/` if needed, then selects it.
     /// Does not overwrite a file the student already edited.
     func openLesson(_ lesson: FirstHourLesson) {
+        guard language == .c else { return }
         lessonProgress.setCurrent(lesson)
         lessonCelebrate = nil
         showLessonNice = false
@@ -426,14 +432,14 @@ final class LocalCWorkspace {
 
     func createHeader() {
         let folder = folderForNewFile(browsePath)
-        createFile(in: folder, named: availableFileName(base: "module", ext: "h", in: folder))
+        createFile(in: folder, named: availableFileName(base: "module", ext: language == .c ? "h" : language.fileExtension, in: folder))
     }
 
     func createFile(in folder: String, named requested: String?) {
         let targetFolder = folderForNewFile(folder)
-        let name = requested ?? availableFileName(base: "program", ext: "c", in: targetFolder)
+        let name = requested.map { language.normalizedName($0) } ?? availableFileName(base: "program", ext: language.fileExtension, in: targetFolder)
         let relative = targetFolder.isEmpty ? name : "\(targetFolder)/\(name)"
-        let code = Self.sourceStarter(named: name, folderHasMain: folderContainsMain(targetFolder))
+        let code = language != .c ? language.scriptStarter : Self.sourceStarter(named: name, folderHasMain: folderContainsMain(targetFolder))
         let file = LocalCFile(relativePath: relative, code: code)
         files.insert(file, at: 0)
         selectedFileID = file.id
@@ -497,7 +503,7 @@ final class LocalCWorkspace {
     func renameCurrentFile(to name: String) {
         guard let index = files.firstIndex(where: { $0.id == selectedFileID }) else { return }
         let folder = files[index].folderPath
-        let newName = LocalCFile.normalizedName(name)
+        let newName = language.normalizedName(name)
         let destRelative = folder.isEmpty ? availableFileName(base: (newName as NSString).deletingPathExtension, ext: (newName as NSString).pathExtension, in: folder, ignoring: files[index].name) : "\(folder)/\(availableFileName(base: (newName as NSString).deletingPathExtension, ext: (newName as NSString).pathExtension, in: folder, ignoring: files[index].name))"
         let oldRelative = files[index].relativePath
         if destRelative != oldRelative {
@@ -534,6 +540,16 @@ final class LocalCWorkspace {
             .joined(separator: "\n")
     }
 
+    func agentListFilesSummary(in root: String) -> String {
+        let scoped = files.filter { root.isEmpty || $0.relativePath.hasPrefix(root + "/") }
+        if scoped.isEmpty { return "(no files)" }
+        return scoped.sorted { $0.relativePath < $1.relativePath }
+            .map { file in
+                let path = root.isEmpty ? file.relativePath : String(file.relativePath.dropFirst(root.count + 1))
+                return "\(path)  \(file.sizeText)"
+            }.joined(separator: "\n")
+    }
+
     func agentReadFile(_ rawPath: String) -> String? {
         guard let path = agentSafeRelativePath(rawPath) else { return nil }
         return files.first(where: { $0.relativePath == path })?.code
@@ -542,29 +558,31 @@ final class LocalCWorkspace {
     @discardableResult
     func agentWriteFile(_ rawPath: String, contents: String) -> String {
         guard let path = agentSafeRelativePath(rawPath) else {
-            return "Rejected path. Use a project-relative file such as main.c or folder/file.c."
+            return "Rejected path. Use a project-relative file such as \(language.mainFile)."
         }
         let ext = (path as NSString).pathExtension.lowercased()
-        guard ext == "c" || ext == "h" else {
-            return "Only .c and .h files can be written."
+        guard language.allowedExtensions.contains(ext) else {
+            return language == .c ? "Only .c and .h files can be written." : "Only .\(language.fileExtension) files can be written in \(language.name) mode."
+        }
+        // Commit to disk before reporting success or changing the editor state.
+        do {
+            let url = fileURL(for: path)
+            try fileManager.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try contents.write(to: url, atomically: true, encoding: .utf8)
+        } catch {
+            return "Could not write \(path): \(error.localizedDescription)"
         }
         if let index = files.firstIndex(where: { $0.relativePath == path }) {
             files[index].code = contents
             files[index].updatedAt = Date()
-            persist(files[index])
             selectedFileID = path
             defaults.set(path, forKey: selectedFileNameKey)
             return "Updated \(path)."
-        }
-        let parent = (path as NSString).deletingLastPathComponent
-        if parent != ".", !parent.isEmpty {
-            try? fileManager.createDirectory(at: fileURL(for: parent), withIntermediateDirectories: true)
         }
         let file = LocalCFile(relativePath: path, code: contents)
         files.insert(file, at: 0)
         selectedFileID = file.id
         defaults.set(file.relativePath, forKey: selectedFileNameKey)
-        persist(file)
         refreshFolders()
         return "Created \(path)."
     }
@@ -577,12 +595,26 @@ final class LocalCWorkspace {
             .joined(separator: "\n")
     }
 
+    func agentListFoldersSummary(in root: String) -> String {
+        let scoped = folders.filter { root.isEmpty || $0.relativePath.hasPrefix(root + "/") }
+        if scoped.isEmpty { return "(no folders)" }
+        return scoped.sorted { $0.relativePath < $1.relativePath }
+            .map { folder in
+                let path = root.isEmpty ? folder.relativePath : String(folder.relativePath.dropFirst(root.count + 1))
+                return "\(path)/"
+            }.joined(separator: "\n")
+    }
+
     @discardableResult
     func agentCreateFolder(_ rawPath: String) -> String {
         guard let path = agentSafeRelativePath(rawPath) else {
             return "Rejected folder path."
         }
-        try? fileManager.createDirectory(at: fileURL(for: path), withIntermediateDirectories: true)
+        do {
+            try fileManager.createDirectory(at: fileURL(for: path), withIntermediateDirectories: true)
+        } catch {
+            return "Could not create folder \(path): \(error.localizedDescription)"
+        }
         refreshFolders()
         browsePath = path
         return "Created folder \(path)."
@@ -633,6 +665,8 @@ final class LocalCWorkspace {
               let file = files.first(where: { $0.relativePath == path }) else {
             return "File not found."
         }
+        do { try fileManager.removeItem(at: fileURL(for: path)) }
+        catch { return "Could not delete \(path): \(error.localizedDescription)" }
         _ = delete(file)
         return "Deleted \(path)."
     }
@@ -645,6 +679,8 @@ final class LocalCWorkspace {
               let folder = folders.first(where: { $0.relativePath == path }) else {
             return "Folder not found."
         }
+        do { try fileManager.removeItem(at: fileURL(for: path)) }
+        catch { return "Could not delete folder \(path): \(error.localizedDescription)" }
         deleteFolder(folder)
         return "Deleted folder \(path)."
     }
@@ -663,6 +699,7 @@ final class LocalCWorkspace {
     }
 
     func startLiveRun() {
+        if language != .c { startScriptRun(); return }
         if isRunning {
             LocalCRunner.requestStop()
         }
@@ -672,7 +709,7 @@ final class LocalCWorkspace {
             $0.name.hasSuffix(".c") && containsMainFunction($0.code)
         }
         if !currentProjectPath.isEmpty,
-           !FirstHourCurriculum.isCurriculumFolder(currentProjectPath),
+           !(language == .c && FirstHourCurriculum.isCurriculumFolder(currentProjectPath)),
            projectMains.count > 1 {
             liveRunID = UUID()
             isRunning = false
@@ -762,6 +799,52 @@ final class LocalCWorkspace {
         }
     }
 
+    private func startScriptRun() {
+        guard !isRunning else { return }
+        projectFiles.forEach { persist($0) }
+        let file = currentFile
+        let path = currentFileURL
+        let root = currentIncludeRootURL
+        let runner: any LocalScriptRunning
+        switch language {
+        case .python: runner = LocalPythonRunner()
+        case .javascript: runner = LocalJavaScriptRunner()
+        case .lua: runner = LocalLuaRunner()
+        case .c: return
+        }
+        scriptRun = runner
+        liveRunID = UUID()
+        let id = liveRunID
+        output = ""; stdinLine = ""; isRunning = true; isWaitingForInput = false
+        lastRunFailed = false; lastRunNeedsFillIn = false; lastErrorJump = nil
+        Task.detached { [weak self] in
+            let result = runner.run(path: path, root: root, onOutput: { chunk in
+                Task { @MainActor in
+                    guard let self, self.liveRunID == id, self.isRunning else { return }
+                    self.output += chunk
+                }
+            }, onWaiting: { waiting in
+                Task { @MainActor in
+                    guard let self, self.liveRunID == id, self.isRunning else { return }
+                    self.isWaitingForInput = waiting
+                }
+            })
+            await MainActor.run {
+                guard let self, self.liveRunID == id else { return }
+                self.output = ConsoleTranscript.finishing(live: self.output, captured: result.output, failed: result.failed)
+                if result.stopped { self.output += "\nStopped.\n" }
+                self.lastRunFailed = result.failed
+                if result.failed {
+                    self.lastErrorJump = PythonDiagnostics.jump(output: result.output, files: self.files, root: root, fallback: file)
+                }
+                self.isRunning = false; self.isWaitingForInput = false; self.scriptRun = nil
+                // Programs may write source files. Refresh only after the run finishes.
+                self.files = Self.loadFilesFromDisk(directoryURL: self.directoryURL, fileManager: self.fileManager, language: self.language)
+                self.ensureNotEmpty(); self.refreshFolders()
+            }
+        }
+    }
+
     func evaluateLessonRun(output: String, failed: Bool, runID: UUID) {
         guard let lesson = FirstHourCurriculum.lesson(relativePath: currentFile.relativePath) else { return }
         let source = currentFile.code
@@ -810,16 +893,17 @@ final class LocalCWorkspace {
         stdinLine = ""
         isWaitingForInput = false
         output += line + "\n"
-        LocalCRunner.feedStdin(line + "\n")
+        if language != .c { scriptRun?.input(line + "\n") }
+        else { LocalCRunner.feedStdin(line + "\n") }
     }
 
     func sendStdinEOF() {
-        LocalCRunner.closeStdin()
+        if language != .c { scriptRun?.eof() } else { LocalCRunner.closeStdin() }
     }
 
     func stopLiveRun() {
         guard isRunning else { return }
-        LocalCRunner.requestStop()
+        if language != .c { scriptRun?.stop() } else { LocalCRunner.requestStop() }
     }
 
     func extraSourcesToLink(with runFile: LocalCFile) -> [LocalCFile] {
@@ -839,7 +923,7 @@ final class LocalCWorkspace {
            containsMainFunction(currentFile.code) || currentProjectPath.isEmpty {
             return currentFile
         }
-        return projectFiles.first { $0.name == "main.c" }
+        return projectFiles.first { $0.name == language.mainFile }
             ?? projectFiles.first { $0.name.hasSuffix(".c") && containsMainFunction($0.code) }
             ?? projectFiles.first { $0.name.hasSuffix(".c") }
             ?? currentFile
@@ -865,7 +949,7 @@ final class LocalCWorkspace {
     }
 
     private func folderForNewFile(_ folder: String) -> String {
-        if FirstHourCurriculum.isCurriculumFolder(folder) {
+        if language == .c && FirstHourCurriculum.isCurriculumFolder(folder) {
             if browsePath == folder {
                 browsePath = ""
             }
@@ -879,7 +963,7 @@ final class LocalCWorkspace {
         var candidate = "\(base).\(cleanExt)"
         var index = 2
         while files.contains(where: { $0.folderPath == folder && $0.name == candidate && $0.name != oldName }) {
-            candidate = "\(base)-\(index).\(cleanExt)"
+            candidate = language != .c ? "\(base)_\(index).\(cleanExt)" : "\(base)-\(index).\(cleanExt)"
             index += 1
         }
         return candidate
@@ -898,7 +982,7 @@ final class LocalCWorkspace {
 
     private func ensureNotEmpty() {
         if files.isEmpty {
-            let starter = Self.starterFile
+            let starter = language == .c ? Self.starterFile : LocalCFile(relativePath: language.starterName, code: language.scriptStarter)
             files = [starter]
             persist(starter)
         }
@@ -908,9 +992,9 @@ final class LocalCWorkspace {
         folders = Self.loadFolders(directoryURL: directoryURL, fileManager: fileManager, files: files)
     }
 
-    private static func defaultDirectoryURL(fileManager: FileManager) -> URL {
+    private static func defaultDirectoryURL(fileManager: FileManager, language: ProgrammingLanguage) -> URL {
         let documents = fileManager.urls(for: .documentDirectory, in: .userDomainMask).first
-        return (documents ?? URL(fileURLWithPath: NSTemporaryDirectory())).appendingPathComponent("lilC", isDirectory: true)
+        return (documents ?? URL(fileURLWithPath: NSTemporaryDirectory())).appendingPathComponent(language.directoryName, isDirectory: true)
     }
 
     private static func prepareDirectory(_ directoryURL: URL, fileManager: FileManager) {
@@ -921,9 +1005,10 @@ final class LocalCWorkspace {
         directoryURL: URL,
         defaults: UserDefaults,
         fileManager: FileManager,
-        legacyStorageKey: String
+        legacyStorageKey: String,
+        language: ProgrammingLanguage
     ) -> [LocalCFile] {
-        let diskFiles = loadFilesFromDisk(directoryURL: directoryURL, fileManager: fileManager)
+        let diskFiles = loadFilesFromDisk(directoryURL: directoryURL, fileManager: fileManager, language: language)
         if !diskFiles.isEmpty {
             return diskFiles
         }
@@ -939,7 +1024,7 @@ final class LocalCWorkspace {
             }
             return saved.sorted { $0.updatedAt > $1.updatedAt }
         }
-        let starter = Self.starterFile
+        let starter = language == .c ? Self.starterFile : LocalCFile(relativePath: language.starterName, code: language.scriptStarter)
         try? starter.code.write(
             to: directoryURL.appendingPathComponent(starter.relativePath),
             atomically: true,
@@ -948,7 +1033,7 @@ final class LocalCWorkspace {
         return [starter]
     }
 
-    private static func loadFilesFromDisk(directoryURL: URL, fileManager: FileManager) -> [LocalCFile] {
+    private static func loadFilesFromDisk(directoryURL: URL, fileManager: FileManager, language: ProgrammingLanguage) -> [LocalCFile] {
         guard let enumerator = fileManager.enumerator(
             at: directoryURL,
             includingPropertiesForKeys: [.contentModificationDateKey, .isDirectoryKey],
@@ -962,7 +1047,7 @@ final class LocalCWorkspace {
             let values = try? url.resourceValues(forKeys: [.isDirectoryKey, .contentModificationDateKey])
             if values?.isDirectory == true { continue }
             let ext = url.pathExtension.lowercased()
-            guard ext == "c" || ext == "h" else { continue }
+            guard language.allowedExtensions.contains(ext) else { continue }
             guard let code = try? String(contentsOf: url, encoding: .utf8) else { continue }
             var relative = url.standardizedFileURL.path
             if relative.hasPrefix(root) {

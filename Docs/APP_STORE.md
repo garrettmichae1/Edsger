@@ -29,6 +29,7 @@ In-repo. Does not replace App Store Connect. Use this while uploading the first 
 8. Support URL: https://garrettmichae1.github.io/lilc/
 9. Marketing URL (optional): https://garrettmichae1.github.io/lilc/web/
 10. Review notes: no demo account. Open editor → RUN on the starter `hello.c`. Agent is hidden. There is no C Manual and no remote VM.
+11. Attach IAP `lilc.linux.course` (non-consumable, $2.99) to this version. Paid Apps agreement must be Active. Xcode Run uses `lilC/Resources/Products.storekit` (local StoreKit). TestFlight / a device with StoreKit Configuration set to None uses App Store Connect. Sandbox Apple ID for device tests.
 
 ## Screenshot checklist
 
@@ -38,3 +39,9 @@ In-repo. Does not replace App Store Connect. Use this while uploading the first 
 - [ ] Friendly syntax error + ERROR jump
 - [ ] Settings PicoC note + legal links
 - [ ] Caption text does not say GCC, compiler toolchain, AI, or Linux VM
+
+## Python workspace in the next update
+
+The next build embeds CPython 3.14.7. Home's language picker switches separate C/Python project storage; Python runs locally in the editor with editable source and console input/output. No executable dependencies are downloaded. Packaging and runtime limitations are documented in [PYTHON_RUNTIME.md](PYTHON_RUNTIME.md). Before submitting, validate the signed archive in Organizer and verify Python input/Stop/imports on a physical iPhone. Update App Store descriptions and review notes for the new workspace; this local implementation does not publish an update.
+
+JavaScript and Lua are also available in the next local build. JavaScript uses Apple's JavaScriptCore through public APIs; Lua 5.5.1 is built from vendored C sources with the iOS configuration. Both are local console environments with source editing and independent project storage. See [JAVASCRIPT_LUA.md](JAVASCRIPT_LUA.md) for the exact exposed APIs and cancellation limits.

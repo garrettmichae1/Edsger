@@ -23,7 +23,7 @@ final class AgentSettingsStore {
         didSet { defaults.set(sharingConsent, forKey: consentKey) }
     }
 
-    /// When true (default), the agent cannot delete files or folders.
+    /// Optional protection for users who want to block agent deletion.
     var safeguardsOn: Bool {
         didSet { defaults.set(safeguardsOn, forKey: safeguardsKey) }
     }
@@ -38,15 +38,16 @@ final class AgentSettingsStore {
     }
 
     var canRunAgents: Bool {
-        AgentRuntimeConfig.surfacesVisibleInThisRelease && agentsEnabled && sharingConsent
+        AgentRuntimeConfig.surfacesVisibleInThisRelease && agentsEnabled
     }
 
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
-        agentsEnabled = defaults.bool(forKey: enabledKey)
+        agentsEnabled = defaults.object(forKey: enabledKey) == nil
+            ? true : defaults.bool(forKey: enabledKey)
         sharingConsent = defaults.bool(forKey: consentKey)
         if defaults.object(forKey: safeguardsKey) == nil {
-            safeguardsOn = true
+            safeguardsOn = false
         } else {
             safeguardsOn = defaults.bool(forKey: safeguardsKey)
         }

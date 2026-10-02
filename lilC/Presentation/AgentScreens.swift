@@ -27,7 +27,7 @@ struct AgentPaywallScreen: View {
                         .font(.system(size: 22, weight: .bold, design: .monospaced))
                         .foregroundStyle(AppPalette.foreground)
 
-                    Text("Prompt in chat. The agent can create folders and C files, write tests, run PicoC, and brainstorm. Deleting stays locked until you turn safeguards off. The editor stays free.")
+                    Text("Prompt in chat. The agent can create folders and source files, write tests, run the selected language, and brainstorm. Deleting stays locked until you turn safeguards off. The editor stays free.")
                         .font(.system(size: 14, weight: .medium))
                         .foregroundStyle(AppPalette.silver)
                         .lineSpacing(4)
@@ -239,23 +239,105 @@ struct AgentChatScreen: View {
     }
 }
 
+/// Compact transcript used inside the editor console, with an expandable canvas.
+struct AgentConversationView: View {
+    @Bindable var session: AgentSession
+    @FocusState private var composerFocused: Bool
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack(spacing: 7) {
+                Image(systemName: "sparkles")
+                    .foregroundStyle(AppPalette.green)
+                Text("lilC agent")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(AppPalette.foreground)
+                Text("on device")
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundStyle(AppPalette.silver)
+                Spacer()
+                if session.isThinking {
+                    ProgressView().controlSize(.mini)
+                }
+                Text(session.statusLine)
+                    .font(.system(size: 10))
+                    .foregroundStyle(AppPalette.silver)
+            }
+            .padding(.horizontal, 6)
+            .padding(.bottom, 10)
+
+            ScrollViewReader { proxy in
+                ScrollView(showsIndicators: false) {
+                    LazyVStack(alignment: .leading, spacing: 18) {
+                        ForEach(session.messages) { message in
+                            AgentBubble(message: message).id(message.id)
+                        }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 10)
+                }
+                .onChange(of: session.messages.count) { _, _ in
+                    if let last = session.messages.last {
+                        withAnimation { proxy.scrollTo(last.id, anchor: .bottom) }
+                    }
+                }
+            }
+
+            HStack(alignment: .bottom, spacing: 8) {
+                TextField("Ask about or edit this project", text: $session.draft, axis: .vertical)
+                    .textInputAutocapitalization(.sentences)
+                    .font(.system(size: 14))
+                    .lineLimit(1...5)
+                    .focused($composerFocused)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 10)
+                    .background(AppPalette.editor, in: RoundedRectangle(cornerRadius: 18))
+                    .overlay(RoundedRectangle(cornerRadius: 18).stroke(AppPalette.line))
+                    .onSubmit { if !session.isThinking { session.send() } }
+
+                Button {
+                    session.isThinking ? session.stop() : session.send()
+                    composerFocused = false
+                } label: {
+                    Image(systemName: session.isThinking ? "stop.fill" : "arrow.up")
+                        .font(.system(size: 14, weight: .bold))
+                        .frame(width: 38, height: 38)
+                        .foregroundStyle(AppPalette.onAccent)
+                        .background(session.isThinking ? AppPalette.amber : AppPalette.green, in: Circle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(session.isThinking ? "Stop agent" : "Send to agent")
+                .disabled(!session.isThinking && session.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            }
+            .padding(.top, 8)
+        }
+        .background(AppPalette.card)
+    }
+}
+
 private struct AgentBubble: View {
     let message: AgentChatMessage
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text(label)
-                .font(.system(size: 10, weight: .bold, design: .monospaced))
-                .foregroundStyle(accent)
+            if message.role == .tool {
+                Label(message.toolName ?? "Tool", systemImage: "terminal")
+                    .font(.system(size: 11, weight: .medium, design: .monospaced))
+                    .foregroundStyle(AppPalette.silver)
+            } else {
+                Text(label)
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(accent)
+            }
             Text(message.text)
-                .font(.system(size: 13, weight: .medium, design: .monospaced))
+                .font(.system(size: message.role == .tool ? 11 : 14, weight: .regular, design: message.role == .tool ? .monospaced : .default))
                 .foregroundStyle(AppPalette.foreground)
                 .textSelection(.enabled)
         }
-        .padding(12)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(AppPalette.card, in: RoundedRectangle(cornerRadius: 4))
-        .overlay(RoundedRectangle(cornerRadius: 4).stroke(AppPalette.line.opacity(0.65)))
+        .padding(message.role == .user ? 12 : 4)
+        .frame(maxWidth: .infinity, alignment: message.role == .user ? .trailing : .leading)
+        .background(message.role == .user ? AppPalette.panel : .clear, in: RoundedRectangle(cornerRadius: 16))
     }
 
     private var label: String {

@@ -4,11 +4,25 @@ import SwiftUI
 import UIKit
 
 struct ContentView: View {
-    @State private var localWorkspace = LocalCWorkspace()
+    @State private var cWorkspace = LocalCWorkspace()
+    @State private var pythonWorkspace = LocalCWorkspace(language: .python)
+    @State private var javascriptWorkspace = LocalCWorkspace(language: .javascript)
+    @State private var luaWorkspace = LocalCWorkspace(language: .lua)
+    @AppStorage("lilc.selected.language") private var selectedLanguage = "c"
+    private var localWorkspace: LocalCWorkspace {
+        switch selectedLanguage {
+        case "python": pythonWorkspace
+        case "javascript": javascriptWorkspace
+        case "lua": luaWorkspace
+        default: cWorkspace
+        }
+    }
     @State private var appearance = AppearanceStore.shared
     @State private var agentSettings = AgentSettingsStore.shared
     @State private var linuxCourse = LinuxCourseStore.shared
-    @State private var activeScreen: AppScreen = .home
+    @State private var activeScreen: AppScreen = .learn
+    @State private var tutor = TutorSession()
+    @State private var learnSection: EdsgerSection = .chat
     @State private var activeQuizID: String?
     @State private var activeLinuxModuleID: String?
     @State private var quizStartInReview = false
@@ -23,6 +37,12 @@ struct ContentView: View {
             case .home:
                 HomeScreen(
                     workspace: localWorkspace,
+                    chooseLanguage: { language in
+                        guard language != localWorkspace.language else { return }
+                        localWorkspace.stopLiveRun()
+                        AgentSession.stopActive()
+                        selectedLanguage = language.rawValue
+                    },
                     startLocal: {
                         editorReturn = .home
                         localWorkspace.browsePath = localWorkspace.currentFile.folderPath
@@ -33,17 +53,23 @@ struct ContentView: View {
                         localWorkspace.browsePath = ""
                         activeScreen = .files
                     },
-                    openLearn: { activeScreen = .learn },
+                    openLearn: {
+                        learnSection = .chat
+                        activeScreen = .learn
+                    },
                     deleteFile: {
                         localWorkspace.browsePath = ""
                         activeScreen = .deletePicker
                     },
-                    openSettings: { activeScreen = .settings },
-                    openAgent: { activeScreen = .agent },
-                    agentsVisible: agentSettings.showsAgentSurfaces
+                    openSettings: { activeScreen = .settings }
                 )
             case .learn:
-                LearnScreen(
+                EdsgerScreen(session: tutor, section: $learnSection, openHome: { activeScreen = .home }, openFiles: {
+                    filesReturn = .learn
+                    localWorkspace.browsePath = ""
+                    activeScreen = .files
+                }) {
+                CoursesScreen(
                     workspace: localWorkspace,
                     openHome: { activeScreen = .home },
                     openFiles: {
@@ -72,10 +98,10 @@ struct ContentView: View {
                     },
                     restoreLinux: {
                         Task { await linuxCourse.restore() }
-                    },
-                    openAgent: { activeScreen = .agent },
-                    agentsVisible: agentSettings.showsAgentSurfaces
+                    }
                 )
+                }
+                .onAppear { AgentSession.stopActive() }
             case .files:
                 FilesScreen(workspace: localWorkspace, title: nil, primaryActionTitle: "OPEN", allowsCreate: true) { file in
                     editorReturn = .home
@@ -101,13 +127,9 @@ struct ContentView: View {
                 ) {
                     activeScreen = .home
                 }
-            case .agent:
-                agentDestination
             case .local:
                 LocalModeScreen(workspace: localWorkspace, agentSettings: agentSettings) {
                     activeScreen = editorReturn
-                } openAgent: {
-                    activeScreen = .agent
                 }
             case .quiz:
                 if let id = activeQuizID, let quiz = QuizLookup.quiz(id: id, linuxOwned: linuxCourse.isOwned) {
@@ -150,29 +172,12 @@ struct ContentView: View {
         }
         .task {
             await linuxCourse.loadStore()
-            if AgentRuntimeConfig.surfacesVisibleInThisRelease {
-                await agentSettings.loadStore()
-            }
         }
         .onReceive(NotificationCenter.default.publisher(for: .lilCAskForReview)) { _ in
             Task { @MainActor in
                 try? await Task.sleep(for: .seconds(AppReviewPrompt.delaySeconds))
                 requestReview()
             }
-        }
-    }
-
-    @ViewBuilder
-    private var agentDestination: some View {
-        if !agentSettings.showsAgentSurfaces {
-            Color.clear.onAppear { activeScreen = .home }
-        } else {
-            AgentChatScreen(
-                workspace: localWorkspace,
-                settings: agentSettings,
-                back: { activeScreen = .home },
-                openEditor: { activeScreen = .local }
-            )
         }
     }
 
@@ -185,90 +190,43 @@ private enum AppScreen {
     case deletePicker
     case settings
     case local
-    case agent
     case quiz
     case linuxStudy
 }
 
 private struct HomeScreen: View {
     let workspace: LocalCWorkspace
+    let chooseLanguage: (ProgrammingLanguage) -> Void
     let startLocal: () -> Void
     let openFiles: () -> Void
     let openLearn: () -> Void
     let deleteFile: () -> Void
     let openSettings: () -> Void
-    let openAgent: () -> Void
-    let agentsVisible: Bool
 
     var body: some View {
         VStack(spacing: 0) {
             ScrollView(showsIndicators: false) {
                 VStack(alignment: .leading, spacing: 28) {
-                    HomeHeader(openSettings: openSettings)
-
-                    Button(action: startLocal) {
-                        HStack {
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text("Open editor")
-                                    .font(.system(size: 17, weight: .semibold))
-                                    .foregroundStyle(AppPalette.onAccent)
-                                Text(workspace.currentFile.name)
-                                    .font(.system(size: 15))
-                                    .foregroundStyle(AppPalette.onAccent.opacity(0.85))
-                            }
-                            Spacer()
-                            Image(systemName: "chevron.right")
-                                .font(.system(size: 14, weight: .semibold))
-                                .foregroundStyle(AppPalette.onAccent.opacity(0.8))
-                        }
-                        .padding(.horizontal, 18)
-                        .padding(.vertical, 16)
-                        .background(AppPalette.green, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-                    }
-                    .buttonStyle(.appHaptic)
-
-                    VStack(alignment: .leading, spacing: 10) {
-                        HStack {
-                            Text("Projects")
-                                .font(.system(size: 13, weight: .semibold))
-                                .foregroundStyle(AppPalette.silver)
-                                .textCase(.uppercase)
-                                .tracking(0.4)
-                            Spacer()
-                            Button("See all", action: openFiles)
-                                .font(.system(size: 15))
-                                .foregroundStyle(AppPalette.green)
-                        }
-                        RecentProjectsList(projects: workspace.recentProjects, open: { folder in
-                            workspace.openProject(folder)
-                            startLocal()
-                        })
-                    }
-
-                    VStack(spacing: 0) {
-                        HomeActionRow(title: "New file", detail: "A single C file", accessibilityID: "home-new-file") {
+                    LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 16), count: 3), spacing: 20) {
+                        HomeActionButton(title: "New File", detail: "A single \(workspace.language.name) file", symbol: "plus", tint: .blue, accessibilityID: "home-new-file") {
                             workspace.createStandaloneFile()
                             startLocal()
                         }
-                        Divider().padding(.leading, 16)
-                        HomeActionRow(title: "Open", detail: "Files and projects", action: openFiles)
-                        Divider().padding(.leading, 16)
-                        HomeActionRow(title: "Delete", detail: "File or folder", isDestructive: true, action: deleteFile)
+                        HomeActionButton(title: "Directory", detail: "\(workspace.language.name) files and projects", symbol: "folder.fill", tint: .orange, accessibilityID: "home-directory", action: openFiles)
+                        HomeActionButton(title: "Delete", detail: "File or folder", symbol: "trash.fill", tint: .purple, accessibilityID: "Delete", action: deleteFile)
+                        HomeActionButton(title: "Editor", detail: workspace.currentFile.name, symbol: "chevron.left.forwardslash.chevron.right", tint: .green, accessibilityID: "home-editor", action: startLocal)
+                        HomeActionButton(title: "Chat", detail: "EDSGER", symbol: "bubble.left.and.bubble.right.fill", tint: .indigo, accessibilityID: "home-chat", action: openLearn)
+                        HomeActionButton(title: "Settings", detail: "App preferences", symbol: "gearshape.fill", tint: .gray, accessibilityID: "Settings", action: openSettings)
                     }
-                    .background(AppPalette.card, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                    .padding(.vertical, 6)
+
+                    LanguagePicker(language: workspace.language, select: chooseLanguage)
                 }
                 .padding(.horizontal, 20)
                 .padding(.top, 20)
                 .padding(.bottom, 24)
             }
 
-            MainTabBar(
-                active: .home,
-                openHome: {},
-                openLearn: openLearn,
-                openFiles: openFiles,
-                openAgent: agentsVisible ? openAgent : nil
-            )
         }
         .background(AppPalette.background)
         .foregroundStyle(AppPalette.foreground)
@@ -276,7 +234,83 @@ private struct HomeScreen: View {
     }
 }
 
-private struct LearnScreen: View {
+private struct LanguagePicker: View {
+    let language: ProgrammingLanguage
+    let select: (ProgrammingLanguage) -> Void
+    var body: some View {
+        LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 16), count: 3), spacing: 20) {
+            ForEach(ProgrammingLanguage.allCases) { item in
+                Button { select(item) } label: {
+                    VStack(spacing: 11) {
+                        LanguageAppIcon(language: item, selected: language == item)
+                        Text(item.name)
+                            .font(.system(size: 15, weight: .semibold))
+                            .foregroundStyle(AppPalette.foreground)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.75)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.appHapticSelect)
+                .accessibilityLabel("\(item.name) workspace")
+                .accessibilityIdentifier("language-\(item.rawValue)")
+                .accessibilityAddTraits(language == item ? [.isSelected] : [])
+            }
+        }
+    }
+}
+
+private struct LanguageAppIcon: View {
+    let language: ProgrammingLanguage
+    let selected: Bool
+
+    private var tint: Color {
+        switch language {
+        case .c: Color(red: 0.12, green: 0.50, blue: 0.89)
+        case .python: Color(red: 0.16, green: 0.63, blue: 0.47)
+        case .javascript: Color(red: 0.90, green: 0.63, blue: 0.10)
+        case .lua: Color(red: 0.42, green: 0.32, blue: 0.78)
+        }
+    }
+
+    private var initials: String {
+        switch language {
+        case .c: "C"
+        case .python: "Py"
+        case .javascript: "JS"
+        case .lua: "Lua"
+        }
+    }
+
+    var body: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                .fill(LinearGradient(colors: [tint.opacity(0.75), tint, tint.mix(with: .black, by: 0.28)], startPoint: .top, endPoint: .bottom))
+            Ellipse()
+                .fill(LinearGradient(colors: [.white.opacity(0.65), .white.opacity(0.16)], startPoint: .top, endPoint: .bottom))
+                .frame(width: 136, height: 82)
+                .offset(y: -43)
+            Text(initials)
+                .font(.system(size: language == .lua ? 26 : 33, weight: .heavy, design: .rounded))
+                .foregroundStyle(.white)
+                .shadow(color: .black.opacity(0.3), radius: 1, y: 2)
+        }
+        .frame(width: 82, height: 82)
+        .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                .strokeBorder(tint.mix(with: .black, by: 0.4), lineWidth: 1)
+            RoundedRectangle(cornerRadius: 19, style: .continuous)
+                .strokeBorder(LinearGradient(colors: [.white.opacity(0.85), .white.opacity(0.05)], startPoint: .top, endPoint: .bottom), lineWidth: 1)
+                .padding(1)
+        }
+        .shadow(color: .black.opacity(0.24), radius: 1, y: 2)
+        .shadow(color: tint.opacity(selected ? 0.42 : 0.16), radius: selected ? 9 : 5, y: selected ? 0 : 3)
+    }
+}
+
+private struct CoursesScreen: View {
     let workspace: LocalCWorkspace
     let openHome: () -> Void
     let openFiles: () -> Void
@@ -286,17 +320,16 @@ private struct LearnScreen: View {
     let openLinuxModule: (LinuxCourseModule) -> Void
     let unlockLinux: () -> Void
     let restoreLinux: () -> Void
-    let openAgent: () -> Void
-    let agentsVisible: Bool
 
     var body: some View {
         VStack(spacing: 0) {
             ScrollView(showsIndicators: false) {
                 VStack(alignment: .leading, spacing: 28) {
-                    Text("Learn")
+                    Text("Courses")
                         .font(.system(size: 28, weight: .semibold))
                         .foregroundStyle(AppPalette.foreground)
 
+                    if workspace.language == .c {
                     LessonCardDeck(
                         title: "Lessons",
                         lessons: FirstHourCurriculum.firstHour,
@@ -316,6 +349,16 @@ private struct LearnScreen: View {
                             progress: workspace.quizProgress,
                             open: openQuiz
                         )
+                    }
+                    } else {
+                        VStack(alignment: .leading, spacing: 12) {
+                            Text(">>> hello, \(workspace.language.name)").font(.system(.title3, design: .monospaced))
+                            Text("Create a .\(workspace.language.fileExtension) file from IDE, then press RUN. Start with the example, variables, and functions.")
+                            Text(workspace.language.runtimeExplanation)
+                            Text("Each language has its own projects and files.").foregroundStyle(AppPalette.silver)
+                        }
+                        .padding(18)
+                        .background(AppPalette.card, in: RoundedRectangle(cornerRadius: 14))
                     }
                     if linuxCourse.isOwned {
                         LinuxModuleDeck(
@@ -337,13 +380,7 @@ private struct LearnScreen: View {
                 .padding(.bottom, 24)
             }
 
-            MainTabBar(
-                active: .learn,
-                openHome: openHome,
-                openLearn: {},
-                openFiles: openFiles,
-                openAgent: agentsVisible ? openAgent : nil
-            )
+
         }
         .background(AppPalette.background)
         .foregroundStyle(AppPalette.foreground)
@@ -351,237 +388,54 @@ private struct LearnScreen: View {
     }
 }
 
-private struct HomeHeader: View {
-    let openSettings: () -> Void
-
-    var body: some View {
-        HStack {
-            Image("LilCLogo")
-                .renderingMode(.original)
-                .resizable()
-                .interpolation(.high)
-                .scaledToFit()
-                .frame(height: 44)
-                .accessibilityLabel("lilC")
-            Spacer()
-            Button("Settings", action: openSettings)
-                .font(.system(size: 15, weight: .semibold))
-                .foregroundStyle(AppPalette.green)
-        }
-    }
-}
-
-private struct RecentProjectsList: View {
-    let projects: [LocalCFolder]
-    let open: (LocalCFolder) -> Void
-
-    var body: some View {
-        if projects.isEmpty {
-            Text("No projects yet. Create a folder in Files.")
-                .font(.system(size: 15))
-                .foregroundStyle(AppPalette.silver)
-                .padding(16)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(AppPalette.card, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-        } else {
-            VStack(spacing: 0) {
-                ForEach(projects) { folder in
-                    Button {
-                        open(folder)
-                    } label: {
-                        HStack(spacing: 12) {
-                            Image(systemName: "folder.fill")
-                                .font(.system(size: 14, weight: .bold))
-                                .foregroundStyle(AppPalette.amber)
-                                .frame(width: 32, height: 32)
-                                .background(AppPalette.panel)
-                                .overlay(Rectangle().stroke(AppPalette.line.opacity(0.8)))
-
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text(folder.name)
-                                    .font(.system(size: 17, weight: .semibold))
-                                    .foregroundStyle(AppPalette.foreground)
-                                Text("Project")
-                                    .font(.system(size: 13))
-                                    .foregroundStyle(AppPalette.silver)
-                            }
-                            Spacer()
-                            Image(systemName: "chevron.right")
-                                .font(.system(size: 13, weight: .semibold))
-                                .foregroundStyle(AppPalette.silver)
-                        }
-                        .padding(.horizontal, 10)
-                        .frame(height: 52)
-                    }
-                    .buttonStyle(.appHaptic)
-                    if folder.id != projects.last?.id {
-                        Rectangle()
-                            .fill(AppPalette.line.opacity(0.8))
-                            .frame(height: 1)
-                            .padding(.leading, 54)
-                    }
-                }
-            }
-            .background(AppPalette.card, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-        }
-    }
-}
-
-private struct HomeActionRow: View {
+/// Home-only glossy tiles, with the existing actions and accessibility identifiers.
+private struct HomeActionButton: View {
     let title: String
     let detail: String
-    var isDestructive = false
-    var accessibilityID: String? = nil
+    let symbol: String
+    let tint: Color
+    let accessibilityID: String
     let action: () -> Void
 
     var body: some View {
         Button(action: action) {
-            HStack {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(title)
-                        .font(.system(size: 17))
-                        .foregroundStyle(isDestructive ? AppPalette.amber : AppPalette.foreground)
-                    Text(detail)
-                        .font(.system(size: 15))
-                        .foregroundStyle(AppPalette.silver)
+            VStack(spacing: 11) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 20, style: .continuous)
+                        .fill(LinearGradient(colors: [tint.opacity(0.75), tint, tint.mix(with: .black, by: 0.28)], startPoint: .top, endPoint: .bottom))
+                    // A curved glass reflection recalls the early iPhone home screen.
+                    Ellipse()
+                        .fill(LinearGradient(colors: [.white.opacity(0.65), .white.opacity(0.16)], startPoint: .top, endPoint: .bottom))
+                        .frame(width: 136, height: 82)
+                        .offset(y: -43)
+                    Image(systemName: symbol)
+                        .font(.system(size: symbol == "plus" ? 37 : 32, weight: .bold))
+                        .foregroundStyle(.white)
+                        .shadow(color: .black.opacity(0.3), radius: 1, y: 2)
                 }
-                Spacer()
-                Image(systemName: "chevron.right")
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(AppPalette.silver)
+                .frame(width: 82, height: 82)
+                .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+                .overlay {
+                    RoundedRectangle(cornerRadius: 20, style: .continuous)
+                        .strokeBorder(tint.mix(with: .black, by: 0.4), lineWidth: 1)
+                    RoundedRectangle(cornerRadius: 19, style: .continuous)
+                        .strokeBorder(LinearGradient(colors: [.white.opacity(0.85), .white.opacity(0.05)], startPoint: .top, endPoint: .bottom), lineWidth: 1)
+                        .padding(1)
+                }
+                .shadow(color: .black.opacity(0.24), radius: 1, y: 2)
+                .shadow(color: tint.opacity(0.16), radius: 5, y: 3)
+
+                Text(title)
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(AppPalette.foreground)
+                    .multilineTextAlignment(.center)
             }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 14)
+            .frame(maxWidth: .infinity)
+            .contentShape(Rectangle())
         }
         .buttonStyle(.appHaptic)
-        .accessibilityIdentifier(accessibilityID ?? title)
-    }
-}
-
-private struct MainTabBar: View {
-    enum Tab {
-        case home
-        case learn
-        case files
-    }
-
-    let active: Tab
-    let openHome: () -> Void
-    let openLearn: () -> Void
-    let openFiles: () -> Void
-    var openAgent: (() -> Void)? = nil
-
-    var body: some View {
-        HStack {
-            HomeTabItem(title: "HOME", icon: .home, active: active == .home, action: openHome)
-            HomeTabItem(title: "FILES", icon: .files, active: active == .files, action: openFiles)
-            HomeTabItem(title: "LEARN", icon: .learn, active: active == .learn, action: openLearn)
-            if let openAgent {
-                Button(action: openAgent) {
-                    VStack(spacing: 5) {
-                        Image(systemName: "sparkle")
-                            .font(.system(size: 16, weight: .bold))
-                            .frame(width: 22, height: 20)
-                        Text("AGENT")
-                            .font(AppTypography.terminal(size: 10, weight: .bold))
-                    }
-                    .foregroundStyle(AppPalette.silver)
-                    .frame(maxWidth: .infinity)
-                }
-                .buttonStyle(.appHapticSelect)
-            }
-        }
-        .padding(.top, 8)
-        .padding(.bottom, 10)
-        .background(AppPalette.panel)
-        .overlay(alignment: .top) {
-            Rectangle().fill(AppPalette.line).frame(height: 1)
-        }
-    }
-}
-
-private struct HomeTabItem: View {
-    let title: String
-    let icon: PixelTabIcon.Kind
-    let active: Bool
-    let action: () -> Void
-
-    var body: some View {
-        Button(action: action) {
-            VStack(spacing: 5) {
-                PixelTabIcon(kind: icon, active: active)
-                    .frame(width: 22, height: 20)
-                Text(title)
-                    .font(AppTypography.terminal(size: 10, weight: .bold))
-            }
-            .foregroundStyle(active ? AppPalette.green : AppPalette.silver)
-            .frame(maxWidth: .infinity)
-        }
-        .buttonStyle(.appHapticSelect)
-    }
-}
-
-private struct PixelTabIcon: View {
-    enum Kind {
-        case home
-        case learn
-        case files
-    }
-
-    let kind: Kind
-    let active: Bool
-
-    var body: some View {
-        Canvas { context, size in
-            let color = active ? AppPalette.green : AppPalette.silver
-            context.stroke(Path { path in
-                switch kind {
-                case .home:
-                    let unit = min(size.width / 11, size.height / 10)
-                    let x = (size.width - unit * 11) / 2
-                    let y = (size.height - unit * 10) / 2
-                    path.move(to: CGPoint(x: x + unit * 1, y: y + unit * 5))
-                    path.addLine(to: CGPoint(x: x + unit * 5.5, y: y + unit * 1))
-                    path.addLine(to: CGPoint(x: x + unit * 10, y: y + unit * 5))
-                    path.move(to: CGPoint(x: x + unit * 2.5, y: y + unit * 4.5))
-                    path.addLine(to: CGPoint(x: x + unit * 2.5, y: y + unit * 9))
-                    path.addLine(to: CGPoint(x: x + unit * 8.5, y: y + unit * 9))
-                    path.addLine(to: CGPoint(x: x + unit * 8.5, y: y + unit * 4.5))
-                    path.move(to: CGPoint(x: x + unit * 5, y: y + unit * 9))
-                    path.addLine(to: CGPoint(x: x + unit * 5, y: y + unit * 6.5))
-                    path.addLine(to: CGPoint(x: x + unit * 6.7, y: y + unit * 6.5))
-                    path.addLine(to: CGPoint(x: x + unit * 6.7, y: y + unit * 9))
-                case .learn:
-                    let unit = min(size.width / 12, size.height / 10)
-                    let x = (size.width - unit * 12) / 2
-                    let y = (size.height - unit * 10) / 2
-                    path.move(to: CGPoint(x: x + unit * 2, y: y + unit * 2.5))
-                    path.addLine(to: CGPoint(x: x + unit * 5.8, y: y + unit * 3.5))
-                    path.addLine(to: CGPoint(x: x + unit * 5.8, y: y + unit * 8.5))
-                    path.addLine(to: CGPoint(x: x + unit * 2, y: y + unit * 7.5))
-                    path.closeSubpath()
-                    path.move(to: CGPoint(x: x + unit * 10, y: y + unit * 2.5))
-                    path.addLine(to: CGPoint(x: x + unit * 6.2, y: y + unit * 3.5))
-                    path.addLine(to: CGPoint(x: x + unit * 6.2, y: y + unit * 8.5))
-                    path.addLine(to: CGPoint(x: x + unit * 10, y: y + unit * 7.5))
-                    path.closeSubpath()
-                case .files:
-                    let unit = min(size.width / 12, size.height / 9)
-                    let x = (size.width - unit * 12) / 2
-                    let y = (size.height - unit * 9) / 2
-                    path.move(to: CGPoint(x: x + unit * 1, y: y + unit * 2))
-                    path.addLine(to: CGPoint(x: x + unit * 4.4, y: y + unit * 2))
-                    path.addLine(to: CGPoint(x: x + unit * 5.7, y: y + unit * 3.5))
-                    path.addLine(to: CGPoint(x: x + unit * 11, y: y + unit * 3.5))
-                    path.addLine(to: CGPoint(x: x + unit * 11, y: y + unit * 8))
-                    path.addLine(to: CGPoint(x: x + unit * 1, y: y + unit * 8))
-                    path.closeSubpath()
-                    path.move(to: CGPoint(x: x + unit * 1, y: y + unit * 4.8))
-                    path.addLine(to: CGPoint(x: x + unit * 11, y: y + unit * 4.8))
-                }
-            }, with: .color(color), style: StrokeStyle(lineWidth: 2, lineCap: .square, lineJoin: .miter))
-        }
-        .accessibilityHidden(true)
+        .accessibilityLabel("\(title == "New File" ? "New file" : title), \(detail)")
+        .accessibilityIdentifier(accessibilityID)
     }
 }
 
@@ -605,7 +459,7 @@ private struct FilesScreen: View {
     }
 
     private var heading: String {
-        title ?? workspace.browseTitle
+        title ?? (workspace.browsePath.isEmpty ? "DIRECTORY" : workspace.browseTitle)
     }
 
     var body: some View {
@@ -618,7 +472,11 @@ private struct FilesScreen: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(heading)
                         .font(.system(size: 20, weight: .bold, design: .monospaced))
-                    if !workspace.browsePath.isEmpty {
+                    if workspace.browsePath.isEmpty {
+                        Text("\(workspace.language.name) workspace")
+                            .font(.system(size: 10, weight: .medium, design: .monospaced))
+                            .foregroundStyle(AppPalette.silver)
+                    } else {
                         Text(workspace.browsePath)
                             .font(.system(size: 10, weight: .medium, design: .monospaced))
                             .foregroundStyle(AppPalette.silver)
@@ -674,7 +532,7 @@ private struct FilesScreen: View {
                             Text("No files found.")
                                 .font(.system(size: 15, weight: .bold, design: .monospaced))
                                 .foregroundStyle(AppPalette.foreground)
-                            Text(allowsCreate ? "Tap + to create a C file, header, or project." : "Try another search.")
+                            Text(allowsCreate ? (workspace.language == .c ? "Tap + to create a C file, header, or project." : "Tap + to create a \(workspace.language.name) file or project.") : "Try another search.")
                                 .font(.system(size: 12, weight: .medium, design: .monospaced))
                                 .foregroundStyle(AppPalette.foreground.opacity(0.72))
                                 .multilineTextAlignment(.center)
@@ -738,11 +596,11 @@ private struct FilesScreen: View {
             }
         }
         .confirmationDialog("Create", isPresented: $showCreateOptions, titleVisibility: .visible) {
-            Button(workspace.browsePath.isEmpty ? "New standalone C file" : "New C file in this project") {
+            Button(workspace.browsePath.isEmpty ? "New standalone \(workspace.language.name) file" : "New \(workspace.language.name) file in this project") {
                 workspace.createFile()
                 searchText = ""
             }
-            Button("New Header") {
+            Button(workspace.language == .c ? "New Header" : "New \(workspace.language.name) module") {
                 workspace.createHeader()
                 searchText = ""
             }
@@ -763,7 +621,7 @@ private struct FilesScreen: View {
             Button("Cancel", role: .cancel) {}
         } message: {
             if workspace.browsePath.isEmpty {
-                Text("A folder is a project. Open it to add more .c and .h files. Home → New File still creates a single file at the top level.")
+                Text(workspace.language == .c ? "A folder is a project. Open it to add more .c and .h files. IDE → New File still creates a single file at the top level." : "A folder is a \(workspace.language.name) project. Open it to add .\(workspace.language.fileExtension) files and local modules. IDE → New File creates a standalone file.")
             } else {
                 Text("Nested folders stay inside this project.")
             }
@@ -1028,7 +886,7 @@ private struct FileBrowserRow: View {
     var body: some View {
         Button(action: action) {
             HStack(spacing: 12) {
-                Text(file.isHeader ? ".h" : ".c")
+                Text("." + (file.name as NSString).pathExtension)
                     .font(.system(size: 11, weight: .bold, design: .monospaced))
                     .foregroundStyle(AppPalette.foreground.opacity(0.84))
                     .frame(width: 38, height: 38)
@@ -1150,16 +1008,22 @@ final class SoftwareKeyboard: ObservableObject {
 private struct RunConsoleKeyboardLift: ViewModifier {
     let isRunning: Bool
     let overlap: CGFloat
+    let isAgentVisible: Bool
 
+    @ViewBuilder
     func body(content: Content) -> some View {
-        let padding = RunConsoleChrome.keyboardOverlapPadding(isRunning: isRunning, overlap: overlap)
-        content
-            .padding(.bottom, padding)
-            .ignoresSafeArea(.keyboard, edges: .bottom)
-            .ignoresSafeArea(
-                RunConsoleChrome.ignoresContainerBottom(padding: padding) ? .container : [],
-                edges: .bottom
-            )
+        if isAgentVisible {
+            content
+        } else {
+            let padding = RunConsoleChrome.keyboardOverlapPadding(isRunning: isRunning, overlap: overlap)
+            content
+                .padding(.bottom, padding)
+                .ignoresSafeArea(.keyboard, edges: .bottom)
+                .ignoresSafeArea(
+                    RunConsoleChrome.ignoresContainerBottom(padding: padding) ? .container : [],
+                    edges: .bottom
+                )
+        }
     }
 }
 
@@ -1193,12 +1057,19 @@ enum RunningConsoleLayout {
     }
 }
 
+private enum ConsolePanel {
+    case output
+    case agent
+}
+
 private struct LocalModeScreen: View {
     let workspace: LocalCWorkspace
     let agentSettings: AgentSettingsStore
     let back: () -> Void
-    var openAgent: () -> Void = {}
     @State private var appearance = AppearanceStore.shared
+    @State private var agentSession: AgentSession?
+    @State private var selectedPanel: ConsolePanel = .output
+    @State private var agentFullScreen = false
     @State private var draftFileName = ""
     @State private var outputExpanded = true
     @State private var findVisible = false
@@ -1222,6 +1093,7 @@ private struct LocalModeScreen: View {
 
     private var hidesEditorChrome: Bool {
         RunConsoleChrome.hidesEditorChrome(isRunning: workspace.isRunning)
+            || (selectedPanel == .agent && agentFullScreen && outputExpanded)
     }
 
     private var findMatches: [NSRange] {
@@ -1229,7 +1101,8 @@ private struct LocalModeScreen: View {
     }
 
     private var outputCoversEditor: Bool {
-        OutputChromeExpandPolicy.expanded(isRunning: workspace.isRunning) && outputExpanded
+        (OutputChromeExpandPolicy.expanded(isRunning: workspace.isRunning) && outputExpanded)
+            || (selectedPanel == .agent && agentFullScreen && outputExpanded)
     }
 
     var body: some View {
@@ -1263,6 +1136,7 @@ private struct LocalModeScreen: View {
                 }
                 .foregroundStyle(findVisible ? AppPalette.foreground : AppPalette.green)
                 .accessibilityLabel("Find")
+                if workspace.language == .c {
                 Button("FMT") {
                     formatEpoch += 1
                 }
@@ -1270,13 +1144,6 @@ private struct LocalModeScreen: View {
                 .foregroundStyle(AppPalette.green)
                 .accessibilityLabel("Format code")
                 .accessibilityIdentifier("format-code")
-                if agentSettings.showsAgentSurfaces {
-                    Button(action: openAgent) {
-                        Image(systemName: "sparkle")
-                            .font(.system(size: 14, weight: .bold))
-                    }
-                    .foregroundStyle(AppPalette.green)
-                    .accessibilityLabel("Agent")
                 }
                 if workspace.isRunning {
                     Button("STOP") {
@@ -1332,7 +1199,7 @@ private struct LocalModeScreen: View {
             .background(AppPalette.background)
 
             HStack(spacing: 8) {
-                TextField("hello.c", text: $draftFileName, prompt: Text("hello.c").foregroundStyle(AppPalette.silver))
+                TextField(workspace.language.starterName, text: $draftFileName, prompt: Text(workspace.language.starterName).foregroundStyle(AppPalette.silver))
                     .font(.system(size: 14, weight: .bold, design: .monospaced))
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
@@ -1352,7 +1219,7 @@ private struct LocalModeScreen: View {
             .background(AppPalette.card)
             }
 
-            if !hidesEditorChrome, let lesson = FirstHourCurriculum.lesson(relativePath: workspace.currentFile.relativePath) {
+            if !hidesEditorChrome, workspace.language == .c, let lesson = FirstHourCurriculum.lesson(relativePath: workspace.currentFile.relativePath) {
                 HStack(alignment: .top, spacing: 10) {
                     VStack(alignment: .leading, spacing: 4) {
                         Text(lesson.kicker)
@@ -1386,7 +1253,8 @@ private struct LocalModeScreen: View {
                         get: { workspace.currentFile.code },
                         set: { workspace.updateCurrentCode($0) }
                     ),
-                    fileID: workspace.selectedFileID,
+                    fileID: workspace.language.rawValue + ":" + workspace.selectedFileID,
+                    language: workspace.language,
                     isFocused: focusedLocalField == .editor,
                     jump: caretJump,
                     findVisible: findVisible,
@@ -1428,15 +1296,29 @@ private struct LocalModeScreen: View {
             VStack(alignment: .leading, spacing: 8) {
                 HStack(spacing: 8) {
                     HStack(spacing: 8) {
-                        Text("OUTPUT")
-                            .font(.system(size: 11, weight: .bold, design: .monospaced))
-                            .foregroundStyle(AppPalette.green)
-                        if workspace.isWaitingForInput {
+                        Button("OUTPUT") {
+                            selectedPanel = .output
+                            outputExpanded = true
+                        }
+                        .foregroundStyle(selectedPanel == .output ? AppPalette.green : AppPalette.silver)
+                        .accessibilityIdentifier("output-tab")
+                        if agentSettings.showsAgentSurfaces {
+                            Button("AGENT") {
+                                selectedPanel = .agent
+                                outputExpanded = true
+                                if agentSession == nil {
+                                    agentSession = AgentSession.shared(workspace: workspace, settings: agentSettings)
+                                }
+                            }
+                            .foregroundStyle(selectedPanel == .agent ? AppPalette.green : AppPalette.silver)
+                            .accessibilityIdentifier("agent-tab")
+                        }
+                        if selectedPanel == .output, workspace.isWaitingForInput {
                             RunStatusBadge(text: "WAITING FOR INPUT", color: AppPalette.amber, pulsing: true)
                                 .accessibilityIdentifier("waiting-for-input")
-                        } else if workspace.isRunning {
+                        } else if selectedPanel == .output, workspace.isRunning {
                             RunStatusBadge(text: "RUNNING", color: AppPalette.green, pulsing: false)
-                        } else if workspace.lastRunNeedsFillIn {
+                        } else if selectedPanel == .output, workspace.lastRunNeedsFillIn {
                             if workspace.lastErrorJump != nil {
                                 Button(action: jumpToError) {
                                     RunStatusBadge(text: "TODO", color: AppPalette.amber, pulsing: false)
@@ -1446,7 +1328,7 @@ private struct LocalModeScreen: View {
                             } else {
                                 RunStatusBadge(text: "TODO", color: AppPalette.amber, pulsing: false)
                             }
-                        } else if workspace.lastRunFailed {
+                        } else if selectedPanel == .output, workspace.lastRunFailed {
                             if workspace.lastErrorJump != nil {
                                 Button(action: jumpToError) {
                                     RunStatusBadge(text: "ERROR", color: AppPalette.error, pulsing: false)
@@ -1459,9 +1341,20 @@ private struct LocalModeScreen: View {
                         }
                         Spacer(minLength: 0)
                     }
+                    .font(.system(size: 11, weight: .bold, design: .monospaced))
                     .contentShape(Rectangle())
+                    if selectedPanel == .agent && outputExpanded {
+                        Button {
+                            withAnimation(.easeInOut(duration: 0.18)) { agentFullScreen.toggle() }
+                        } label: {
+                            Image(systemName: agentFullScreen ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right")
+                                .font(.system(size: 12, weight: .semibold))
+                        }
+                        .foregroundStyle(AppPalette.silver)
+                        .accessibilityLabel(agentFullScreen ? "Minimize agent" : "Expand agent full screen")
+                    }
                     Button {
-                        guard !workspace.isRunning else { return }
+                        guard selectedPanel == .agent || !workspace.isRunning else { return }
                         withAnimation(.easeInOut(duration: 0.18)) {
                             outputExpanded.toggle()
                         }
@@ -1477,11 +1370,19 @@ private struct LocalModeScreen: View {
                     .buttonStyle(.plain)
                 }
                 if outputExpanded {
-                    outputBody
+                    if selectedPanel == .agent {
+                        if let agentSession {
+                            AgentConversationView(session: agentSession)
+                                .frame(minHeight: 220)
+                        }
+                    } else {
+                        outputBody
+                    }
                 }
             }
             .padding(12)
             .frame(minHeight: outputExpanded ? 92 : 44, alignment: .top)
+            .frame(height: selectedPanel == .agent && outputExpanded && !agentFullScreen ? min(max(containerHeight * 0.44, 270), 420) : nil)
             .frame(maxHeight: outputCoversEditor ? .infinity : nil, alignment: .top)
             .fixedSize(
                 horizontal: false,
@@ -1514,7 +1415,11 @@ private struct LocalModeScreen: View {
                     .background(AppPalette.card)
             }
         }
-        .modifier(RunConsoleKeyboardLift(isRunning: workspace.isRunning, overlap: softwareKeyboard.overlap))
+        .modifier(RunConsoleKeyboardLift(
+            isRunning: workspace.isRunning,
+            overlap: softwareKeyboard.overlap,
+            isAgentVisible: selectedPanel == .agent && outputExpanded
+        ))
         .onAppear {
             draftFileName = workspace.currentFile.name
         }
@@ -1553,11 +1458,11 @@ private struct LocalModeScreen: View {
             return .ignored
         }
         .confirmationDialog("Create", isPresented: $showCreateOptions, titleVisibility: .visible) {
-            Button(workspace.browsePath.isEmpty ? "New standalone C file" : "New C file in this project") {
+            Button(workspace.browsePath.isEmpty ? "New standalone \(workspace.language.name) file" : "New \(workspace.language.name) file in this project") {
                 workspace.createFile()
                 draftFileName = workspace.currentFile.name
             }
-            Button("New Header") {
+            Button(workspace.language == .c ? "New Header" : "New \(workspace.language.name) module") {
                 workspace.createHeader()
                 draftFileName = workspace.currentFile.name
             }

@@ -17,6 +17,18 @@ struct SettingsScreen: View {
         return "\(version) (\(build))"
     }
 
+    #if DEBUG
+    private var debugLinuxUnlock: Binding<Bool> {
+        Binding(
+            get: { UserDefaults.standard.bool(forKey: LinuxCourseStore.debugUnlockKey) },
+            set: { value in
+                UserDefaults.standard.set(value, forKey: LinuxCourseStore.debugUnlockKey)
+                Task { await linuxCourse.refreshEntitlements() }
+            }
+        )
+    }
+    #endif
+
     var body: some View {
         VStack(spacing: 0) {
             settingsBar
@@ -47,7 +59,6 @@ struct SettingsScreen: View {
             await linuxCourse.loadStore()
             guard AgentRuntimeConfig.surfacesVisibleInThisRelease else { return }
             githubConnected = AgentKeychain.githubToken() != nil
-            await agentSettings.loadStore()
         }
         .onReceive(NotificationCenter.default.publisher(for: .lilCGitHubChanged)) { _ in
             guard AgentRuntimeConfig.surfacesVisibleInThisRelease else { return }
@@ -59,7 +70,7 @@ struct SettingsScreen: View {
             }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("Removes every C file on this iPhone. A starter file is created.")
+            Text("Removes every \(workspace.language.name) file in this workspace. A starter file is created.")
         }
     }
 
@@ -128,14 +139,14 @@ struct SettingsScreen: View {
 
     private var picoCSection: some View {
         Section {
-            Text(Self.picoCExplanation)
+            Text(workspace.language.runtimeExplanation)
                 .font(.body)
                 .foregroundStyle(AppPalette.foreground)
                 .fixedSize(horizontal: false, vertical: true)
                 .listRowBackground(AppPalette.card)
-                .accessibilityLabel("About PicoC")
+                .accessibilityLabel("About \(workspace.language.runtimeName)")
         } header: {
-            Text("PicoC")
+            Text(workspace.language.runtimeName)
         }
     }
 
@@ -159,7 +170,7 @@ struct SettingsScreen: View {
         } header: {
             Text("Files")
         } footer: {
-            Text("Removes every C file on this iPhone. A starter file is created.")
+            Text("Removes every \(workspace.language.name) file in this workspace. A starter file is created.")
         }
     }
 
@@ -192,6 +203,14 @@ struct SettingsScreen: View {
             .font(.body)
             .listRowBackground(AppPalette.card)
             .accessibilityIdentifier("linux-course-restore")
+
+            #if DEBUG
+            Toggle("DEBUG: unlock without StoreKit", isOn: debugLinuxUnlock)
+                .font(.body)
+                .listRowBackground(AppPalette.card)
+                .tint(AppPalette.green)
+                .accessibilityIdentifier("linux-course-debug-unlock")
+            #endif
         } header: {
             Text("Linux Course")
         } footer: {
@@ -215,114 +234,34 @@ struct SettingsScreen: View {
         }
     }
 
-    @ViewBuilder
     private var agentSection: some View {
         Section {
             Toggle(isOn: Binding(
                 get: { agentSettings.agentsEnabled },
                 set: { agentSettings.agentsEnabled = $0 }
             )) {
-                Text("Show Agent")
+                Text("Agent Mode")
                     .font(.body)
+                    .foregroundStyle(AppPalette.foreground)
             }
             .listRowBackground(AppPalette.card)
+            .accessibilityIdentifier("agent-mode-toggle")
 
             if agentSettings.agentsEnabled {
-                Toggle(isOn: Binding(
-                    get: { agentSettings.sharingConsent },
-                    set: { agentSettings.sharingConsent = $0 }
-                )) {
-                    Text("Share with AI")
-                        .font(.body)
-                }
-                .listRowBackground(AppPalette.card)
-
                 Toggle(isOn: Binding(
                     get: { agentSettings.safeguardsOn },
                     set: { agentSettings.safeguardsOn = $0 }
                 )) {
-                    Text("Safeguards")
+                    Text("Block agent deletions")
                         .font(.body)
+                        .foregroundStyle(AppPalette.foreground)
                 }
-                .listRowBackground(AppPalette.card)
-
-                LabeledContent("Plan") {
-                    Text(agentSettings.isSubscribed ? "Extra turns" : "Free pool")
-                        .font(.body)
-                        .foregroundStyle(AppPalette.silver)
-                }
-                .font(.body)
                 .listRowBackground(AppPalette.card)
             }
         } header: {
             Text("Agent")
         } footer: {
-            if agentSettings.agentsEnabled {
-                Text("Share with AI is required before a prompt is sent. Safeguards prevent the agent from deleting files.")
-            } else {
-                Text("Adds an Agent tab. Off for this learning release unless you turn it on.")
-            }
-        }
-
-        if agentSettings.agentsEnabled {
-            Section {
-                if let githubStart = URL(string: AgentRuntimeConfig.gatewayURL + "/auth/github/start") {
-                    Link("Connect GitHub", destination: githubStart)
-                        .font(.body)
-                        .appHapticTap()
-                        .listRowBackground(AppPalette.card)
-                }
-                if githubConnected {
-                    Button("Disconnect GitHub", role: .destructive) {
-                        AppHaptics.tap()
-                        AgentKeychain.deleteGitHubToken()
-                    }
-                    .font(.body)
-                    .listRowBackground(AppPalette.card)
-                }
-                if !agentSettings.isSubscribed {
-                    Button(agentSettings.isPurchasing ? "Working…" : "Extra Agent Turns") {
-                        AppHaptics.tap()
-                        Task { await agentSettings.purchase() }
-                    }
-                    .font(.body)
-                    .disabled(agentSettings.isPurchasing)
-                    .listRowBackground(AppPalette.card)
-                    Button("Restore Purchases") {
-                        AppHaptics.tap()
-                        Task { await agentSettings.restore() }
-                    }
-                    .font(.body)
-                    .listRowBackground(AppPalette.card)
-                }
-            }
-
-            #if DEBUG
-            Section {
-                SecureField("Worker debug token", text: $customKey)
-                    .font(.body)
-                    .textInputAutocapitalization(.never)
-                    .autocorrectionDisabled()
-                    .listRowBackground(AppPalette.card)
-                Button("Save Token") {
-                    AppHaptics.tap()
-                    AgentKeychain.saveKey(customKey)
-                    customKey = ""
-                }
-                .font(.body)
-                .listRowBackground(AppPalette.card)
-                Button("Remove Key", role: .destructive) {
-                    AppHaptics.tap()
-                    AgentKeychain.deleteKey()
-                }
-                .font(.body)
-                .listRowBackground(AppPalette.card)
-            } header: {
-                Text("Debug")
-            } footer: {
-                Text("Debug only. Token for the lilC worker, not an OpenAI key.")
-            }
-            #endif
+            Text("The bundled model works on this iPhone, including offline. It can edit and run \(workspace.language.name) files in the current project.")
         }
     }
 
@@ -350,8 +289,8 @@ struct SettingsScreen: View {
             }
             .appHapticTap()
             .listRowBackground(AppPalette.card)
+            legalRow("Licenses") { document = .licenses }
             if LegalURLs.extraLegalRowsVisibleInThisRelease {
-                legalRow("Licenses") { document = .licenses }
                 Link(destination: LegalURLs.support) {
                     settingsLinkLabel("Email Support")
                 }
@@ -414,8 +353,17 @@ private enum LegalDocument: String, Identifiable {
 
         THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
 
-        lilC source (except vendored PicoC) is licensed under the Apache License 2.0. See LICENSE, NOTICE, and TRADEMARKS.md in the project repository.
-        """
+        lilC source (except third-party components) is licensed under the Apache License 2.0. See LICENSE, NOTICE, and TRADEMARKS.md in the project repository.
+        """ + pythonLicenses
+    }
+
+    private var pythonLicenses: String {
+        guard let root = Bundle.main.resourceURL?.appendingPathComponent("Python-Licenses"),
+              let files = try? FileManager.default.contentsOfDirectory(at: root, includingPropertiesForKeys: nil) else { return "" }
+        return "\n\nLanguage runtimes and dependencies\n" + files.sorted { $0.lastPathComponent < $1.lastPathComponent }.compactMap { file in
+            guard let text = try? String(contentsOf: file, encoding: .utf8) else { return nil }
+            return "\n\n" + file.lastPathComponent + "\n" + text
+        }.joined()
     }
 }
 

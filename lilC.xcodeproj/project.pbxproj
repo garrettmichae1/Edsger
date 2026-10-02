@@ -7,6 +7,62 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+        F6B000000000000000000001 = {isa = PBXBuildFile; productRef = F6D000000000000000000001; };
+        F6B000000000000000000002 = {isa = PBXBuildFile; fileRef = F6C000000000000000000002; };
+        F5B000000000000000000001 = {isa = PBXBuildFile; productRef = F5D000000000000000000001; };
+        F5B000000000000000000002 = {isa = PBXBuildFile; fileRef = F5C000000000000000000002; };
+        F5B000000000000000000003 = {isa = PBXBuildFile; fileRef = F5C000000000000000000003; };
+        F5B000000000000000000004 = {isa = PBXBuildFile; fileRef = F5C000000000000000000004; };
+        E4B000000000000000000002 = {isa = PBXBuildFile; fileRef = E4C000000000000000000002; };
+        E4B000000000000000000001 = {isa = PBXBuildFile; fileRef = E4C000000000000000000001; };
+        E4B000000000000000000000 = {isa = PBXBuildFile; fileRef = E4C000000000000000000000; };
+        D3B000000000000000000021 = {isa = PBXBuildFile; fileRef = D3C000000000000000000021; settings = {COMPILER_FLAGS = "-DLUA_USE_IOS"; }; };
+        D3B000000000000000000020 = {isa = PBXBuildFile; fileRef = D3C000000000000000000020; settings = {COMPILER_FLAGS = "-DLUA_USE_IOS"; }; };
+        D3B00000000000000000001F = {isa = PBXBuildFile; fileRef = D3C00000000000000000001F; settings = {COMPILER_FLAGS = "-DLUA_USE_IOS"; }; };
+        D3B00000000000000000001E = {isa = PBXBuildFile; fileRef = D3C00000000000000000001E; settings = {COMPILER_FLAGS = "-DLUA_USE_IOS"; }; };
+        D3B00000000000000000001D = {isa = PBXBuildFile; fileRef = D3C00000000000000000001D; settings = {COMPILER_FLAGS = "-DLUA_USE_IOS"; }; };
+        D3B00000000000000000001C = {isa = PBXBuildFile; fileRef = D3C00000000000000000001C; settings = {COMPILER_FLAGS = "-DLUA_USE_IOS"; }; };
+        D3B00000000000000000001B = {isa = PBXBuildFile; fileRef = D3C00000000000000000001B; settings = {COMPILER_FLAGS = "-DLUA_USE_IOS"; }; };
+        D3B00000000000000000001A = {isa = PBXBuildFile; fileRef = D3C00000000000000000001A; settings = {COMPILER_FLAGS = "-DLUA_USE_IOS"; }; };
+        D3B000000000000000000019 = {isa = PBXBuildFile; fileRef = D3C000000000000000000019; settings = {COMPILER_FLAGS = "-DLUA_USE_IOS"; }; };
+        D3B000000000000000000018 = {isa = PBXBuildFile; fileRef = D3C000000000000000000018; settings = {COMPILER_FLAGS = "-DLUA_USE_IOS"; }; };
+        D3B000000000000000000017 = {isa = PBXBuildFile; fileRef = D3C000000000000000000017; settings = {COMPILER_FLAGS = "-DLUA_USE_IOS"; }; };
+        D3B000000000000000000016 = {isa = PBXBuildFile; fileRef = D3C000000000000000000016; settings = {COMPILER_FLAGS = "-DLUA_USE_IOS"; }; };
+        D3B000000000000000000015 = {isa = PBXBuildFile; fileRef = D3C000000000000000000015; settings = {COMPILER_FLAGS = "-DLUA_USE_IOS"; }; };
+        D3B000000000000000000014 = {isa = PBXBuildFile; fileRef = D3C000000000000000000014; settings = {COMPILER_FLAGS = "-DLUA_USE_IOS"; }; };
+        D3B000000000000000000013 = {isa = PBXBuildFile; fileRef = D3C000000000000000000013; settings = {COMPILER_FLAGS = "-DLUA_USE_IOS"; }; };
+        D3B000000000000000000012 = {isa = PBXBuildFile; fileRef = D3C000000000000000000012; settings = {COMPILER_FLAGS = "-DLUA_USE_IOS"; }; };
+        D3B000000000000000000011 = {isa = PBXBuildFile; fileRef = D3C000000000000000000011; settings = {COMPILER_FLAGS = "-DLUA_USE_IOS"; }; };
+        D3B000000000000000000010 = {isa = PBXBuildFile; fileRef = D3C000000000000000000010; settings = {COMPILER_FLAGS = "-DLUA_USE_IOS"; }; };
+        D3B00000000000000000000F = {isa = PBXBuildFile; fileRef = D3C00000000000000000000F; settings = {COMPILER_FLAGS = "-DLUA_USE_IOS"; }; };
+        D3B00000000000000000000E = {isa = PBXBuildFile; fileRef = D3C00000000000000000000E; settings = {COMPILER_FLAGS = "-DLUA_USE_IOS"; }; };
+        D3B00000000000000000000D = {isa = PBXBuildFile; fileRef = D3C00000000000000000000D; settings = {COMPILER_FLAGS = "-DLUA_USE_IOS"; }; };
+        D3B00000000000000000000C = {isa = PBXBuildFile; fileRef = D3C00000000000000000000C; settings = {COMPILER_FLAGS = "-DLUA_USE_IOS"; }; };
+        D3B00000000000000000000B = {isa = PBXBuildFile; fileRef = D3C00000000000000000000B; settings = {COMPILER_FLAGS = "-DLUA_USE_IOS"; }; };
+        D3B00000000000000000000A = {isa = PBXBuildFile; fileRef = D3C00000000000000000000A; settings = {COMPILER_FLAGS = "-DLUA_USE_IOS"; }; };
+        D3B000000000000000000009 = {isa = PBXBuildFile; fileRef = D3C000000000000000000009; settings = {COMPILER_FLAGS = "-DLUA_USE_IOS"; }; };
+        D3B000000000000000000008 = {isa = PBXBuildFile; fileRef = D3C000000000000000000008; settings = {COMPILER_FLAGS = "-DLUA_USE_IOS"; }; };
+        D3B000000000000000000007 = {isa = PBXBuildFile; fileRef = D3C000000000000000000007; settings = {COMPILER_FLAGS = "-DLUA_USE_IOS"; }; };
+        D3B000000000000000000006 = {isa = PBXBuildFile; fileRef = D3C000000000000000000006; settings = {COMPILER_FLAGS = "-DLUA_USE_IOS"; }; };
+        D3B000000000000000000005 = {isa = PBXBuildFile; fileRef = D3C000000000000000000005; settings = {COMPILER_FLAGS = "-DLUA_USE_IOS"; }; };
+        D3B000000000000000000004 = {isa = PBXBuildFile; fileRef = D3C000000000000000000004; settings = {COMPILER_FLAGS = "-DLUA_USE_IOS"; }; };
+        D3B000000000000000000003 = {isa = PBXBuildFile; fileRef = D3C000000000000000000003; settings = {COMPILER_FLAGS = "-DLUA_USE_IOS"; }; };
+        D3B000000000000000000002 = {isa = PBXBuildFile; fileRef = D3C000000000000000000002; settings = {COMPILER_FLAGS = "-DLUA_USE_IOS"; }; };
+        D3B000000000000000000001 = {isa = PBXBuildFile; fileRef = D3C000000000000000000001; settings = {COMPILER_FLAGS = "-DLUA_USE_IOS"; }; };
+        D3B000000000000000000000 = {isa = PBXBuildFile; fileRef = D3C000000000000000000000; settings = {COMPILER_FLAGS = "-DLUA_USE_IOS"; }; };
+        B2C000000000000000000203 = {isa = PBXBuildFile; fileRef = B2C000000000000000000103; };
+        B2C000000000000000000202 = {isa = PBXBuildFile; fileRef = B2C000000000000000000102; };
+        B2C000000000000000000201 = {isa = PBXBuildFile; fileRef = B2C000000000000000000101; };
+        B2C000000000000000000200 = {isa = PBXBuildFile; fileRef = B2C000000000000000000100; };
+        B2C000000000000000000001 = {isa = PBXBuildFile; fileRef = B2C000000000000000000011; };
+        B2C000000000000000000002 = {isa = PBXBuildFile; fileRef = B2C000000000000000000011; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
+
+        A1C000000000000000000005 /* Qwen license in Resources */ = {isa = PBXBuildFile; fileRef = A1C000000000000000000014 /* Qwen license */; };
+        A1C000000000000000000006 /* llama license in Resources */ = {isa = PBXBuildFile; fileRef = A1C000000000000000000015 /* llama license */; };
+        A1C000000000000000000001 /* LocalAgentClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1C000000000000000000011 /* LocalAgentClient.swift */; };
+        A1C000000000000000000002 /* Qwen model in Resources */ = {isa = PBXBuildFile; fileRef = A1C000000000000000000012 /* Qwen model */; };
+        A1C000000000000000000003 /* llama.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = A1C000000000000000000013 /* llama.xcframework */; };
+        A1C000000000000000000004 /* llama.xcframework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = A1C000000000000000000013 /* llama.xcframework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 		100000000000000000000101 /* lilCApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 100000000000000000000001 /* lilCApp.swift */; };
 		100000000000000000000103 /* Presentation/ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 100000000000000000000003 /* Presentation/ContentView.swift */; };
 		10000000000000000000010D /* lilCTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 10000000000000000000000D /* lilCTests.swift */; };
@@ -85,6 +141,58 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+        F6C000000000000000000002 = {isa = PBXFileReference; lastKnownFileType = text; path = "Resources/Textual-LICENSES.txt"; sourceTree = "<group>"; };
+        F5C000000000000000000002 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Domain/MathMessage.swift; sourceTree = "<group>"; };
+        F5C000000000000000000003 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Presentation/MathAnswerView.swift; sourceTree = "<group>"; };
+        F5C000000000000000000004 = {isa = PBXFileReference; lastKnownFileType = text; path = "Resources/SwiftMath-LICENSE.txt"; sourceTree = "<group>"; };
+        E4C000000000000000000002 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Presentation/EdsgerScreen.swift; sourceTree = "<group>"; };
+        E4C000000000000000000001 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Application/TutorSession.swift; sourceTree = "<group>"; };
+        E4C000000000000000000000 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Domain/TutorModels.swift; sourceTree = "<group>"; };
+        D3C000000000000000000021 = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = Vendor/Lua/lzio.c; sourceTree = "<group>"; };
+        D3C000000000000000000020 = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = Vendor/Lua/lvm.c; sourceTree = "<group>"; };
+        D3C00000000000000000001F = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = Vendor/Lua/lutf8lib.c; sourceTree = "<group>"; };
+        D3C00000000000000000001E = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = Vendor/Lua/lundump.c; sourceTree = "<group>"; };
+        D3C00000000000000000001D = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = Vendor/Lua/ltm.c; sourceTree = "<group>"; };
+        D3C00000000000000000001C = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = Vendor/Lua/ltablib.c; sourceTree = "<group>"; };
+        D3C00000000000000000001B = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = Vendor/Lua/ltable.c; sourceTree = "<group>"; };
+        D3C00000000000000000001A = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = Vendor/Lua/lstrlib.c; sourceTree = "<group>"; };
+        D3C000000000000000000019 = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = Vendor/Lua/lstring.c; sourceTree = "<group>"; };
+        D3C000000000000000000018 = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = Vendor/Lua/lstate.c; sourceTree = "<group>"; };
+        D3C000000000000000000017 = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = Vendor/Lua/lparser.c; sourceTree = "<group>"; };
+        D3C000000000000000000016 = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = Vendor/Lua/loslib.c; sourceTree = "<group>"; };
+        D3C000000000000000000015 = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = Vendor/Lua/lopcodes.c; sourceTree = "<group>"; };
+        D3C000000000000000000014 = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = Vendor/Lua/lobject.c; sourceTree = "<group>"; };
+        D3C000000000000000000013 = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = Vendor/Lua/lmem.c; sourceTree = "<group>"; };
+        D3C000000000000000000012 = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = Vendor/Lua/lmathlib.c; sourceTree = "<group>"; };
+        D3C000000000000000000011 = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = Vendor/Lua/llex.c; sourceTree = "<group>"; };
+        D3C000000000000000000010 = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = Vendor/Lua/liolib.c; sourceTree = "<group>"; };
+        D3C00000000000000000000F = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = Vendor/Lua/lgc.c; sourceTree = "<group>"; };
+        D3C00000000000000000000E = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = Vendor/Lua/lfunc.c; sourceTree = "<group>"; };
+        D3C00000000000000000000D = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = Vendor/Lua/ldump.c; sourceTree = "<group>"; };
+        D3C00000000000000000000C = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = Vendor/Lua/ldo.c; sourceTree = "<group>"; };
+        D3C00000000000000000000B = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = Vendor/Lua/ldebug.c; sourceTree = "<group>"; };
+        D3C00000000000000000000A = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = Vendor/Lua/lctype.c; sourceTree = "<group>"; };
+        D3C000000000000000000009 = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = Vendor/Lua/lcorolib.c; sourceTree = "<group>"; };
+        D3C000000000000000000008 = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = Vendor/Lua/lcode.c; sourceTree = "<group>"; };
+        D3C000000000000000000007 = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = Vendor/Lua/lbaselib.c; sourceTree = "<group>"; };
+        D3C000000000000000000006 = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = Vendor/Lua/lauxlib.c; sourceTree = "<group>"; };
+        D3C000000000000000000005 = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = Vendor/Lua/lapi.c; sourceTree = "<group>"; };
+        D3C000000000000000000004 = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = Infrastructure/LuaRunner.c; sourceTree = "<group>"; };
+        D3C000000000000000000003 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Infrastructure/LocalLuaRunner.swift; sourceTree = "<group>"; };
+        D3C000000000000000000002 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Infrastructure/LocalJavaScriptRunner.swift; sourceTree = "<group>"; };
+        D3C000000000000000000001 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Infrastructure/LocalScriptRunning.swift; sourceTree = "<group>"; };
+        D3C000000000000000000000 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Domain/ScriptSyntax.swift; sourceTree = "<group>"; };
+        B2C000000000000000000103 = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = Infrastructure/PythonRunner.c; sourceTree = "<group>"; };
+        B2C000000000000000000102 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Infrastructure/LocalPythonRunner.swift; sourceTree = "<group>"; };
+        B2C000000000000000000101 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Domain/PythonSyntax.swift; sourceTree = "<group>"; };
+        B2C000000000000000000100 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Domain/ProgrammingLanguage.swift; sourceTree = "<group>"; };
+        B2C000000000000000000011 /* Python.xcframework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcframework; path = "vendor/python/3.14-b11/Python.xcframework"; sourceTree = SOURCE_ROOT; };
+
+        A1C000000000000000000014 /* Qwen license */ = {isa = PBXFileReference; lastKnownFileType = text; path = Resources/Qwen3.5-LICENSE.txt; sourceTree = "<group>"; };
+        A1C000000000000000000015 /* llama license */ = {isa = PBXFileReference; lastKnownFileType = text; path = Resources/llama.cpp-LICENSE.txt; sourceTree = "<group>"; };
+        A1C000000000000000000011 /* LocalAgentClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Infrastructure/LocalAgentClient.swift; sourceTree = "<group>"; };
+        A1C000000000000000000012 /* Qwen model */ = {isa = PBXFileReference; lastKnownFileType = file; path = lilC/Resources/Models/Qwen3.5-4B-Q4_K_M.gguf; sourceTree = SOURCE_ROOT; };
+        A1C000000000000000000013 /* llama.xcframework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcframework; path = vendor/llama/build-apple/llama.xcframework; sourceTree = SOURCE_ROOT; };
 		100000000000000000000001 /* lilCApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = lilCApp.swift; sourceTree = "<group>"; };
 		100000000000000000000003 /* Presentation/ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Presentation/ContentView.swift; sourceTree = "<group>"; };
 		10000000000000000000000D /* lilCTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = lilCTests.swift; sourceTree = "<group>"; };
@@ -102,6 +210,7 @@
 		100000000000000000000022 /* Resources/Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Resources/Assets.xcassets; sourceTree = "<group>"; };
 		100000000000000000000023 /* Resources/PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = Resources/PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		100000000000000000000024 /* Resources/Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Resources/Info.plist; sourceTree = "<group>"; };
+		10000000000000000000003D /* Resources/Products.storekit */ = {isa = PBXFileReference; lastKnownFileType = text; path = Resources/Products.storekit; sourceTree = "<group>"; };
 		100000000000000000000027 /* Domain/CDiagnostics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Domain/CDiagnostics.swift; sourceTree = "<group>"; };
 		100000000000000000000028 /* Domain/LegalURLs.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Domain/LegalURLs.swift; sourceTree = "<group>"; };
 		100000000000000000000029 /* Presentation/CCodeEditor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Presentation/CCodeEditor.swift; sourceTree = "<group>"; };
@@ -150,11 +259,30 @@
 		100000000000000000000503 /* lilCUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = lilCUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
+/* Begin PBXCopyFilesBuildPhase section */
+        A1C000000000000000000021 /* Embed Frameworks */ = {
+            isa = PBXCopyFilesBuildPhase;
+            buildActionMask = 2147483647;
+            dstPath = "";
+            dstSubfolderSpec = 10;
+            files = (
+                A1C000000000000000000004 /* llama.xcframework in Embed Frameworks */,
+                B2C000000000000000000002 /* Python in Embed Frameworks */,
+            );
+            name = "Embed Frameworks";
+            runOnlyForDeploymentPostprocessing = 0;
+        };
+/* End PBXCopyFilesBuildPhase section */
+
 /* Begin PBXFrameworksBuildPhase section */
 		100000000000000000000601 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+                A1C000000000000000000003 /* llama.xcframework in Frameworks */,
+                F5B000000000000000000001,
+                F6B000000000000000000001,
+                B2C000000000000000000001 /* Python in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -178,6 +306,8 @@
 		100000000000000000000701 = {
 			isa = PBXGroup;
 			children = (
+                A1C000000000000000000013 /* llama.xcframework */,
+                B2C000000000000000000011 /* Python.xcframework */,
 				100000000000000000000702 /* lilC */,
 				100000000000000000000703 /* lilCTests */,
 				100000000000000000000705 /* lilCUITests */,
@@ -188,11 +318,61 @@
 		100000000000000000000702 /* lilC */ = {
 			isa = PBXGroup;
 			children = (
+                F5C000000000000000000002,
+                F5C000000000000000000003,
+                F5C000000000000000000004,
+                F6C000000000000000000002,
+                E4C000000000000000000002,
+                E4C000000000000000000001,
+                E4C000000000000000000000,
+                D3C000000000000000000021,
+                D3C000000000000000000020,
+                D3C00000000000000000001F,
+                D3C00000000000000000001E,
+                D3C00000000000000000001D,
+                D3C00000000000000000001C,
+                D3C00000000000000000001B,
+                D3C00000000000000000001A,
+                D3C000000000000000000019,
+                D3C000000000000000000018,
+                D3C000000000000000000017,
+                D3C000000000000000000016,
+                D3C000000000000000000015,
+                D3C000000000000000000014,
+                D3C000000000000000000013,
+                D3C000000000000000000012,
+                D3C000000000000000000011,
+                D3C000000000000000000010,
+                D3C00000000000000000000F,
+                D3C00000000000000000000E,
+                D3C00000000000000000000D,
+                D3C00000000000000000000C,
+                D3C00000000000000000000B,
+                D3C00000000000000000000A,
+                D3C000000000000000000009,
+                D3C000000000000000000008,
+                D3C000000000000000000007,
+                D3C000000000000000000006,
+                D3C000000000000000000005,
+                D3C000000000000000000004,
+                D3C000000000000000000003,
+                D3C000000000000000000002,
+                D3C000000000000000000001,
+                D3C000000000000000000000,
+                A1C000000000000000000011 /* LocalAgentClient.swift */,
+                B2C000000000000000000103,
+                B2C000000000000000000102,
+                B2C000000000000000000101,
+                B2C000000000000000000100,
+                A1C000000000000000000012 /* Qwen model */,
+                A1C000000000000000000014 /* Qwen license */,
+                A1C000000000000000000015 /* llama license */,
 				100000000000000000000001 /* lilCApp.swift */,
 				100000000000000000000019 /* lilC-Bridging-Header.h */,
 				100000000000000000000022 /* Resources/Assets.xcassets */,
 				100000000000000000000023 /* Resources/PrivacyInfo.xcprivacy */,
 				100000000000000000000024 /* Resources/Info.plist */,
+				10000000000000000000003D /* Resources/Products.storekit */,
 				100000000000000000000003 /* Presentation/ContentView.swift */,
 				100000000000000000000037 /* Presentation/AppHaptics.swift */,
 				10000000000000000000002E /* Presentation/LessonCards.swift */,
@@ -286,6 +466,8 @@
 				100000000000000000000901 /* Sources */,
 				100000000000000000000601 /* Frameworks */,
 				100000000000000000000A01 /* Resources */,
+                A1C000000000000000000021 /* Embed Frameworks */,
+                B2C000000000000000000021 /* Bundle Python */,
 			);
 			buildRules = (
 			);
@@ -293,6 +475,8 @@
 			);
 			name = lilC;
 			packageProductDependencies = (
+                F6D000000000000000000001,
+                F5D000000000000000000001,
 			);
 			productName = lilC;
 			productReference = 100000000000000000000501 /* lilC.app */;
@@ -367,6 +551,8 @@
 			);
 			mainGroup = 100000000000000000000701;
 			packageReferences = (
+                F6E000000000000000000001,
+                F5E000000000000000000001,
 			);
 			productRefGroup = 100000000000000000000704 /* Products */;
 			projectDirPath = "";
@@ -384,6 +570,11 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+                A1C000000000000000000002 /* Qwen model in Resources */,
+                A1C000000000000000000005 /* Qwen license in Resources */,
+                F5B000000000000000000004,
+                F6B000000000000000000002,
+                A1C000000000000000000006 /* llama license in Resources */,
 				100000000000000000000138 /* Resources/Assets.xcassets in Resources */,
 				100000000000000000000139 /* Resources/PrivacyInfo.xcprivacy in Resources */,
 				10000000000000000000014B /* Domain/quizzes.json in Resources */,
@@ -408,11 +599,78 @@
 		};
 /* End PBXResourcesBuildPhase section */
 
+/* Begin PBXShellScriptBuildPhase section */
+        B2C000000000000000000021 /* Bundle Python */ = {
+            isa = PBXShellScriptBuildPhase;
+            alwaysOutOfDate = 1;
+            buildActionMask = 2147483647;
+            files = ();
+            inputPaths = ();
+            outputPaths = ();
+            name = "Bundle Python";
+            runOnlyForDeploymentPostprocessing = 0;
+            shellPath = /bin/bash;
+            shellScript = "/usr/bin/python3 \"$PROJECT_DIR/scripts/bundle-python.py\"";
+        };
+/* End PBXShellScriptBuildPhase section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+        F6E000000000000000000001 = {isa = XCRemoteSwiftPackageReference; repositoryURL = "https://github.com/gonzalezreal/textual.git"; requirement = {kind = exactVersion; version = 0.5.0; }; };
+        F5E000000000000000000001 = {isa = XCRemoteSwiftPackageReference; repositoryURL = "https://github.com/mgriebling/SwiftMath.git"; requirement = {kind = exactVersion; version = 1.7.3; }; };
+/* End XCRemoteSwiftPackageReference section */
+/* Begin XCSwiftPackageProductDependency section */
+        F6D000000000000000000001 = {isa = XCSwiftPackageProductDependency; package = F6E000000000000000000001; productName = Textual; };
+        F5D000000000000000000001 = {isa = XCSwiftPackageProductDependency; package = F5E000000000000000000001; productName = SwiftMath; };
+/* End XCSwiftPackageProductDependency section */
 /* Begin PBXSourcesBuildPhase section */
 		100000000000000000000901 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+                F5B000000000000000000002,
+                F5B000000000000000000003,
+                E4B000000000000000000002,
+                E4B000000000000000000001,
+                E4B000000000000000000000,
+                D3B000000000000000000021,
+                D3B000000000000000000020,
+                D3B00000000000000000001F,
+                D3B00000000000000000001E,
+                D3B00000000000000000001D,
+                D3B00000000000000000001C,
+                D3B00000000000000000001B,
+                D3B00000000000000000001A,
+                D3B000000000000000000019,
+                D3B000000000000000000018,
+                D3B000000000000000000017,
+                D3B000000000000000000016,
+                D3B000000000000000000015,
+                D3B000000000000000000014,
+                D3B000000000000000000013,
+                D3B000000000000000000012,
+                D3B000000000000000000011,
+                D3B000000000000000000010,
+                D3B00000000000000000000F,
+                D3B00000000000000000000E,
+                D3B00000000000000000000D,
+                D3B00000000000000000000C,
+                D3B00000000000000000000B,
+                D3B00000000000000000000A,
+                D3B000000000000000000009,
+                D3B000000000000000000008,
+                D3B000000000000000000007,
+                D3B000000000000000000006,
+                D3B000000000000000000005,
+                D3B000000000000000000004,
+                D3B000000000000000000003,
+                D3B000000000000000000002,
+                D3B000000000000000000001,
+                D3B000000000000000000000,
+                A1C000000000000000000001 /* LocalAgentClient.swift in Sources */,
+                B2C000000000000000000203,
+                B2C000000000000000000202,
+                B2C000000000000000000201,
+                B2C000000000000000000200,
 				100000000000000000000101 /* lilCApp.swift in Sources */,
 				100000000000000000000103 /* Presentation/ContentView.swift in Sources */,
 				10000000000000000000014C /* Presentation/AppHaptics.swift in Sources */,
@@ -546,7 +804,7 @@
 				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
-				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
 				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
 				MTL_FAST_MATH = YES;
 				ONLY_ACTIVE_ARCH = YES;
@@ -598,7 +856,7 @@
 				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
-				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
 				SDKROOT = iphoneos;
@@ -613,6 +871,8 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+                ENABLE_USER_SCRIPT_SANDBOXING = NO;
+                CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = NO;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = 3W96U86P58;
@@ -629,7 +889,8 @@
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
-				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				LD_RUNPATH_SEARCH_PATHS = ("$(inherited)", "@executable_path/Frameworks");
 				MARKETING_VERSION = 0.1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = app.lilc;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -644,6 +905,8 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+                ENABLE_USER_SCRIPT_SANDBOXING = NO;
+                CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = NO;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = 3W96U86P58;
@@ -660,7 +923,8 @@
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
-				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				LD_RUNPATH_SEARCH_PATHS = ("$(inherited)", "@executable_path/Frameworks");
 				MARKETING_VERSION = 0.1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = app.lilc;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -679,7 +943,7 @@
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = 3W96U86P58;
 				GENERATE_INFOPLIST_FILE = YES;
-				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
 				MARKETING_VERSION = 0.1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = lilCTests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -697,7 +961,7 @@
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = 3W96U86P58;
 				GENERATE_INFOPLIST_FILE = YES;
-				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
 				MARKETING_VERSION = 0.1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = lilCTests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -714,7 +978,7 @@
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = 3W96U86P58;
 				GENERATE_INFOPLIST_FILE = YES;
-				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
 				MARKETING_VERSION = 0.1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = app.lilc.uitests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -732,7 +996,7 @@
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = 3W96U86P58;
 				GENERATE_INFOPLIST_FILE = YES;
-				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
 				MARKETING_VERSION = 0.1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = app.lilc.uitests;
 				PRODUCT_NAME = "$(TARGET_NAME)";

@@ -7,6 +7,185 @@ import UIKit
 final class StoreScreenshots: XCTestCase {
     private var app: XCUIApplication!
 
+    func testDirectoryAppFollowsSelectedLanguage() {
+        app = XCUIApplication()
+        app.launchArguments = ["UITEST_STORE_SHOTS"]
+        app.launch()
+        openIDE()
+        app.buttons["language-c"].tap()
+        XCTAssertTrue(app.buttons["home-directory"].waitForExistence(timeout: 5))
+        capture("ide-app-grid")
+        app.buttons["home-directory"].tap()
+        XCTAssertTrue(app.staticTexts["DIRECTORY"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["C workspace"].exists)
+        tapBack()
+        app.buttons["language-python"].tap()
+        app.buttons["home-directory"].tap()
+        XCTAssertTrue(app.staticTexts["Python workspace"].waitForExistence(timeout: 5))
+        capture("directory-python")
+    }
+
+    func testEdsgerChatAndCoursesNavigation() {
+        app = XCUIApplication()
+        app.launchArguments = ["UITEST_STORE_SHOTS", "-lilc.appearance.colorway", "light", "-lilc.selected.language", "c"]
+        app.launch()
+        XCTAssertTrue(app.textFields["edsger-composer"].waitForExistence(timeout: 5) || app.textViews["edsger-composer"].exists, app.debugDescription)
+        app.buttons["IDE"].tap()
+        XCTAssertTrue(app.buttons["home-editor"].waitForExistence(timeout: 5))
+        app.buttons["home-chat"].tap()
+        capture("edsger-empty")
+        app.buttons["edsger-courses"].tap()
+        XCTAssertTrue(app.staticTexts["Lessons"].waitForExistence(timeout: 5))
+        let lesson = app.buttons.matching(NSPredicate(format: "label CONTAINS 'Lesson 1 of 20'")).firstMatch
+        XCTAssertTrue(lesson.exists)
+        lesson.tap()
+        XCTAssertTrue(app.buttons["RUN"].waitForExistence(timeout: 5))
+        tapBack()
+        app.buttons["IDE"].tap()
+        app.buttons["home-chat"].tap()
+        XCTAssertTrue(app.textFields["edsger-composer"].waitForExistence(timeout: 5) || app.textViews["edsger-composer"].exists)
+        app.buttons["edsger-history"].tap()
+        XCTAssertTrue(app.navigationBars["EDSGER"].waitForExistence(timeout: 5))
+        app.buttons["edsger-new-chat-history"].tap()
+        XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5))
+        capture("edsger-keyboard")
+    }
+
+    func testEdsgerAnswersWithBundledOfflineModel() {
+        app = XCUIApplication()
+        app.launchArguments = ["UITEST_STORE_SHOTS", "-lilc.appearance.colorway", "light"]
+        app.launch()
+        app.buttons["New EDSGER chat"].tap()
+        let field = app.textFields["edsger-composer"].exists ? app.textFields["edsger-composer"] : app.textViews["edsger-composer"]
+        XCTAssertTrue(field.waitForExistence(timeout: 5))
+        field.tap(); field.typeText("What is 2 + 2? Reply with only the number.")
+        app.buttons["edsger-send"].tap()
+        XCTAssertTrue(app.staticTexts["4"].waitForExistence(timeout: 240), app.debugDescription)
+        capture("edsger-answer")
+    }
+
+    func testJavaScriptAndLuaLanguageSwitchAndRun() {
+        app = XCUIApplication()
+        app.launchArguments = ["UITEST_STORE_SHOTS"]
+        app.launch()
+        openIDE()
+        for (id, name, source) in [("javascript", "JavaScript", "console.log("), ("lua", "Lua", "local function")] {
+            let picker = app.buttons["language-" + id]
+            XCTAssertTrue(picker.waitForExistence(timeout: 10))
+            if !picker.isHittable { app.scrollViews.firstMatch.swipeUp() }
+            picker.tap()
+            capture("picker-" + id)
+            let create = app.buttons["home-new-file"]
+            if !create.isHittable { app.scrollViews.firstMatch.swipeDown() }
+            XCTAssertTrue(create.label.contains("A single " + name + " file"))
+            create.tap()
+            let editor = app.textViews["code-editor"]
+            XCTAssertTrue(editor.waitForExistence(timeout: 5), app.debugDescription)
+            XCTAssertTrue((editor.value as? String)?.contains(source) == true)
+            app.buttons["RUN"].tap()
+            XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS 'hello from lilC'")).firstMatch.waitForExistence(timeout: 10), app.debugDescription)
+            capture("run-" + id)
+            tapBack()
+        }
+        let c = app.buttons["language-c"]
+        if !c.isHittable { app.scrollViews.firstMatch.swipeUp() }
+        c.tap()
+    }
+
+    func testPythonLanguageSwitchAndRun() {
+        app = XCUIApplication()
+        app.launchArguments = ["UITEST_STORE_SHOTS"]
+        app.launch()
+        openIDE()
+        XCTAssertTrue(app.buttons["language-python"].waitForExistence(timeout: 10))
+        app.buttons["language-c"].tap()
+        capture("python-picker-c")
+        app.buttons["language-python"].tap()
+        XCTAssertTrue(app.buttons["home-new-file"].label.contains("A single Python file"), app.debugDescription)
+        capture("python-picker-python")
+        let newFile = app.buttons.matching(NSPredicate(format: "label CONTAINS 'New file'")).firstMatch
+        XCTAssertTrue(newFile.exists, app.debugDescription)
+        newFile.tap()
+        let editor = app.textViews["code-editor"]
+        XCTAssertTrue(editor.waitForExistence(timeout: 5), app.debugDescription)
+        XCTAssertTrue((editor.value as? String)?.contains("print(") == true)
+        XCTAssertFalse(app.buttons["FMT"].exists)
+        app.buttons["RUN"].tap()
+        XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS 'hello from lilC'")).firstMatch.waitForExistence(timeout: 10), app.debugDescription)
+        capture("python-run")
+        tapBack()
+        if app.buttons["IDE"].exists { app.buttons["IDE"].tap() }
+        XCTAssertTrue(app.buttons["language-c"].waitForExistence(timeout: 5))
+        app.buttons["language-c"].tap()
+        XCTAssertTrue(app.buttons["home-new-file"].label.contains("A single C file"))
+    }
+
+    func testAgentConsoleCanExpandHideAndReturnToOutput() {
+        app = XCUIApplication()
+        app.launchArguments.append("UITEST_STORE_SHOTS")
+        app.launch()
+        openIDE()
+
+        let openEditor = app.buttons["home-editor"]
+        XCTAssertTrue(openEditor.waitForExistence(timeout: 10), app.debugDescription)
+        XCTAssertFalse(app.buttons["AGENT"].exists)
+        openEditor.tap()
+
+        let agentTab = app.buttons["agent-tab"]
+        XCTAssertTrue(agentTab.waitForExistence(timeout: 8), app.debugDescription)
+        agentTab.tap()
+        XCTAssertTrue(app.textFields["Ask about or edit this project"].waitForExistence(timeout: 5))
+
+        app.buttons["Expand agent full screen"].tap()
+        XCTAssertTrue(app.buttons["Minimize agent"].waitForExistence(timeout: 5))
+        app.buttons["HIDE"].tap()
+        XCTAssertTrue(app.buttons["SHOW"].waitForExistence(timeout: 5))
+        app.buttons["SHOW"].tap()
+        XCTAssertTrue(app.buttons["Minimize agent"].waitForExistence(timeout: 5))
+        app.buttons["output-tab"].tap()
+        XCTAssertTrue(app.staticTexts["Local C workspace ready."].waitForExistence(timeout: 5))
+    }
+
+    func testBundledAgentAnswersOffline() {
+        app = XCUIApplication()
+        app.launchArguments.append("UITEST_STORE_SHOTS")
+        app.launch()
+        openIDE()
+        let openEditor = app.buttons["home-editor"]
+        XCTAssertTrue(openEditor.waitForExistence(timeout: 10), app.debugDescription)
+        openEditor.tap()
+        app.buttons["agent-tab"].tap()
+        let composer = app.textFields["Ask about or edit this project"]
+        XCTAssertTrue(composer.waitForExistence(timeout: 5))
+        composer.tap()
+        composer.typeText("Reply with exactly the word PINEAPPLE. Do not use tools.")
+        app.buttons["Send to agent"].tap()
+        XCTAssertTrue(app.staticTexts["PINEAPPLE"].waitForExistence(timeout: 300), app.debugDescription)
+    }
+
+    func testAgentAsksWhatToChangeForCapabilityQuestion() {
+        app = XCUIApplication()
+        app.launchArguments.append("UITEST_STORE_SHOTS")
+        app.launch()
+        openIDE()
+        let openEditor = app.buttons["home-editor"]
+        XCTAssertTrue(openEditor.waitForExistence(timeout: 10), app.debugDescription)
+        openEditor.tap()
+        let editor = app.textViews["code-editor"]
+        XCTAssertTrue(editor.waitForExistence(timeout: 5))
+        let originalCode = editor.value as? String
+
+        app.buttons["agent-tab"].tap()
+        let composer = app.textFields["Ask about or edit this project"]
+        XCTAssertTrue(composer.waitForExistence(timeout: 5))
+        composer.tap()
+        composer.typeText("Can you edit anything in my current file")
+        app.buttons["Send to agent"].tap()
+
+        XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH 'Yes. What would you like me to change'")).firstMatch.waitForExistence(timeout: 5), app.debugDescription)
+        XCTAssertEqual(editor.value as? String, originalCode)
+    }
+
     func testCaptureListingScreens() {
         XCUIDevice.shared.orientation = .portrait
 
@@ -14,13 +193,15 @@ final class StoreScreenshots: XCTestCase {
         app.launchArguments.append("UITEST_STORE_SHOTS")
         app.launch()
         XCTAssertTrue(app.wait(for: .runningForeground, timeout: 15))
+        openIDE()
         sleep(2)
 
-        XCTAssertTrue(app.staticTexts["Projects"].waitForExistence(timeout: 8), app.debugDescription)
+        XCTAssertTrue(app.buttons["home-directory"].waitForExistence(timeout: 8), app.debugDescription)
         capture("01-home")
 
-        XCTAssertTrue(app.buttons["LEARN"].waitForExistence(timeout: 4), app.debugDescription)
-        app.buttons["LEARN"].tap()
+        XCTAssertTrue(app.buttons["home-chat"].waitForExistence(timeout: 4), app.debugDescription)
+        app.buttons["home-chat"].tap()
+        app.buttons["edsger-courses"].tap()
         XCTAssertTrue(app.staticTexts["Lessons"].waitForExistence(timeout: 8), app.debugDescription)
         XCTAssertTrue(app.staticTexts["Challenges"].waitForExistence(timeout: 4), app.debugDescription)
 
@@ -65,8 +246,8 @@ final class StoreScreenshots: XCTestCase {
 
         tapBack()
         sleep(1)
-        XCTAssertTrue(app.buttons["HOME"].waitForExistence(timeout: 4), app.debugDescription)
-        app.buttons["HOME"].tap()
+        XCTAssertTrue(app.buttons["IDE"].waitForExistence(timeout: 4), app.debugDescription)
+        app.buttons["IDE"].tap()
         let settings = app.buttons["Settings"]
         XCTAssertTrue(settings.waitForExistence(timeout: 6), app.debugDescription)
         settings.tap()
@@ -82,6 +263,7 @@ final class StoreScreenshots: XCTestCase {
         app.launchArguments.append("UITEST_STORE_SHOTS")
         app.launch()
         XCTAssertTrue(app.wait(for: .runningForeground, timeout: 15))
+        openIDE()
         sleep(2)
 
         let settings = app.buttons["Settings"]
@@ -99,6 +281,7 @@ final class StoreScreenshots: XCTestCase {
         app.launchArguments.append("UITEST_STORE_SHOTS")
         app.launch()
         XCTAssertTrue(app.wait(for: .runningForeground, timeout: 15))
+        app.buttons["edsger-courses"].tap()
 
         let helloCard = app.buttons.matching(NSPredicate(format: "label CONTAINS 'Lesson 1 of 20'")).firstMatch
         XCTAssertTrue(helloCard.waitForExistence(timeout: 8), app.debugDescription)
@@ -119,6 +302,7 @@ final class StoreScreenshots: XCTestCase {
         app.launchArguments.append("UITEST_STORE_SHOTS")
         app.launch()
         XCTAssertTrue(app.wait(for: .runningForeground, timeout: 15))
+        app.buttons["edsger-courses"].tap()
 
         let helloCard = app.buttons.matching(NSPredicate(format: "label CONTAINS 'Lesson 1 of 20'")).firstMatch
         XCTAssertTrue(helloCard.waitForExistence(timeout: 8), app.debugDescription)
@@ -131,6 +315,11 @@ final class StoreScreenshots: XCTestCase {
         XCTAssertTrue(run.waitForExistence(timeout: 5))
         run.tap()
         assertStdinSitsAboveKeyboard()
+    }
+
+    private func openIDE() {
+        XCTAssertTrue(app.buttons["IDE"].waitForExistence(timeout: 5), app.debugDescription)
+        app.buttons["IDE"].tap()
     }
 
     private func assertStdinSitsAboveKeyboard() {

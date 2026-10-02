@@ -37,6 +37,8 @@ services/agent-worker/node_modules/
 # Local build artifacts
 vendor/conformance/harness
 vendor/probe*
+vendor/llama/
+lilC/Resources/Models/*.gguf
 
 # Web app (source snapshot under apps/web)
 apps/web/node_modules/
@@ -47,3 +49,10 @@ apps/web/.vite/
 .DS_Store
 .idea/
 *.swp
+
+# Reproducible Python runtime downloads (see scripts/fetch-python-assets.sh)
+vendor/python/downloads/
+vendor/python/3.14-b11/
+
+# Pinned math wheels; reproduced by scripts/fetch-math-assets.py
+vendor/math/*.whl

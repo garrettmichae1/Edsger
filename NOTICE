@@ -10,5 +10,28 @@ Copyright (c) 2015, Joseph Poirier
 PicoC is vendored under the BSD 3-Clause License.
 See lilC/Vendor/PicoC/LICENSE.
 
+Qwen3.5-4B model weights by Qwen are distributed under Apache License 2.0.
+The text-only Q4_K_M GGUF conversion is from Canfield/Qwen3.5-4B-Q4_K_M-GGUF.
+See Docs/LOCAL_AGENT.md for provenance and source links.
+
+llama.cpp by ggml-org is distributed under the MIT License.
+See https://github.com/ggml-org/llama.cpp/blob/master/LICENSE.
+
 The lilC name, icon, and App Store listing are reserved. See TRADEMARKS.md.
-The source code (other than vendored PicoC) is licensed under the Apache License, Version 2.0. See LICENSE.
+The source code (other than third-party components) is licensed under the Apache License, Version 2.0. See LICENSE.
+
+CPython 3.14.7 (Python Software Foundation) is distributed under the PSF License Agreement and included historical licenses. BeeWare Python-Apple-support 3.14-b11 is BSD-3-Clause. Its binary distribution includes BZip2, libFFI, mpdecimal, OpenSSL, XZ, and Zstandard. Full notices are in vendor/python/licenses and copied into the app's Python-Licenses folder. See Docs/PYTHON_RUNTIME.md for pinned provenance.
+
+Lua 5.5.1 by Lua.org, PUC-Rio is distributed under the MIT License.
+See lilC/Vendor/Lua/LICENSE.txt.
+Acorn 8.15.0 is distributed under the MIT License.
+See vendor/javascript/Acorn-LICENSE.txt.
+JavaScriptCore is provided by the iOS system framework.
+
+SwiftMath 1.7.3 by Computer Inspirations is distributed under the MIT License.
+See lilC/Resources/SwiftMath-LICENSE.txt. Math fonts and their license notices are bundled in SwiftMath’s mathFonts.bundle.
+Source: https://github.com/mgriebling/SwiftMath
+
+Textual 0.5.0 and its runtime dependencies provide offline rich Markdown formatting and syntax highlighting.
+See lilC/Resources/Textual-LICENSES.txt for license notices. Existing chat math continues to render with SwiftMath.
+Source: https://github.com/gonzalezreal/textual

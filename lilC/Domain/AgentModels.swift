@@ -62,8 +62,8 @@ enum AgentEndpointPolicy {
     }
 }
 
-struct AgentChatMessage: Identifiable, Equatable {
-    enum Role: String {
+struct AgentChatMessage: Identifiable, Equatable, Codable {
+    enum Role: String, Codable {
         case user
         case assistant
         case system
@@ -100,7 +100,7 @@ struct AgentToolCall: Equatable {
 /// Build-time agent routing. Provider keys never belong in source, Info.plist, or UserDefaults.
 enum AgentRuntimeConfig {
     /// Flip to true in a later release to show Agent tab, Settings, and IAP again. Architecture stays in the tree.
-    static let surfacesVisibleInThisRelease = false
+    static let surfacesVisibleInThisRelease = true
 
     static let model = "gpt-4o-mini"
     #if DEBUG
@@ -109,4 +109,11 @@ enum AgentRuntimeConfig {
     static let gatewayURL = "https://api.lilc.app/v1"
     #endif
     static let allowedHosts = ["api.lilc.app"]
+}
+
+/// One bounded completion review after mutations, before claiming the task is done.
+enum AgentCompletionReview {
+    static let prompt = """
+    Before finishing, verify the original request against the file changes you actually made. Does the code implement the requested behavior, including function bodies rather than only declarations? If something is missing, read the file and fix it with tools now. Otherwise give a brief accurate final answer. Do not repeat successful changes.
+    """
 }

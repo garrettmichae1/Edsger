@@ -9,8 +9,13 @@ final class LinuxCourseStore {
     static let shared = LinuxCourseStore()
     static let productID = LinuxCourseCatalog.productID
     static let debugUnlockKey = "lilc.linux.debugUnlock"
+    static let loadFailedMessage =
+        "Couldn't load the Linux course from the App Store. Try again in a few minutes."
+    static let purchaseUnavailableMessage =
+        "The Linux course isn't available to buy right now. Try again later."
 
     private let defaults: UserDefaults
+    private var isListeningForTransactions = false
 
     var product: Product?
     var isOwned = false
@@ -28,12 +33,11 @@ final class LinuxCourseStore {
     func loadStore() async {
         do {
             let products = try await Product.products(for: [Self.productID])
-            product = products.first
-            if product == nil {
-                storeMessage = "Store products are not in App Store Connect yet. The paywall is ready for product \(Self.productID)."
-            }
+            product = products.first { $0.id == Self.productID }
+            storeMessage = product == nil ? Self.loadFailedMessage : nil
         } catch {
-            storeMessage = "Store products are not in App Store Connect yet. The paywall is ready for product \(Self.productID)."
+            product = nil
+            storeMessage = Self.loadFailedMessage
         }
         await refreshEntitlements()
         listenForTransactions()
@@ -60,7 +64,7 @@ final class LinuxCourseStore {
 
     func purchase() async {
         guard let product else {
-            storeMessage = "Create a non-consumable product in App Store Connect with product ID \(Self.productID)."
+            storeMessage = Self.purchaseUnavailableMessage
             return
         }
         isPurchasing = true
@@ -71,8 +75,10 @@ final class LinuxCourseStore {
             case .success(let verification):
                 if case .verified(let transaction) = verification {
                     await transaction.finish()
+                    storeMessage = nil
+                } else {
+                    storeMessage = "Couldn't verify the purchase. Try Restore Purchases."
                 }
-                storeMessage = nil
                 await refreshEntitlements()
             case .userCancelled, .pending:
                 break
@@ -99,8 +105,15 @@ final class LinuxCourseStore {
     }
 
     private func listenForTransactions() {
+        guard !isListeningForTransactions else { return }
+        isListeningForTransactions = true
         Task { [weak self] in
-            for await _ in Transaction.updates {
+            for await result in Transaction.updates {
+                if case .verified(let transaction) = result,
+                   transaction.productID == Self.productID
+                {
+                    await transaction.finish()
+                }
                 await self?.refreshEntitlements()
             }
         }

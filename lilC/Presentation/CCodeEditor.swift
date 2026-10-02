@@ -58,6 +58,7 @@ enum CCodeEditorKeyboardPolicy {
 struct CCodeEditor: UIViewRepresentable {
     @Binding var text: String
     var fileID: String
+    var language: ProgrammingLanguage = .c
     var isFocused: Bool
     var jump: CaretJump?
     var findVisible: Bool
@@ -93,7 +94,7 @@ struct CCodeEditor: UIViewRepresentable {
         textView.inputAssistantItem.leadingBarButtonGroups = []
         textView.inputAssistantItem.trailingBarButtonGroups = []
         textView.textContainer.lineFragmentPadding = 0
-        let accessory = CSymbolAccessoryView()
+        let accessory = CSymbolAccessoryView(language: language)
         accessory.coordinator = context.coordinator
         textView.inputAccessoryView = accessory
         context.coordinator.accessory = accessory
@@ -215,7 +216,7 @@ struct CCodeEditor: UIViewRepresentable {
             .foregroundColor: foreground
         ], range: full)
         if syntaxColoring {
-            for token in CSyntaxLexer.tokens(in: textView.text) {
+            for token in ScriptSyntax.tokens(in: textView.text, language: language) {
                 guard NSMaxRange(token.range) <= full.length else { continue }
                 storage.addAttribute(
                     .foregroundColor,
@@ -290,6 +291,16 @@ struct CCodeEditor: UIViewRepresentable {
             self.parent = parent
         }
 
+        func textView(_ textView: UITextView, shouldChangeTextIn range: NSRange, replacementText text: String) -> Bool {
+            guard parent.language != .c, text == "\n", range.length == 0 else { return true }
+            let before = (textView.text as NSString).substring(to: range.location)
+            let insertion = ScriptSyntax.newlineIndent(before: before, language: parent.language)
+            textView.text = (textView.text as NSString).replacingCharacters(in: range, with: insertion)
+            textView.selectedRange = NSRange(location: range.location + (insertion as NSString).length, length: 0)
+            parent.text = textView.text; recolor(textView)
+            return false
+        }
+
         func textViewDidChange(_ textView: UITextView) {
             parent.text = textView.text ?? ""
             recolor(textView)
@@ -316,7 +327,7 @@ struct CCodeEditor: UIViewRepresentable {
         }
 
         func formatBuffer() {
-            guard let textView else { return }
+            guard parent.language == .c, let textView else { return }
             let original = textView.text ?? ""
             let selected = textView.selectedRange
             let output = CIndentFormatter.formatKeepingCaret(original, caretUTF16: selected.location)
@@ -422,7 +433,7 @@ final class CSymbolAccessoryView: UIInputView {
         stack.arrangedSubviews.compactMap { ($0 as? UIButton)?.accessibilityLabel }
     }
 
-    init() {
+    init(language: ProgrammingLanguage = .c) {
         super.init(frame: CGRect(x: 0, y: 0, width: 0, height: 40), inputViewStyle: .keyboard)
         allowsSelfSizing = true
         autoresizingMask = [.flexibleWidth]
@@ -440,7 +451,7 @@ final class CSymbolAccessoryView: UIInputView {
         ])
         layoutMargins = UIEdgeInsets(top: 0, left: 4, bottom: 0, right: 4)
 
-        for symbol in ["{", "}", "(", ")", ";", "*", "&"] {
+        for symbol in (language == .python ? [":", "_", "(", ")", "[", "]", "#"] : ["{", "}", "(", ")", ";", "*", "&"]) {
             let button = makeButton(title: symbol, label: symbol)
             button.addAction(UIAction { [weak self] _ in
                 self?.coordinator?.insertSymbol(symbol)
@@ -469,7 +480,7 @@ final class CSymbolAccessoryView: UIInputView {
             self?.coordinator?.formatBuffer()
         }, for: .touchUpInside)
         formatButton = format
-        stack.addArrangedSubview(format)
+        if language == .c { stack.addArrangedSubview(format) }
 
         let dismiss = makeButton(systemName: "keyboard.chevron.compact.down", label: "Hide keyboard")
         dismiss.addAction(UIAction { [weak self] _ in
