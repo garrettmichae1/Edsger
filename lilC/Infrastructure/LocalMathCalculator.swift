@@ -4,7 +4,6 @@ import Foundation
 actor LocalMathCalculator: MathCalculating {
     static let shared = LocalMathCalculator()
     private var cache: [String: MathCalculation] = [:]
-    private var warmed = false
 
     func calculate(_ request: MathRequest) async throws -> MathCalculation {
         try Task.checkCancellation()
@@ -13,7 +12,8 @@ actor LocalMathCalculator: MathCalculating {
         let json = String(decoding: try encoder.encode(request), as: UTF8.self)
         if let cached = cache[json] { return cached }
         let job = MathJob()
-        let seconds = warmed ? 2.0 : 8.0
+        // Startup has its own budget in the native bridge.
+        let seconds = 8.0
         let result = await withTaskCancellationHandler {
             await withCheckedContinuation { continuation in
                 DispatchQueue.global(qos: .userInitiated).async {
@@ -23,12 +23,8 @@ actor LocalMathCalculator: MathCalculating {
         } onCancel: { job.stop() }
         try Task.checkCancellation()
         if result.ok {
-            warmed = true
             if cache.count >= 64 { cache.removeAll(keepingCapacity: true) }
             cache[json] = result
-        } else {
-            // The host may have discarded an interrupted interpreter. Allow a cold-start budget next time.
-            warmed = false
         }
         return result
     }
@@ -52,6 +48,7 @@ private final class MathJob: @unchecked Sendable {
                 owner.output += String(decoding: UnsafeBufferPointer(start: UnsafeRawPointer(bytes).assumingMemoryBound(to: UInt8.self), count: Int(count)), as: UTF8.self)
             }, Unmanaged.passUnretained(self).toOpaque())
         if status == 3 { return .unavailable("Python is busy. Stop the active run or wait for it to finish, then try again.") }
+        if status == 5 { return .unavailable("The math engine took too long to start. Please try again.") }
         if status == 4 { return .unavailable("The calculation exceeded its time limit. Try a simpler expression.") }
         if status == 2 { return .unavailable("Calculation stopped.") }
         guard status == 0, let result = try? JSONDecoder().decode(MathCalculation.self, from: Data(output.utf8)) else {

@@ -28,7 +28,7 @@ Limits, inequalities, general equation systems, complex-domain solving, eigenval
 
 `LocalMathCalculator` uses the existing C Python bridge with a dedicated warm interpreter, isolated from disposable IDE interpreters. The process-wide engine lock prevents concurrent Python execution. A busy engine returns immediately so a chat calculation does not wait behind IDE `input()`. The calculation cache holds up to 64 successful requests.
 
-Each fresh job has a cooperative deadline (8 seconds for cold start, 2 seconds after success), checked through CPython tracing, plus task cancellation. Interrupted interpreters are discarded; the next request gets a cold-start budget. Initial CPython setup/model loading and native C work cannot be forcibly interrupted mid-call. These are not hard process-level execution deadlines. Size and complexity bounds reduce native work: 400-byte expressions, 80-byte bounds, 120 AST nodes, nesting at most 16, numeric powers in −20…20, 4,096-bit rational intermediates, expansion budget 2,000 terms, bounded rendered output. Requests do not execute arbitrary Python or access files.
+SymPy startup has a separate 30-second cooperative deadline. Every calculation receives a fresh 8-second budget after startup, checked through CPython tracing, plus task cancellation. Startup failures have a distinct message and do not tell the user to simplify a valid expression. Interrupted interpreters are discarded. Initial CPython setup/model loading and native C work cannot be forcibly interrupted mid-call. These are not hard process-level execution deadlines. Size and complexity bounds reduce native work: 400-byte expressions, 80-byte bounds, 120 AST nodes, nesting at most 16, numeric powers in −20…20, 4,096-bit rational intermediates, expansion budget 2,000 terms, bounded rendered output. Requests do not execute arbitrary Python or access files.
 
 Both the arithmetic fast path and successful result display work without a model explanation. Model-driven natural-language planning still requires the bundled model. The interpreted input is always visible so users can catch an incorrect translation.
 
@@ -54,7 +54,7 @@ python3 -m venv /tmp/edsger-math
 scripts/test-math-domain.sh
 ```
 
-The native test needs host CPython development headers/library and a C compiler. It exercises the actual bridge for cold/warm use, reuse across threads, deadlines, cancellation, recovery, and IDE isolation/contention. The domain script needs Swift 6 and runs the same routing tests included in the iOS unit target. The iOS serialized unit suite additionally exercises the bundled calculator without the language model.
+The native test needs host CPython development headers/library and a C compiler. It exercises the actual bridge for cold/warm use, a deliberately slow startup that does not consume the calculation budget, reuse across threads, deadlines, cancellation, recovery, and IDE isolation/contention. The domain script needs Swift 6 and runs the same routing tests included in the iOS unit target. The iOS serialized unit suite additionally exercises the bundled calculator without the language model.
 
 On a Mac with the existing model and inference framework installed:
 

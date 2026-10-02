@@ -18,6 +18,8 @@ with tempfile.TemporaryDirectory(prefix='edsger-math-native-') as directory:
     (work / 'Python/Python.h').write_text('#include <Python.h>\n')
     script = work / 'main.py'
     script.write_text("import sys\nassert 'sympy' not in sys.modules\ninput()\n")
+    slow_bootstrap = work / 'slow_bootstrap.py'
+    slow_bootstrap.write_text("import time\ntime.sleep(0.2)\ndef _calculate_json(request):\n    return '{\"ok\": true, \"exact\": \"1/2\"}'\n")
     binary = work / 'native-smoke'
     library = sysconfig.get_config_var('LDLIBRARY')
     libdir = Path(sysconfig.get_config_var('LIBDIR'))
@@ -35,4 +37,4 @@ with tempfile.TemporaryDirectory(prefix='edsger-math-native-') as directory:
     subprocess.run(command, check=True)
     subprocess.run([str(binary), sys.base_prefix, str(Path(sympy.__file__).parent.parent),
                     str(root / 'lilC/Infrastructure/math_bootstrap.py'), str(root / 'lilC/Infrastructure/python_bootstrap.py'),
-                    str(script), str(work)], check=True, timeout=45)
+                    str(script), str(work), str(slow_bootstrap)], check=True, timeout=45)

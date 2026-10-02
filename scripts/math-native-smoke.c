@@ -39,8 +39,18 @@ static void *cancel_cold_math(void *arg) {
     int status = calculate(arg, 8); assert(status == 2); return NULL;
 }
 int main(int argc, char **argv) {
-    assert(argc == 7);
+    assert(argc == 8);
     home = argv[1]; packages = argv[2]; math_bootstrap = argv[3]; ide_bootstrap = argv[4]; script = argv[5]; root = argv[6];
+    // Slow startup exceeds the execution budget but must not time out the calculation.
+    const char *production_bootstrap = math_bootstrap;
+    math_bootstrap = argv[7];
+    lilc_python_job *startup_job = lilc_python_create();
+    assert(calculate(startup_job, 0.05) == 0);
+    lilc_python_destroy(startup_job);
+    startup_job = lilc_python_create();
+    assert(calculate(startup_job, 0.000000001) == 4);
+    lilc_python_destroy(startup_job);
+    math_bootstrap = production_bootstrap;
     success(); success(); // cold and warm interpreter
     pthread_t worker;
     pthread_create(&worker, NULL, math_on_worker, NULL); pthread_join(worker, NULL);

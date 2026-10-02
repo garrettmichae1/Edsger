@@ -201,7 +201,9 @@ int lilc_python_calculate(lilc_python_job *j, const char *home, const char *boot
     PyGILState_STATE gil = PyGILState_Ensure();
     PyThreadState *main_state = PyThreadState_Get();
     active_job = j;
-    j->deadline = monotonic_seconds() + seconds;
+    // Importing SymPy must not consume the calculation budget on a cold device.
+    j->deadline = monotonic_seconds() + 30.0;
+    int startup_timed_out = 0;
     int failed = 1;
     if (!math_state) {
         math_state = Py_NewInterpreter();
@@ -214,6 +216,7 @@ int lilc_python_calculate(lilc_python_job *j, const char *home, const char *boot
             FILE *file = fopen(bootstrap, "r");
             PyObject *loaded = file ? PyRun_FileEx(file, bootstrap, Py_file_input, math_globals, math_globals, 1) : NULL;
             if (!loaded) {
+                startup_timed_out = j->timed_out;
                 PyErr_Clear(); PyEval_SetTrace(NULL, NULL);
                 Py_DECREF(math_globals); math_globals = NULL;
                 Py_EndInterpreter(math_state); math_state = NULL;
@@ -222,6 +225,7 @@ int lilc_python_calculate(lilc_python_job *j, const char *home, const char *boot
         }
     } else { PyThreadState_Swap(math_state); }
     if (math_state) {
+        j->deadline = monotonic_seconds() + seconds;
         PyEval_SetTrace(trace, NULL);
         PyObject *function = PyDict_GetItemString(math_globals, "_calculate_json");
         PyObject *arg = PyUnicode_FromString(request);
@@ -247,5 +251,5 @@ int lilc_python_calculate(lilc_python_job *j, const char *home, const char *boot
     active_job = NULL;
     PyGILState_Release(gil);
     pthread_mutex_unlock(&engine_lock);
-    return atomic_load(&j->stopped) ? 2 : (j->timed_out ? 4 : failed);
+    return atomic_load(&j->stopped) ? 2 : (startup_timed_out ? 5 : (j->timed_out ? 4 : failed));
 }
