@@ -250,23 +250,6 @@ struct EdsgerScreen<Courses: View>: View {
                     Button { showsHistory = false; session.stop(); openHome() } label: {
                         historyShortcut("IDE", systemImage: "house")
                     }
-                    Button {
-                        session.newConversation(); section = .chat; showsHistory = false; composerFocused = true
-                    } label: {
-                        HStack(spacing: 12) {
-                            EdsgerChatGlyph()
-                                .stroke(style: StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round))
-                                .frame(width: 25, height: 25)
-                            Text("New chat").font(.system(size: 17, weight: .semibold))
-                            Spacer()
-                            Image(systemName: "plus").font(.system(size: 19, weight: .medium))
-                        }
-                        .foregroundStyle(.white)
-                        .padding(.horizontal, 20)
-                        .padding(.vertical, 18)
-                        .background(Color.blue, in: Capsule())
-                    }
-                    .accessibilityIdentifier("edsger-new-chat-history")
                 }
                 .padding(.top, 12)
                 .padding(.bottom, 24)

@@ -46,7 +46,8 @@ final class StoreScreenshots: XCTestCase {
         XCTAssertTrue(app.textFields["edsger-composer"].waitForExistence(timeout: 5) || app.textViews["edsger-composer"].exists)
         app.buttons["edsger-history"].tap()
         XCTAssertTrue(app.navigationBars["EDSGER"].waitForExistence(timeout: 5))
-        app.buttons["edsger-new-chat-history"].tap()
+        app.navigationBars["EDSGER"].buttons["Done"].tap()
+        app.buttons["New EDSGER chat"].tap()
         XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5))
         capture("edsger-keyboard")
     }
