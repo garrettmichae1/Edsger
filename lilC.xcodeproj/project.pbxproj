@@ -7,6 +7,10 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+        F7B000000000000000000004 = {isa = PBXBuildFile; fileRef = F7C000000000000000000004; };
+        F7B000000000000000000003 = {isa = PBXBuildFile; fileRef = F7C000000000000000000003; };
+        F7B000000000000000000002 = {isa = PBXBuildFile; fileRef = F7C000000000000000000002; };
+        F7B000000000000000000001 = {isa = PBXBuildFile; fileRef = F7C000000000000000000001; };
         F6B000000000000000000001 = {isa = PBXBuildFile; productRef = F6D000000000000000000001; };
         F6B000000000000000000002 = {isa = PBXBuildFile; fileRef = F6C000000000000000000002; };
         F5B000000000000000000001 = {isa = PBXBuildFile; productRef = F5D000000000000000000001; };
@@ -141,6 +145,10 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+        F7C000000000000000000004 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MathEngineTests.swift; sourceTree = "<group>"; };
+        F7C000000000000000000003 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Infrastructure/LocalMathCalculator.swift; sourceTree = "<group>"; };
+        F7C000000000000000000002 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Domain/MathPlanning.swift; sourceTree = "<group>"; };
+        F7C000000000000000000001 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Domain/MathCalculation.swift; sourceTree = "<group>"; };
         F6C000000000000000000002 = {isa = PBXFileReference; lastKnownFileType = text; path = "Resources/Textual-LICENSES.txt"; sourceTree = "<group>"; };
         F5C000000000000000000002 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Domain/MathMessage.swift; sourceTree = "<group>"; };
         F5C000000000000000000003 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Presentation/MathAnswerView.swift; sourceTree = "<group>"; };
@@ -324,6 +332,9 @@
                 F6C000000000000000000002,
                 E4C000000000000000000002,
                 E4C000000000000000000001,
+                F7C000000000000000000001,
+                F7C000000000000000000002,
+                F7C000000000000000000003,
                 E4C000000000000000000000,
                 D3C000000000000000000021,
                 D3C000000000000000000020,
@@ -434,6 +445,7 @@
 			isa = PBXGroup;
 			children = (
 				10000000000000000000000D /* lilCTests.swift */,
+                F7C000000000000000000004,
 			);
 			path = lilCTests;
 			sourceTree = "<group>";
@@ -631,6 +643,9 @@
                 F5B000000000000000000003,
                 E4B000000000000000000002,
                 E4B000000000000000000001,
+                F7B000000000000000000001,
+                F7B000000000000000000002,
+                F7B000000000000000000003,
                 E4B000000000000000000000,
                 D3B000000000000000000021,
                 D3B000000000000000000020,
@@ -730,6 +745,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				10000000000000000000010D /* lilCTests.swift in Sources */,
+                F7B000000000000000000004,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

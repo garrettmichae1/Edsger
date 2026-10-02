@@ -18,7 +18,7 @@ final class TutorSession {
     var current: TutorConversation { conversations.first { $0.id == selectedID } ?? conversations[0] }
     var messages: [TutorMessage] { current.messages }
 
-    init(client: any TutorCompleting = LocalAgentClient.shared, storageURL: URL? = nil) {
+    init(client: any TutorCompleting = CalculatingTutorClient.shared, storageURL: URL? = nil) {
         self.client = client
         let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
         self.storageURL = storageURL ?? support.appendingPathComponent("lilC/edsger-conversations.json")

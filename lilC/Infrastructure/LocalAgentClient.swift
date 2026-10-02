@@ -25,7 +25,7 @@ enum LocalAgentError: LocalizedError {
 }
 
 /// One model instance shared by every agent conversation. llama.cpp keeps all inference on device.
-actor LocalAgentClient: AgentCompleting, TutorCompleting {
+actor LocalAgentClient: AgentCompleting, TutorCompleting, MathPlanning {
     static let shared = LocalAgentClient()
 
     // Immutable ownership box permits deterministic cleanup from nonisolated deinit.
@@ -74,13 +74,14 @@ actor LocalAgentClient: AgentCompleting, TutorCompleting {
         guard let model, let context else { throw LocalAgentError.modelLoadFailed }
         var messages = (try JSONSerialization.jsonObject(with: messagesJSON)) as? [[String: Any]] ?? []
         let vocab = llama_model_get_vocab(model)
+        let tokenCapacity = contextSize
         var tokens = [llama_token](repeating: 0, count: Int(contextSize))
         var count: Int32 = 0
         // Drop complete older turns, never the system context or the active tool sequence.
         while true {
             let prompt = Self.prompt(messages: messages)
             count = prompt.withCString { cString in
-                llama_tokenize(vocab, cString, Int32(strlen(cString)), &tokens, contextSize, true, true)
+                llama_tokenize(vocab, cString, Int32(strlen(cString)), &tokens, tokenCapacity, true, true)
             }
             if count > 0 && count < contextSize - 3072 { break }
             let userIndices = messages.indices.filter { messages[$0]["role"] as? String == "user" }
@@ -146,12 +147,13 @@ actor LocalAgentClient: AgentCompleting, TutorCompleting {
         try loadIfNeeded()
         guard let model, let context else { throw LocalAgentError.modelLoadFailed }
         let vocab = llama_model_get_vocab(model)
+        let tokenCapacity = contextSize
         var history = messages
         var tokens = [llama_token](repeating: 0, count: Int(contextSize))
         var count: Int32 = 0
         while true {
             let prompt = TutorPrompt.make(messages: history)
-            count = prompt.withCString { llama_tokenize(vocab, $0, Int32(strlen($0)), &tokens, contextSize, true, true) }
+            count = prompt.withCString { llama_tokenize(vocab, $0, Int32(strlen($0)), &tokens, tokenCapacity, true, true) }
             if count > 0 && count < contextSize - 2048 { break }
             let users = history.indices.filter { history[$0].role == .user }
             guard users.count > 1 else { throw LocalAgentError.promptTooLong }
@@ -190,6 +192,58 @@ actor LocalAgentClient: AgentCompleting, TutorCompleting {
         if !ended { text += "\n\n*Response length reached. Ask me to continue.*" }
         onUpdate(text)
         return text
+    }
+
+    /// Short grammar-constrained planning pass on the same actor-owned model/context.
+    func mathPlan(messages: [TutorMessage]) async throws -> MathPlan {
+        try Task.checkCancellation()
+        guard let latest = messages.last, latest.text.utf8.count <= 8000 else {
+            return .clarify("Please send a shorter question with one expression or equation to calculate.")
+        }
+        try loadIfNeeded()
+        try Task.checkCancellation()
+        guard let model, let context else { throw LocalAgentError.modelLoadFailed }
+        let vocab = llama_model_get_vocab(model)
+        let tokenCapacity = contextSize
+        let prompt = MathPlannerPrompt.make(messages: messages)
+        var tokens = [llama_token](repeating: 0, count: Int(contextSize))
+        let count = prompt.withCString {
+            llama_tokenize(vocab, $0, Int32(strlen($0)), &tokens, tokenCapacity, true, true)
+        }
+        guard count > 0, count < contextSize - 512 else { throw LocalAgentError.promptTooLong }
+        llama_memory_clear(llama_get_memory(context), false)
+        for offset in stride(from: 0, to: Int(count), by: 256) {
+            try Task.checkCancellation()
+            let end = min(offset + 256, Int(count))
+            let status = tokens.withUnsafeMutableBufferPointer {
+                llama_decode(context, llama_batch_get_one($0.baseAddress! + offset, Int32(end - offset)))
+            }
+            guard status == 0 else { throw LocalAgentError.inferenceFailed }
+        }
+        let sampler = llama_sampler_chain_init(llama_sampler_chain_default_params())
+        defer { llama_sampler_free(sampler) }
+        guard let grammar = llama_sampler_init_grammar(vocab, MathPlannerPrompt.grammar, "root") else {
+            throw LocalAgentError.inferenceFailed
+        }
+        llama_sampler_chain_add(sampler, grammar)
+        llama_sampler_chain_add(sampler, llama_sampler_init_greedy())
+        var data = Data()
+        var bytes = [CChar](repeating: 0, count: 4096)
+        for _ in 0..<512 {
+            try Task.checkCancellation()
+            let token = llama_sampler_sample(sampler, context, -1)
+            if llama_vocab_is_eog(vocab, token) { break }
+            let length = llama_token_to_piece(vocab, token, &bytes, Int32(bytes.count), 0, false)
+            guard length >= 0, Int(length) <= bytes.count else { throw LocalAgentError.invalidResponse }
+            data.append(contentsOf: bytes.prefix(Int(length)).map { UInt8(bitPattern: $0) })
+            guard data.count <= 6144 else { throw LocalAgentError.responseTooLong }
+            if data.last == 125, (try? JSONSerialization.jsonObject(with: data)) != nil {
+                return try MathPlan.parse(data)
+            }
+            var next = token
+            guard llama_decode(context, llama_batch_get_one(&next, 1)) == 0 else { throw LocalAgentError.inferenceFailed }
+        }
+        throw LocalAgentError.invalidResponse
     }
 
     private func loadIfNeeded() throws {

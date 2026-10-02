@@ -15,6 +15,7 @@ struct lilc_python_job {
     int eof;
     int finishing;
     double deadline;
+    int timed_out;
     char *input;
     size_t output_bytes;
     lilc_python_output output;
@@ -58,7 +59,9 @@ static int check_stop(void) {
     lilc_python_job *j = active_job;
     if (j && !j->finishing && atomic_load(&j->stopped)) { PyErr_SetString(PyExc_KeyboardInterrupt, "Stopped"); return -1; }
     if (j && !j->finishing && j->deadline > 0 && monotonic_seconds() >= j->deadline) {
-        PyErr_SetString(PyExc_TimeoutError, "Calculation time limit reached."); return -1;
+        j->timed_out = 1;
+        // BaseException avoids broad Exception handlers in symbolic algorithms swallowing the deadline.
+        PyErr_SetString(PyExc_KeyboardInterrupt, "Calculation time limit reached."); return -1;
     }
     return 0;
 }
@@ -183,6 +186,7 @@ static PyThreadState *math_state;
 static PyObject *math_globals;
 int lilc_python_calculate(lilc_python_job *j, const char *home, const char *bootstrap, const char *packages,
                           const char *request, double seconds, lilc_python_output output, void *context) {
+    if (!j || !home || !bootstrap || !packages || !request || !output || seconds <= 0) return 1;
     if (pthread_mutex_trylock(&engine_lock) != 0) return 3;
     if (atomic_load(&j->stopped)) { pthread_mutex_unlock(&engine_lock); return 2; }
     if (!initialized) {
@@ -226,14 +230,22 @@ int lilc_python_calculate(lilc_python_job *j, const char *home, const char *boot
         if (result) {
             Py_ssize_t size;
             const char *value = PyUnicode_AsUTF8AndSize(result, &size);
-            if (value && size <= 16384) { output(value, (int)size, context); failed = 0; }
+            if (value && size <= 16384 && check_stop() == 0 && !j->timed_out) {
+                output(value, (int)size, context); failed = 0;
+            }
             Py_DECREF(result);
         }
         PyErr_Clear(); PyEval_SetTrace(NULL, NULL);
+        if (j->timed_out || atomic_load(&j->stopped)) {
+            // Do not reuse potentially interrupted imports or symbolic caches.
+            Py_DECREF(math_globals); math_globals = NULL;
+            Py_EndInterpreter(math_state); math_state = NULL;
+        }
         PyThreadState_Swap(main_state);
     }
+    PyThreadState_Swap(main_state);
     active_job = NULL;
     PyGILState_Release(gil);
     pthread_mutex_unlock(&engine_lock);
-    return atomic_load(&j->stopped) ? 2 : failed;
+    return atomic_load(&j->stopped) ? 2 : (j->timed_out ? 4 : failed);
 }

@@ -7,6 +7,12 @@ import UIKit
 
 @Suite(.serialized)
 struct lilCTests {
+    @Test func bundledCalculatorWorksWithoutTheModel() async throws {
+        let result = try await LocalMathCalculator.shared.calculate(.init(operation: "evaluate", expression: "1/3+1/6"))
+        #expect(result.ok)
+        #expect(result.exact == "1/2")
+    }
+
     @MainActor
     @Test func chatMarkdownPreservesStructureAndSwiftMathAttachments() throws {
         let runs: [MathMessage.Inline] = [

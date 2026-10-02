@@ -26,18 +26,22 @@ actor LocalMathCalculator: MathCalculating {
             warmed = true
             if cache.count >= 64 { cache.removeAll(keepingCapacity: true) }
             cache[json] = result
+        } else {
+            // The host may have discarded an interrupted interpreter. Allow a cold-start budget next time.
+            warmed = false
         }
         return result
     }
 }
 
 private final class MathJob: @unchecked Sendable {
-    private let job = lilc_python_create()!
+    private let job = lilc_python_create()
     // Only accessed on the execution thread, including the synchronous C callback.
     var output = ""
-    deinit { lilc_python_destroy(job) }
-    func stop() { lilc_python_stop(job) }
+    deinit { if let job { lilc_python_destroy(job) } }
+    func stop() { if let job { lilc_python_stop(job) } }
     func run(_ request: String, seconds: Double) -> MathCalculation {
+        guard let job else { return .unavailable("The calculator could not reserve memory. Try again.") }
         let bundle = Bundle.main.bundleURL
         let status = lilc_python_calculate(job, bundle.appendingPathComponent("python").path,
             bundle.appendingPathComponent("math_bootstrap.py").path,
@@ -47,11 +51,18 @@ private final class MathJob: @unchecked Sendable {
                 let owner = Unmanaged<MathJob>.fromOpaque(context).takeUnretainedValue()
                 owner.output += String(decoding: UnsafeBufferPointer(start: UnsafeRawPointer(bytes).assumingMemoryBound(to: UInt8.self), count: Int(count)), as: UTF8.self)
             }, Unmanaged.passUnretained(self).toOpaque())
-        if status == 3 { return .unavailable("Python is busy in the IDE. Stop that run and try again.") }
+        if status == 3 { return .unavailable("Python is busy. Stop the active run or wait for it to finish, then try again.") }
+        if status == 4 { return .unavailable("The calculation exceeded its time limit. Try a simpler expression.") }
         if status == 2 { return .unavailable("Calculation stopped.") }
         guard status == 0, let result = try? JSONDecoder().decode(MathCalculation.self, from: Data(output.utf8)) else {
             return .unavailable("The calculation exceeded its time limit or the math engine was unavailable.")
         }
         return result
     }
+}
+
+// Keep concrete app dependencies out of the portable domain layer.
+extension CalculatingTutorClient {
+    static let shared = Self(tutor: LocalAgentClient.shared, planner: LocalAgentClient.shared,
+                             calculator: LocalMathCalculator.shared)
 }

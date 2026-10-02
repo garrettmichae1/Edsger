@@ -13,6 +13,41 @@ protocol AgentCompleting: Sendable {
 struct TutorSmoke {
     static func main() async throws {
         let client = LocalAgentClient(modelURL: URL(fileURLWithPath: CommandLine.arguments[1]))
+        if CommandLine.arguments.contains("--planner") {
+            let cases: [(String, String?)] = [
+                ("Solve 2x+3=11", "solve"),
+                ("What is 15% of 80?", "evaluate"),
+                ("Integrate x squared from 0 to 1", "integrate"),
+                ("Find RREF of [[1,1,2],[2,3,5]]", "rref"),
+                ("Find the variance of 1,2,3", nil),
+                ("Calculate the limit of sin(x)/x as x approaches 0", nil)
+            ]
+            for (question, operation) in cases {
+                let plan = try await client.mathPlan(messages: [.init(role: .user, text: question)])
+                print("QUESTION: \(question)\nPLAN: \(plan)\n")
+                if let operation {
+                    guard case .calculate(let request) = plan, request.operation == operation, request.isValid else {
+                        throw NSError(domain: "MathPlannerSmoke", code: 1)
+                    }
+                } else {
+                    guard case .clarify = plan else {
+                        if case .unsupported = plan { continue }
+                        throw NSError(domain: "MathPlannerSmoke", code: 2)
+                    }
+                }
+            }
+            let followup: [TutorMessage] = [
+                .init(role: .user, text: "Find the variance of 1,2,3"),
+                .init(role: .assistant, text: "Sample or population variance?"),
+                .init(role: .user, text: "Population")
+            ]
+            let plan = try await client.mathPlan(messages: followup)
+            guard case .calculate(let request) = plan, request.operation == "variance" else {
+                throw NSError(domain: "MathPlannerSmoke", code: 3)
+            }
+            print("FOLLOW-UP: \(plan)\nAll math planner smoke checks passed.")
+            return
+        }
         let mathMode = CommandLine.arguments.contains("--math")
         let cases: [(String, [String])] = mathMode ? [
             ("Show the quadratic formula in a display equation and define a, b, and c briefly.", [#"\frac"#, #"\sqrt"#]),

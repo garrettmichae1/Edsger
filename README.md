@@ -43,7 +43,7 @@ Settings stores Light or Dark in UserDefaults. The chrome is spare on purpose: p
 ## Open in Xcode
 
 1. Clone this repository.
-2. Run `scripts/fetch-agent-assets.sh` and `scripts/fetch-python-assets.sh` to fetch the pinned model, inference framework, and CPython runtime.
+2. Run `scripts/fetch-agent-assets.sh`, `scripts/fetch-python-assets.sh`, and `python3 scripts/fetch-math-assets.py` to fetch the pinned model, inference framework, and CPython runtime.
 3. Open `lilC.xcodeproj` (iOS 18 or later). For simulator builds, see [local agent setup](Docs/LOCAL_AGENT.md).
 4. Select the **lilC** scheme and a simulator or device.
 5. Build and run.

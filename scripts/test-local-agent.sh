@@ -11,6 +11,8 @@ swiftc -swift-version 6 -parse-as-library -O -F "$FRAMEWORK_DIR" -framework llam
   -Xlinker -rpath -Xlinker "$FRAMEWORK_DIR" \
   "$ROOT_DIR/lilC/Domain/AgentModels.swift" \
   "$ROOT_DIR/lilC/Domain/TutorModels.swift" \
+  "$ROOT_DIR/lilC/Domain/MathCalculation.swift" \
+  "$ROOT_DIR/lilC/Domain/MathPlanning.swift" \
   "$ROOT_DIR/lilC/Infrastructure/LocalAgentClient.swift" \
   "$ROOT_DIR/scripts/agent-smoke.swift" -o "$TEST_DIR/smoke"
 "$TEST_DIR/smoke" "$ROOT_DIR/lilC/Resources/Models/Qwen3.5-4B-Q4_K_M.gguf" "$@"

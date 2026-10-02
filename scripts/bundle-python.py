@@ -80,5 +80,10 @@ for name, _, digest in math_assets['ASSETS']:
             if 'tests' in relative.parts or '__pycache__' in relative.parts:
                 continue
             archive.extract(entry, math_packages)
+# Keep redistributable package notices in the app's existing license directory too.
+for dist in math_packages.glob('*.dist-info'):
+    for license_file in dist.rglob('LICENSE*'):
+        if license_file.is_file():
+            shutil.copyfile(license_file, app / 'Python-Licenses' / (dist.name + '-' + license_file.name))
 shutil.copyfile(root / 'lilC/Infrastructure/math_bootstrap.py', app / 'math_bootstrap.py')
 print('Bundled SymPy 1.14.0 and mpmath 1.3.0 for offline calculations.')
