@@ -13,9 +13,10 @@ struct BYOKModel: Identifiable, Codable, Equatable, Sendable {
     let name: String
 }
 
-struct BYOKChoice: Codable, Equatable, Sendable {
+struct BYOKChoice: Identifiable, Codable, Equatable, Sendable {
     let provider: BYOKProvider
     let modelID: String
+    var id: String { provider.rawValue + ":" + modelID }
 }
 
 struct BYOKConfiguration: Codable, Sendable {

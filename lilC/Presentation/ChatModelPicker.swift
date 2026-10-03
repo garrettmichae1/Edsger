@@ -19,7 +19,7 @@ struct ChatModelPicker: View {
             }
             if !providers.choices.isEmpty {
                 Divider()
-                ForEach(providers.choices, id: \.provider) { choice in
+                ForEach(providers.choices) { choice in
                     Button(providers.title(choice)) { providers.selectChat(choice) }
                 }
             }

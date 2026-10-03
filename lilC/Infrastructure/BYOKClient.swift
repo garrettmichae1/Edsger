@@ -22,25 +22,24 @@ protocol BYOKConnecting: Sendable {
 struct BYOKRelayClient: BYOKConnecting {
     private let session: URLSession
     private let baseURL: URL
-    init(baseURL: URL = BYOKRelayConfig.baseURL, session: URLSession? = nil) {
+    init(baseURL: URL = BYOKRelayConfig.baseURL, configuration: URLSessionConfiguration? = nil) {
         self.baseURL = baseURL
-        if let session { self.session = session }
-        else {
-            let config = URLSessionConfiguration.ephemeral
-            config.urlCache = nil; config.requestCachePolicy = .reloadIgnoringLocalCacheData
-            config.httpCookieStorage = nil; config.httpShouldSetCookies = false
-            config.timeoutIntervalForRequest = 135; config.timeoutIntervalForResource = 150
-            self.session = URLSession(configuration: config, delegate: BYOKNoRedirectDelegate(), delegateQueue: nil)
-        }
+        let config = configuration ?? URLSessionConfiguration.ephemeral
+        config.urlCache = nil; config.requestCachePolicy = .reloadIgnoringLocalCacheData
+        config.httpCookieStorage = nil; config.httpShouldSetCookies = false
+        config.timeoutIntervalForRequest = 135; config.timeoutIntervalForResource = 150
+        self.session = URLSession(configuration: config, delegate: BYOKNoRedirectDelegate(), delegateQueue: nil)
     }
     func models(provider: BYOKProvider, key: String) async throws -> [BYOKModel] {
         struct Catalog: Decodable { let models: [BYOKModel] }
-        return try JSONDecoder().decode(Catalog.self, from: await request(provider: provider, key: key, action: "models", body: [:])).models
+        let data = try await request(provider: provider, key: key, action: "models", body: [:])
+        guard let catalog = try? JSONDecoder().decode(Catalog.self, from: data) else { throw BYOKError.invalidResponse }
+        return catalog.models
     }
     func verify(choice: BYOKChoice, key: String) async throws {
         struct Verification: Decodable { let ok: Bool }
         let data = try await request(provider: choice.provider, key: key, action: "verify", body: ["model": choice.modelID])
-        guard try JSONDecoder().decode(Verification.self, from: data).ok else { throw BYOKError.invalidResponse }
+        guard let result = try? JSONDecoder().decode(Verification.self, from: data), result.ok else { throw BYOKError.invalidResponse }
     }
     func complete(choice: BYOKChoice, key: String, messagesJSON: Data, toolsJSON: Data) async throws -> AgentCompletion {
         let messages = try JSONSerialization.jsonObject(with: messagesJSON), tools = try JSONSerialization.jsonObject(with: toolsJSON)

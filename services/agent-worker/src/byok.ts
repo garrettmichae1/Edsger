@@ -127,7 +127,9 @@ function continuation(message: WireMessage, provider: ProviderID, model: string)
   const calls = items.filter(i => i.type === (provider === "openai" ? "function_call" : "tool_use"));
   const expected = message.tool_calls ?? [];
   if (calls.length !== expected.length || calls.some((c, index) =>
-    (provider === "openai" ? c.call_id : c.id) !== expected[index].id || c.name !== expected[index].function.name)) throw new BYOKError("invalid_continuation");
+    (provider === "openai" ? c.call_id : c.id) !== expected[index].id || c.name !== expected[index].function.name ||
+    JSON.stringify(provider === "openai" ? record(parseJSON(string(c.arguments, 65_536))) : record(c.input)) !==
+    JSON.stringify(record(parseJSON(expected[index].function.arguments))))) throw new BYOKError("invalid_continuation");
   return items;
 }
 

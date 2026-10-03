@@ -33,6 +33,6 @@ The Settings disclosure names the selected AI provider and relay/Cloudflare, lis
 - `npm ci --ignore-scripts && npm run typecheck && npm test` in `services/agent-worker`.
 - `npx wrangler deploy --dry-run` validates packaging and bindings without deploying.
 - `bash scripts/test-byok.sh` on macOS compiles the actual Keychain, provider transport, store and domain under Swift 6 and runs isolated state/history/tool validation tests without provider keys.
-- The `BYOK checks` workflow runs those checks, existing math/model regressions and a complete unsigned device build. Full simulator/physical-device agent tests and live API tests are additional release checks; an unsigned build does not cover them.
+- The `BYOK checks` workflow runs those checks, existing math/model regressions and an unsigned device build of the application and BYOK unit-test target. Full simulator/physical-device agent tests and live API tests are additional release checks; an unsigned build does not cover them.
 
 To add another provider, add its enum identity, fixed-host credential header/model filter and native request/response codec, plus catalog/probe fixtures. The Keychain, settings, consent, selection and local tool executor remain shared. Provider tools and supported model families must be explicitly reviewed rather than assuming OpenAI-compatible JSON supplies full agent support.

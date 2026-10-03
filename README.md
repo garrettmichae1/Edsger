@@ -40,6 +40,10 @@ When a program fails, lilC shows a note written for learners. Tap **ERROR** to j
 
 Settings stores Light or Dark in UserDefaults. The chrome is spare on purpose: paper or black, one accent, readable type. The PicoC note in Settings is the same one this README uses.
 
+## Optional cloud models on iPhone
+
+Settings → **BYOK** accepts personal OpenAI or Claude API keys, with explicit sharing consent and secure device-only Keychain storage. Select your verified model in Chat or Agent IDE. Chat keeps documents/math; IDE agents use the existing scoped project tools and local runtimes. Provider API usage is billed separately. The relay must be configured and deployed before cloud use; see [BYOK setup and release checks](Docs/BYOK.md). No Pro gating is added yet.
+
 ## Open in Xcode
 
 1. Clone this repository.

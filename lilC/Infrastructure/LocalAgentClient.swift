@@ -430,11 +430,12 @@ actor LocalAgentClient: AgentCompleting, TutorCompleting, MathPlanning, ChatMode
 
     static let responseGrammar = #"""
     root ::= "{" ws "\"message\":" ws string "," ws "\"tool_calls\":" ws "[" ws (call ("," ws call){0,3})? "]" ws "}"
-    call ::= "{" ws "\"name\":" ws (empty-tool | path-tool | write-tool | replace-tool) ws "}"
+    call ::= "{" ws "\"name\":" ws (empty-tool | path-tool | write-tool | replace-tool | math-tool) ws "}"
     empty-tool ::= ("\"list_files\"" | "\"list_folders\"" | "\"run_current\"" | "\"stop_run\"" | "\"read_output\"") "," ws "\"arguments\":" ws "{" ws "}"
     path-tool ::= ("\"read_file\"" | "\"create_folder\"" | "\"select_file\"" | "\"run_file\"" | "\"delete_file\"" | "\"delete_folder\"") "," ws "\"arguments\":" ws "{" ws "\"path\":" ws string ws "}"
     write-tool ::= "\"write_file\"" "," ws "\"arguments\":" ws "{" ws "\"path\":" ws string "," ws "\"contents\":" ws string ws "}"
     replace-tool ::= "\"replace_text\"" "," ws "\"arguments\":" ws "{" ws "\"path\":" ws string "," ws "\"old_text\":" ws string "," ws "\"new_text\":" ws string ws "}"
+    math-tool ::= "\"calculate_math\"" "," ws "\"arguments\":" ws "{" ws "\"operation\":" ws string "," ws "\"expression\":" ws string "," ws "\"variable\":" ws string "," ws "\"lower\":" ws string "," ws "\"upper\":" ws string ws "}"
     string ::= "\"" char* "\""
     char ::= [^"\\\x00-\x1F] | "\\" (["\\/bfnrt] | "u" [0-9a-fA-F]{4})
     ws ::= [ \t\n\r]{0,4}

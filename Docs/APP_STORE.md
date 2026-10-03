@@ -20,7 +20,7 @@ In-repo. Does not replace App Store Connect. Use this while uploading the first 
 2. Create the iOS app if it does not exist. Bundle ID in the project is `lilC` — confirm it matches the App ID in the developer portal (reverse-DNS such as `app.lilc` is typical if you still need to register one).
 3. Upload a Release build from Xcode (Organizer → Distribute) or `xcodebuild -scheme lilC -configuration Release`.
 4. Age rating questionnaire.
-5. App Privacy nutrition labels (data not collected).
+5. App Privacy nutrition labels: reassess user content and identifiers processed by the optional BYOK relay/Cloudflare and AI providers. The earlier local-only “data not collected” answer cannot be reused without reviewing the production handling and Apple’s definitions. See [BYOK release checks](BYOK.md).
 6. Screenshots. Minimum for iPhone:
    - 6.7" (iPhone 16 Pro Max / 17 Pro Max class): home, editor + hello world output, syntax error / jump-to-error, Settings Light, Settings Dark
    - 6.1" (iPhone 16 / 17 class): the same five frames
@@ -45,3 +45,7 @@ In-repo. Does not replace App Store Connect. Use this while uploading the first 
 The next build embeds CPython 3.14.7. Home's language picker switches separate C/Python project storage; Python runs locally in the editor with editable source and console input/output. No executable dependencies are downloaded. Packaging and runtime limitations are documented in [PYTHON_RUNTIME.md](PYTHON_RUNTIME.md). Before submitting, validate the signed archive in Organizer and verify Python input/Stop/imports on a physical iPhone. Update App Store descriptions and review notes for the new workspace; this local implementation does not publish an update.
 
 JavaScript and Lua are also available in the next local build. JavaScript uses Apple's JavaScriptCore through public APIs; Lua 5.5.1 is built from vendored C sources with the iOS configuration. Both are local console environments with source editing and independent project storage. See [JAVASCRIPT_LUA.md](JAVASCRIPT_LUA.md) for the exact exposed APIs and cancellation limits.
+
+## Optional OpenAI / Claude BYOK build
+
+The iPhone app now has Settings → BYOK and cloud-model selectors in Chat and Agent IDE, without a Pro gate. The older “Agent hidden / no AI” review notes above describe the original release and must be replaced for this build. Reviewers need instructions for the optional personal-key flow and locally available features; do not publish personal API keys in review notes. Publish the updated privacy and terms pages at the existing app-linked URLs, verify explicit provider sharing consent, and complete the production deployment/device checks in [BYOK.md](BYOK.md). No API credits or provider payments are sold in the app.

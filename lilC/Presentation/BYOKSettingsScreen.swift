@@ -147,7 +147,7 @@ struct AgentModelPicker: View {
     var body: some View {
         Menu {
             Button("Edsger 1.0 · On device") { session.selectModel(nil) }
-            ForEach(providers.choices, id: \.provider) { choice in
+            ForEach(providers.choices) { choice in
                 Button(providers.title(choice)) { session.selectModel(choice) }
             }
             Divider()

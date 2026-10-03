@@ -1,7 +1,5 @@
 name: BYOK checks
 on:
-  push:
-    branches: [codex/openai-claude-byok]
   pull_request:
     paths: ['lilC/**', 'lilCTests/**', 'lilC.xcodeproj/**', 'services/agent-worker/**', 'scripts/**', '.github/workflows/byok-checks.yml']
 permissions:
@@ -48,5 +46,5 @@ jobs:
           bash scripts/fetch-agent-assets.sh
           bash scripts/fetch-python-assets.sh
           python3 scripts/fetch-math-assets.py
-      - name: Compile the complete iPhone application
-        run: xcodebuild -project lilC.xcodeproj -scheme lilC -configuration Debug -destination 'generic/platform=iOS' -derivedDataPath /tmp/edsger-byok-derived CODE_SIGNING_ALLOWED=NO build
+      - name: Compile the iPhone application and BYOK unit tests
+        run: xcodebuild -project lilC.xcodeproj -scheme lilC -configuration Debug -destination 'generic/platform=iOS' -derivedDataPath /tmp/edsger-byok-derived CODE_SIGNING_ALLOWED=NO build-for-testing -only-testing:lilCTests/BYOKTests

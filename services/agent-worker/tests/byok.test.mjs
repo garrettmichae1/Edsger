@@ -137,3 +137,20 @@ test('stale native calls cannot override the normalized transcript', async () =>
   const { value } = await send('openai', 'completions', b, () => { throw Error('must not fetch'); });
   assert.equal(value.error, 'invalid_continuation');
 });
+
+test('native arguments must match the canonical tool transcript', async () => {
+  const b = body(); b.messages.push({ role: 'assistant', content: '', tool_calls: [call], edsger_continuation: JSON.stringify({ provider: 'openai', model: b.model, items: [{ type: 'function_call', call_id: call.id, name: call.function.name, arguments: '{"path":"different.py"}' }] }) }, { role: 'tool', tool_call_id: call.id, content: 'ok' });
+  const { value } = await send('openai', 'completions', b, () => { throw Error('must not fetch'); });
+  assert.equal(value.error, 'invalid_continuation');
+});
+
+test('simultaneous users never share credentials or rate identities', async () => {
+  const keys = ['personal-user-one-key-123456', 'personal-user-two-key-123456'];
+  const identities = new Set(), observed = new Set();
+  const limiter = { limit: async ({ key: identity }) => { identities.add(identity); return { success: true }; } };
+  await Promise.all(keys.map(secret => send('openai', 'completions', body(), async (_, init) => {
+    observed.add(init.headers.Authorization); return json(textOutput());
+  }, { BYOK_RATE_LIMIT: limiter }, { headers: { Authorization: `Bearer ${secret}`, 'Content-Type': 'application/json' } })));
+  assert.deepEqual([...observed].sort(), keys.map(secret => `Bearer ${secret}`).sort());
+  assert.equal(identities.size, 2);
+});

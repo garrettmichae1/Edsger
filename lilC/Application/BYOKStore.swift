@@ -27,9 +27,10 @@ final class BYOKStore {
         localProjects = Self.read(Set<String>.self, "edsger.byok.agent.local-projects", defaults) ?? []
     }
     var choices: [BYOKChoice] {
-        BYOKProvider.allCases.compactMap { provider in
-            guard let config = configurations[provider.rawValue], config.verifiedModelIDs.contains(config.modelID) else { return nil }
-            return .init(provider: provider, modelID: config.modelID)
+        BYOKProvider.allCases.flatMap { provider -> [BYOKChoice] in
+            guard let config = configurations[provider.rawValue] else { return [] }
+            return config.models.filter { config.verifiedModelIDs.contains($0.id) }
+                .map { .init(provider: provider, modelID: $0.id) }
         }
     }
     func title(_ choice: BYOKChoice) -> String {
@@ -37,7 +38,8 @@ final class BYOKStore {
         return choice.provider.title + " · " + name
     }
     func requireConsent(_ provider: BYOKProvider) throws {
-        guard configurations[provider.rawValue]?.sharingConsent == true else { throw BYOKError.consentRequired }
+        guard let config = configurations[provider.rawValue] else { throw BYOKError.missingKey }
+        guard config.sharingConsent else { throw BYOKError.consentRequired }
     }
     func setConsent(_ value: Bool, provider: BYOKProvider) {
         consentVersions[provider, default: 0] += 1
