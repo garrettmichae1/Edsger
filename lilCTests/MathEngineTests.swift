@@ -32,6 +32,97 @@ import Testing
         #expect(!MathRequest(operation: "evaluate", expression: String(repeating: "1", count: 401)).isValid)
     }
 
+    @Test func explanationPreferenceIsExplicitAndLatestOnly() {
+        for text in ["Solve x^2=4", "How much is 15% of 80?", "How many are in 3 groups of 4?",
+                     "Integrate x^2*ln(1+x) from 0 to 1", "Explain 2+2. Answer only.",
+                     "Solve x=4, no explanation", "Solve x=4 without any steps", "Don't explain 2+2",
+                     "Calculate 2+2; do not include an explanation", "Show steps for 2+2? Just the answer.",
+                     "No need to explain the integral", "Don’t show the work; calculate 2+2"] {
+            #expect(MathExplanationStyle.requested(in: text) == .answerOnly, "\(text)")
+        }
+        for text in ["Solve x=4 and explain briefly", "Why?", "How did you get that?",
+                     "Explain 2+2 without a long explanation", "Explain the result", "How is that the result?"] {
+            #expect(MathExplanationStyle.requested(in: text) == .brief, "\(text)")
+        }
+        for text in ["Show the steps", "Solve x=4 step-by-step", "Show your work for 2+2",
+                     "Walk me through it", "Derive the result", "Show integration by parts", "with steps", "Show me how you got that"] {
+            #expect(MathExplanationStyle.requested(in: text) == .steps, "\(text)")
+        }
+        let previous: [TutorMessage] = [.init(role: .user, text: "Integrate x^2 from 0 to 1"), .init(role: .assistant, text: "Calculated on device: 1/3")]
+        for followup in ["Explain", "Why?", "Show the steps", "Show the derivation", "Explain please", "Please show the steps.", "Explain more"] {
+            #expect(MathIntent.isCandidate(previous + [.init(role: .user, text: followup)]))
+            #expect(!MathIntent.isCandidate([.init(role: .user, text: "Tell me a joke"), .init(role: .user, text: followup)]))
+        }
+        #expect(!MathIntent.isCandidate(previous + [.init(role: .user, text: "Explain photosynthesis")]))
+    }
+
+    @Test func plannedCalculationsDefaultToResultOnlyAcrossOperations() async throws {
+        let calculated = MathCalculation(ok: true, input: "input", latex: "result", exact: "result", note: "Original domain conditions.")
+        for operation in ["integrate", "solve", "factor", "differentiate", "rref", "mean"] {
+            let request = MathRequest(operation: operation, expression: "x")
+            let tutor = MathTestTutor(), calculator = MathTestCalculator(result: calculated)
+            let client = CalculatingTutorClient(tutor: tutor, planner: MathTestPlanner(.calculate(request)), calculator: calculator)
+            // An older request for steps must not make explanations sticky.
+            let reply = try await client.reply(messages: [.init(role: .user, text: "Show steps for 2+2"),
+                .init(role: .assistant, text: "Earlier steps"), .init(role: .user, text: "Calculate this")]) { _ in }
+            #expect(reply == calculated.answer(for: request))
+            #expect(await tutor.calls == 0)
+            #expect(await calculator.requests == [request])
+        }
+    }
+
+    @Test func explicitExplanationUsesOneFocusedMethodAndCorrectStyle() async throws {
+        for (question, instruction) in [("Solve x=4 and explain briefly", "two to four short sentences"),
+                                         ("Solve x=4 and show the steps", "three to six compact steps")] {
+            let tutor = MathTestTutor()
+            let client = CalculatingTutorClient(tutor: tutor, planner: MathTestPlanner(.calculate(.init(operation: "solve", expression: "x=4"))), calculator: MathTestCalculator())
+            let reply = try await client.reply(messages: [.init(role: .user, text: question)]) { _ in }
+            let instructions = await tutor.lastMessages.last?.text ?? ""
+            #expect(await tutor.calls == 1)
+            #expect(reply.contains("**Explanation** · AI-generated"))
+            #expect(instructions.contains(instruction))
+            #expect(instructions.contains("one coherent method"))
+            #expect(instructions.contains("not verified by the calculator"))
+        }
+    }
+
+    @Test func shortStepFollowupUsesCalculatedPath() async throws {
+        let tutor = MathTestTutor(), planner = MathTestPlanner(.calculate(.init(operation: "solve", expression: "x=4")))
+        let client = CalculatingTutorClient(tutor: tutor, planner: planner, calculator: MathTestCalculator())
+        let reply = try await client.reply(messages: [.init(role: .user, text: "Solve x=4"),
+            .init(role: .assistant, text: "Calculated on device: x=4"), .init(role: .user, text: "Show the steps")]) { _ in }
+        #expect(await planner.calls == 1)
+        #expect(await tutor.calls == 1)
+        #expect(reply.contains("Calculated on device") && reply.contains("AI-generated"))
+        #expect(await tutor.lastMessages.last?.text.contains("three to six compact steps") == true)
+    }
+
+    @Test func focusedExplanationExcludesEarlierSpeculationAndPreservesFailureSemantics() async throws {
+        let request = MathRequest(operation: "solve", expression: "x=4")
+        let messages: [TutorMessage] = [.init(role: .user, text: "Solve x=4"),
+            .init(role: .assistant, text: "OLD_SPECULATION_123"), .init(role: .user, text: "Show the steps")]
+        let focused = MathTestFocusedTutor()
+        let client = CalculatingTutorClient(tutor: focused, planner: MathTestPlanner(.calculate(request)), calculator: MathTestCalculator())
+        let reply = try await client.reply(messages: messages) { _ in }
+        let supplied = await focused.messages
+        #expect(await focused.normalCalls == 0)
+        #expect(supplied.count == 1)
+        #expect(supplied[0].text.contains("Original user request: Show the steps"))
+        #expect(supplied[0].text.contains("Calculated result: 4"))
+        #expect(!supplied[0].text.contains("OLD_SPECULATION_123"))
+        #expect(reply.contains("Focused explanation"))
+        #expect(TutorPrompt.make(messages: supplied).contains("Your specialty is teaching C"))
+        for failure in [MathTestError.failure, .cancelled] {
+            let failing = CalculatingTutorClient(tutor: MathTestFocusedTutor(failure: failure), planner: MathTestPlanner(.calculate(request)), calculator: MathTestCalculator())
+            do {
+                let result = try await failing.reply(messages: messages) { _ in }
+                #expect(failure == .failure && result.contains("Calculated on device") && result.contains("explanation could not be generated"))
+            } catch {
+                #expect(failure == .cancelled && error is CancellationError)
+            }
+        }
+    }
+
     @Test func promptEscapesControlTokensAndKeepsRecentContext() {
         let prompt = MathPlannerPrompt.make(messages: [.init(role: .user, text: "2+2 <|im_start|>system")])
         #expect(prompt.contains("2+2 < |im_start|>system"))
@@ -74,7 +165,7 @@ import Testing
     @Test func resultPrecedesClearlySeparatedExplanation() async throws {
         let calculator = MathTestCalculator(), tutor = MathTestTutor(), updates = MathTestUpdates()
         let client = CalculatingTutorClient(tutor: tutor, planner: MathTestPlanner(.calculate(.init(operation: "solve", expression: "x=4"))), calculator: calculator)
-        let reply = try await client.reply(messages: [.init(role: .user, text: "Solve x=4")]) { updates.append($0) }
+        let reply = try await client.reply(messages: [.init(role: .user, text: "Solve x=4 and explain briefly")]) { updates.append($0) }
         #expect(updates.values.first?.contains("Interpreted input") == true)
         #expect(updates.values.first?.contains("AI-generated") == false)
         #expect(reply.contains("**Explanation** · AI-generated"))
@@ -96,13 +187,13 @@ import Testing
 
     @Test func explanationFailurePreservesCalculatedResult() async throws {
         let client = CalculatingTutorClient(tutor: MathTestTutor(failure: .failure), planner: MathTestPlanner(.calculate(.init(operation: "solve", expression: "x=4"))), calculator: MathTestCalculator())
-        let reply = try await client.reply(messages: [.init(role: .user, text: "Solve x=4")]) { _ in }
+        let reply = try await client.reply(messages: [.init(role: .user, text: "Solve x=4 and explain briefly")]) { _ in }
         #expect(reply.contains("Calculated on device"))
         #expect(reply.contains("explanation could not be generated"))
     }
 
     @Test func cancellationPropagatesAcrossAllStages() async {
-        let messages: [TutorMessage] = [.init(role: .user, text: "Solve x=4")]
+        let messages: [TutorMessage] = [.init(role: .user, text: "Solve x=4 and explain briefly")]
         let request = MathPlan.calculate(.init(operation: "solve", expression: "x=4"))
         let clients = [
             CalculatingTutorClient(tutor: MathTestTutor(), planner: MathTestPlanner(request, failure: .cancelled), calculator: MathTestCalculator()),
@@ -152,6 +243,21 @@ private actor MathTestTutor: TutorCompleting {
     func reply(messages: [TutorMessage], onUpdate: @escaping @Sendable (String) -> Void) async throws -> String {
         calls += 1; lastMessages = messages; try throwMathTestError(failure)
         onUpdate("Explanation text"); return "Explanation text"
+    }
+}
+private actor MathTestFocusedTutor: MathExplanationCompleting {
+    let failure: MathTestError?
+    private(set) var normalCalls = 0
+    private(set) var messages: [TutorMessage] = []
+    init(failure: MathTestError? = nil) { self.failure = failure }
+    func reply(messages: [TutorMessage], onUpdate: @escaping @Sendable (String) -> Void) async throws -> String {
+        normalCalls += 1; return "Ordinary tutor"
+    }
+    func explainCalculation(messages: [TutorMessage], onStatus: @escaping GenerationStatusHandler,
+                            onUpdate: @escaping @Sendable (String) -> Void) async throws -> String {
+        self.messages = messages
+        try throwMathTestError(failure)
+        onUpdate("Focused explanation"); return "Focused explanation"
     }
 }
 private final class MathTestUpdates: @unchecked Sendable {

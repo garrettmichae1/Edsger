@@ -51,6 +51,43 @@ protocol MathCalculating: Sendable {
     func calculate(_ request: MathRequest) async throws -> MathCalculation
 }
 
+/// Optional capability for a focused explanation prompt; existing tutor clients remain compatible.
+protocol MathExplanationCompleting: TutorCompleting {
+    func explainCalculation(messages: [TutorMessage], onStatus: @escaping GenerationStatusHandler,
+                            onUpdate: @escaping @Sendable (String) -> Void) async throws -> String
+}
+
+/// Presentation preference for the latest request only; never changes calculator input.
+enum MathExplanationStyle: Equatable {
+    case answerOnly, brief, steps
+
+    static func requested(in text: String) -> Self {
+        let text = text.replacingOccurrences(of: "’", with: "'")
+        func matches(_ pattern: String) -> Bool {
+            text.range(of: pattern, options: [.regularExpression, .caseInsensitive]) != nil
+        }
+        // Explicit answer-only instructions take priority over incidental explanation words.
+        if matches(#"\b(answer|result)\s+only\b|\bjust\s+(give\s+)?(me\s+)?(the\s+)?(answer|result)\b|\b(no|without|skip|omit)\s+((an?|any|the|extra)\s+)*(explanations?|steps?|derivations?|reasoning|working|work)\b|\b(don't|do\s+not|no\s+need\s+to)\s+(explain|derive|show\s+((the|your)\s+)?(steps|work|working)|(include|give|provide)\s+((an?|any|the)\s+)?(explanation|steps|reasoning|work))\b"#) {
+            return .answerOnly
+        }
+        if matches(#"\bstep[\s-]+by[\s-]+step\b|\b(show|give|include|with)\s+(me\s+)?((the|your|all|full)\s+)*(steps|work|working|derivation)\b|\bshow\s+(me\s+)?how\b|\b(derive|derivation|prove|proof)\b|\b(walk|talk)\s+me\s+through\b|\bbreak\s+it\s+down\b|\bintegration\s+by\s+parts\b"#) {
+            return .steps
+        }
+        if matches(#"\b(explain|explanation|why|justify|reasoning)\b|\bhow\s+(did|do|does|can|to|is|was|were|would|should|you)\b"#) {
+            return .brief
+        }
+        return .answerOnly
+    }
+
+    var instructions: String {
+        switch self {
+        case .answerOnly: "Return only the calculator result."
+        case .brief: "Describe the method in two to four short sentences, normally under 100 words. Omit intermediate evaluation and do not repeat the supplied result. A full derivation is only needed when explicitly requested."
+        case .steps: "Give one focused derivation, normally three to six compact steps and under 180 words. Expand only if the user explicitly requests more detail. Honor a requested method when you can explain it reliably."
+        }
+    }
+}
+
 /// Calculator results are published before explanation; the model never supplies the result card.
 struct CalculatingTutorClient: TutorCompleting {
     let tutor: any TutorCompleting
@@ -67,6 +104,7 @@ struct CalculatingTutorClient: TutorCompleting {
         guard let question = messages.last(where: { $0.role == .user }), MathIntent.isCandidate(messages) else {
             return try await tutor.reply(messages: messages, onStatus: onStatus, onUpdate: onUpdate)
         }
+        let explanationStyle = MathExplanationStyle.requested(in: question.text)
         let plan: MathPlan
         do {
             if let request = MathIntent.directArithmetic(question.text) { plan = .calculate(request) }
@@ -97,19 +135,29 @@ struct CalculatingTutorClient: TutorCompleting {
                 return publish("**Calculation unavailable**\n\n\(result.error ?? "The calculator did not return a complete result.")", onUpdate)
             }
             onUpdate(calculated)
-            // A completed numeric expression needs no model pass. This also works with no model asset.
-            if MathIntent.directArithmetic(question.text) != nil { return calculated }
+            // Answer-only requests stop here: no explanatory inference or model switch.
+            guard explanationStyle != .answerOnly else { return calculated }
             var context = messages
             context.append(TutorMessage(role: .user, text: """
+            Original user request: \(question.text)
             The app's calculator interpreted the request as \(request.label).
             Input: \(result.input ?? request.expression)
             Calculated result: \(result.exact ?? "")
             Conditions: \(result.note ?? "")
-            The app has already displayed the interpreted input, result, and conditions. Explain briefly, or give steps if requested. The explanation is AI-generated, not verified by the calculator. Do not replace or contradict its result. If the interpretation does not match the original question, explicitly say so. Never claim that every step was checked. Do not claim file access or code execution.
+            Explain how to reach this exact answer using mathematical relationships. \(explanationStyle.instructions)
+            Use one coherent method, with no introduction or unsolicited follow-up question. The explanation is AI-generated, not verified by the calculator. Do not replace or contradict the supplied result. If the interpretation differs from the user's question or you cannot explain reliable steps, say so briefly.
             """))
             let prefix = calculated + "\n\n**Explanation** · AI-generated\n\n"
             do {
-                let explanation = try await tutor.reply(messages: context, onStatus: onStatus) { onUpdate(prefix + $0) }
+                let update: @Sendable (String) -> Void = { onUpdate(prefix + $0) }
+                let explanation: String
+                if let focused = tutor as? any MathExplanationCompleting {
+                    // The supplied input/result and latest request are sufficient; previous
+                    // speculative explanations must not contaminate a new derivation.
+                    explanation = try await focused.explainCalculation(messages: Array(context.suffix(1)), onStatus: onStatus, onUpdate: update)
+                } else {
+                    explanation = try await tutor.reply(messages: context, onStatus: onStatus, onUpdate: update)
+                }
                 try Task.checkCancellation()
                 return prefix + explanation
             } catch {

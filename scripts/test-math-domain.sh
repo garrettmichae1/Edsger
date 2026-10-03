@@ -14,4 +14,4 @@ let package = Package(name: "MathCore", platforms: [.macOS(.v14)], targets: [
     .target(name: "MathCore"), .testTarget(name: "MathCoreTests", dependencies: ["MathCore"])
 ])
 PACKAGE
-swift test --package-path "$TEST_DIR" --scratch-path "$TEST_DIR/.build" --disable-sandbox
+swift test --package-path "$TEST_DIR" --scratch-path "$TEST_DIR/.build" --disable-sandbox "$@"

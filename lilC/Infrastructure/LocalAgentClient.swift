@@ -570,7 +570,7 @@ private struct LlamaPromptStateBackend: PromptStateBackend {
     }
 }
 
-struct ModelBoundChatClient: TutorCompleting, MathPlanning {
+struct ModelBoundChatClient: MathExplanationCompleting, MathPlanning {
     let model: ChatModel
     var engine: LocalAgentClient = .shared
     func reply(messages: [TutorMessage], onUpdate: @escaping @Sendable (String) -> Void) async throws -> String {
@@ -579,6 +579,13 @@ struct ModelBoundChatClient: TutorCompleting, MathPlanning {
     func reply(messages: [TutorMessage], onStatus: @escaping GenerationStatusHandler,
                onUpdate: @escaping @Sendable (String) -> Void) async throws -> String {
         try await engine.reply(messages: messages, modelChoice: model, onStatus: onStatus, onUpdate: onUpdate)
+    }
+    func explainCalculation(messages: [TutorMessage], onStatus: @escaping GenerationStatusHandler,
+                            onUpdate: @escaping @Sendable (String) -> Void) async throws -> String {
+        // Math planning already uses Standard. Keep that single owned context for
+        // requested explanations rather than switching to Mini for weaker derivations.
+        try await engine.reply(messages: messages, modelChoice: .standard,
+                               onStatus: onStatus, onUpdate: onUpdate)
     }
     func mathPlan(messages: [TutorMessage]) async throws -> MathPlan {
         try await mathPlan(messages: messages, onStatus: { _ in })

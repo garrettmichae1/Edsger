@@ -217,7 +217,10 @@ private actor ControlledTutor: TutorCompleting {
         try check(arithmeticStatuses.values == [.calculating], "Direct arithmetic reported unnecessary model phases")
         let explanationStatuses = StatusRecorder()
         let planned = CalculatingTutorClient(tutor: ImmediateTutor(), planner: TestPlanner(plan: .calculate(.init(operation: "solve", expression: "x=4"))), calculator: TestCalculator())
-        _ = try await planned.reply(messages: [.init(role: .user, text: "Solve x=4")], onStatus: { explanationStatuses.append($0) }) { _ in }
+        let resultOnlyStatuses = StatusRecorder()
+        let resultOnly = try await planned.reply(messages: [.init(role: .user, text: "Solve x=4")], onStatus: { resultOnlyStatuses.append($0) }) { _ in }
+        try check(resultOnlyStatuses.values == [.planningCalculation, .calculating] && !resultOnly.contains("AI-generated"), "Answer-only math started explanation generation")
+        _ = try await planned.reply(messages: [.init(role: .user, text: "Solve x=4 and explain briefly")], onStatus: { explanationStatuses.append($0) }) { _ in }
         try check(explanationStatuses.values == [.planningCalculation, .calculating, .generatingResponse], "Math phase routing/order is wrong")
         print("PASS direct arithmetic and planned-calculation/explanation phase routing")
 

@@ -59,7 +59,8 @@ enum MathIntent {
     static func isCandidate(_ messages: [TutorMessage]) -> Bool {
         guard let last = messages.last(where: { $0.role == .user }) else { return false }
         if isCandidate(last.text) { return true }
-        let followup = last.text.range(of: #"(?i)\b(it|that|this|same|those|instead|again|now|answer|result|sample|population|degrees|radians|use)\b"#, options: .regularExpression) != nil
+        let followup = last.text.range(of: #"(?i)\b(it|that|this|same|those|instead|again|now|answer|result|sample|population|degrees|radians|use)\b"#, options: .regularExpression) != nil ||
+            last.text.range(of: #"(?i)^\s*(please\s+)?(explain(\s+(briefly|more))?|why|show\s+(me\s+)?(the\s+)?(steps|work|working|derivation)|step[\s-]+by[\s-]+step)(\s+please)?[.!?\s]*$"#, options: .regularExpression) != nil
         return followup && messages.dropLast().suffix(6).contains { $0.role == .user && isCandidate($0.text) }
     }
 
@@ -81,6 +82,7 @@ enum MathPlannerPrompt {
     Operations: evaluate (numeric), simplify, expand, factor, differentiate (first derivative), integrate, solve (one real-variable polynomial/rational equation with degree at most 4), determinant, inverse, rref, rank, mean, median, variance (population), sample_variance, stddev (population), sample_stddev.
     Expression syntax: explicit * multiplication, / fractions, ^ powers, parentheses; decimal numbers, pi, e; real symbols x,y,z,t,a,b,c,n; sin,cos,tan,asin,acos,atan,exp,log,ln,sqrt,abs with one argument. log/ln mean natural logarithm; base-10 is log(value)/log(10). Angles are radians; convert explicitly given degrees using *pi/180. Do not invent angle units when ambiguous. Numeric powers are limited to -20...20. Symbolic exponents are unsupported; write e^x as exp(x). Never precompute the requested answer. Preserve the original expression and its domain restrictions: do not cancel factors yourself.
     For solve include exactly one '=' and identify the variable. For calculus set the requested variable (ask if multiple variables and unspecified); integrate uses both lower/upper or neither. Bounds must be finite real numbers/expressions. Only integrate can have bounds. Other operations use empty bounds. Indefinite integrals get +C automatically.
+    Explanation, steps, derivations, or a named method accompanying ONE calculation are presentation requests, not extra calculator operations or unsupported tool chains. Plan the underlying calculation; the app handles explanation separately. For "Explain" or "Show the steps" after a calculated answer, recover that same calculation from recent chat when unambiguous. Conceptual questions without a calculation remain kind none.
     For determinant/inverse use a JSON nested numeric array encoded INSIDE the expression string, square up to 4x4. For rref/rank, rectangular matrices up to 4 rows x 5 columns are allowed, including augmented matrices. Fraction entries can be strings like "1/3". Do not interpret an augmented matrix as a square coefficient matrix.
     Statistics use a JSON array of 1...40 numeric entries (or fraction strings), with at least 2 for sample variance/deviation. Ask sample vs population if unspecified for variance/deviation.
     Expression limit: 400 UTF-8 bytes. Bounds: 80 bytes each. No arbitrary Python, calls outside the list, assignments, file access, or generated programs. Unsupported notation may be translated into this syntax only if its meaning is clear. For contextual follow-ups, use recent chat to recover the exact expression; ask if unclear. Never fabricate numbers from missing history.
@@ -88,6 +90,7 @@ enum MathPlannerPrompt {
     "What is 15% of 80?" -> {"kind":"calculate","request":{"operation":"evaluate","expression":"15/100*80","variable":"x","lower":"","upper":""}}
     "Solve 2x+3=11" -> {"kind":"calculate","request":{"operation":"solve","expression":"2*x+3=11","variable":"x","lower":"","upper":""}}
     "Integrate x squared from 0 to 1" -> {"kind":"calculate","request":{"operation":"integrate","expression":"x^2","variable":"x","lower":"0","upper":"1"}}
+    "Integrate x^2*ln(1+x) from 0 to 1. Show integration by parts." -> {"kind":"calculate","request":{"operation":"integrate","expression":"x^2*ln(1+x)","variable":"x","lower":"0","upper":"1"}}
     "Who was born in 1990?" -> {"kind":"none"}
     "Explain what a derivative means" -> {"kind":"none"}
     "Find the variance of 1,2,3" -> {"kind":"clarify","message":"Do you want population variance or sample variance?"}
