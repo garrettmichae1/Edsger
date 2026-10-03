@@ -3,11 +3,6 @@
 import Foundation
 import llama
 
-struct AgentCompletion: Sendable { var assistantText: String; var toolCalls: [AgentToolCall] }
-protocol AgentCompleting: Sendable {
-    func complete(messagesJSON: Data, toolsJSON: Data) async throws -> AgentCompletion
-}
-
 @main struct SamplerSmoke {
     static func main() throws {
         if CommandLine.arguments.count > 2 { ggml_backend_load_all_from_path(CommandLine.arguments[2]) }

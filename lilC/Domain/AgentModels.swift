@@ -1,5 +1,24 @@
 import Foundation
 
+struct AgentCompletion: Sendable {
+    var assistantText: String
+    var toolCalls: [AgentToolCall]
+}
+
+protocol AgentCompleting: Sendable {
+    func complete(messagesJSON: Data, toolsJSON: Data) async throws -> AgentCompletion
+    func complete(messagesJSON: Data, toolsJSON: Data,
+                  onStatus: @escaping GenerationStatusHandler) async throws -> AgentCompletion
+}
+
+extension AgentCompleting {
+    func complete(messagesJSON: Data, toolsJSON: Data,
+                  onStatus: @escaping GenerationStatusHandler) async throws -> AgentCompletion {
+        onStatus(.generatingResponse)
+        return try await complete(messagesJSON: messagesJSON, toolsJSON: toolsJSON)
+    }
+}
+
 enum AgentTransportError: LocalizedError, Equatable {
     case notConfigured
     case invalidEndpoint
@@ -91,7 +110,7 @@ struct AgentChatMessage: Identifiable, Equatable, Codable {
     }
 }
 
-struct AgentToolCall: Equatable {
+struct AgentToolCall: Equatable, Sendable {
     var id: String
     var name: String
     var argumentsJSON: String

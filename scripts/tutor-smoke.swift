@@ -1,14 +1,6 @@
 // Real bundled-model academic smoke test. No network or workspace tools.
 import Foundation
 
-struct AgentCompletion: Sendable {
-    var assistantText: String
-    var toolCalls: [AgentToolCall]
-}
-protocol AgentCompleting: Sendable {
-    func complete(messagesJSON: Data, toolsJSON: Data) async throws -> AgentCompletion
-}
-
 @main
 struct TutorSmoke {
     static func main() async throws {

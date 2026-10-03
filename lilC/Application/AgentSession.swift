@@ -28,6 +28,7 @@ final class AgentSession {
     private var runTask: Task<Void, Never>?
     private var projectRoot = ""
     private var runID = UUID()
+    private var inferenceStatusID: UUID?
     private let client: any AgentCompleting
     private let savesHistory: Bool
 
@@ -56,6 +57,7 @@ final class AgentSession {
 
     func stop() {
         runID = UUID()
+        inferenceStatusID = nil
         runTask?.cancel()
         isThinking = false
         statusLine = "Stopped"
@@ -77,13 +79,14 @@ final class AgentSession {
             return
         }
         isThinking = true
+        statusLine = GenerationStatus.waiting.label
         runID = UUID()
         let id = runID
         runTask = Task { await loop(id: id) }
     }
 
     private func loop(id: UUID) async {
-        defer { if runID == id { isThinking = false } }
+        defer { if runID == id { isThinking = false; inferenceStatusID = nil } }
 
         do {
             var wire = wireMessages()
@@ -115,10 +118,19 @@ final class AgentSession {
                     wire.append(["role": "user", "content": AgentCompletionReview.prompt])
                     reviewedCompletion = true
                 }
-                statusLine = reviewedCompletion ? "Checking changes…" : (hops == 1 ? "Thinking…" : "Working in lilC…")
+                statusLine = GenerationStatus.waiting.label
                 let messagesJSON = try JSONSerialization.data(withJSONObject: wire)
                 let selectedPath = workspace.currentFile.relativePath
-                let result = try await client.complete(messagesJSON: messagesJSON, toolsJSON: toolsJSON)
+                let isReview = reviewedCompletion
+                let inferenceID = UUID()
+                inferenceStatusID = inferenceID
+                let result = try await client.complete(messagesJSON: messagesJSON, toolsJSON: toolsJSON, onStatus: { [weak self] status in
+                    Task { @MainActor in
+                        guard let self, self.runID == id, self.inferenceStatusID == inferenceID, self.isThinking else { return }
+                        self.statusLine = isReview && status == .generatingResponse ? "Checking changes…" : status.label
+                    }
+                })
+                inferenceStatusID = nil
                 try Task.checkCancellation()
                 guard id == runID else { return }
                 guard selectedPath == workspace.currentFile.relativePath else {

@@ -2,14 +2,6 @@
 import Foundation
 import llama
 
-struct AgentCompletion: Sendable {
-    var assistantText: String
-    var toolCalls: [AgentToolCall]
-}
-protocol AgentCompleting: Sendable {
-    func complete(messagesJSON: Data, toolsJSON: Data) async throws -> AgentCompletion
-}
-
 private func verifyC(_ source: String, in root: URL) throws {
     let input = root.appendingPathComponent("smoke-check.c")
     let binary = root.appendingPathComponent("smoke-check")

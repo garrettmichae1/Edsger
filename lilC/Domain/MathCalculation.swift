@@ -58,14 +58,19 @@ struct CalculatingTutorClient: TutorCompleting {
     let calculator: any MathCalculating
 
     func reply(messages: [TutorMessage], onUpdate: @escaping @Sendable (String) -> Void) async throws -> String {
+        try await reply(messages: messages, onStatus: { _ in }, onUpdate: onUpdate)
+    }
+
+    func reply(messages: [TutorMessage], onStatus: @escaping GenerationStatusHandler,
+               onUpdate: @escaping @Sendable (String) -> Void) async throws -> String {
         try Task.checkCancellation()
         guard let question = messages.last(where: { $0.role == .user }), MathIntent.isCandidate(messages) else {
-            return try await tutor.reply(messages: messages, onUpdate: onUpdate)
+            return try await tutor.reply(messages: messages, onStatus: onStatus, onUpdate: onUpdate)
         }
         let plan: MathPlan
         do {
             if let request = MathIntent.directArithmetic(question.text) { plan = .calculate(request) }
-            else { plan = try await planner.mathPlan(messages: messages) }
+            else { plan = try await planner.mathPlan(messages: messages, onStatus: onStatus) }
         } catch {
             try propagateCancellation(error)
             return publish("I couldn't interpret that calculation reliably. Please try one calculation at a time, with its expression or equation and the operation you want.", onUpdate)
@@ -73,7 +78,7 @@ struct CalculatingTutorClient: TutorCompleting {
         try Task.checkCancellation()
         switch plan {
         case .notCalculation:
-            return try await tutor.reply(messages: messages, onUpdate: onUpdate)
+            return try await tutor.reply(messages: messages, onStatus: onStatus, onUpdate: onUpdate)
         case .clarify(let message), .unsupported(let message):
             return publish(message, onUpdate)
         case .calculate(let request):
@@ -81,6 +86,7 @@ struct CalculatingTutorClient: TutorCompleting {
                 return publish("That calculation is outside the supported limits. Try a shorter expression or a smaller matrix.", onUpdate)
             }
             let result: MathCalculation
+            onStatus(.calculating)
             do { result = try await calculator.calculate(request) }
             catch {
                 try propagateCancellation(error)
@@ -103,7 +109,7 @@ struct CalculatingTutorClient: TutorCompleting {
             """))
             let prefix = calculated + "\n\n**Explanation** · AI-generated\n\n"
             do {
-                let explanation = try await tutor.reply(messages: context) { onUpdate(prefix + $0) }
+                let explanation = try await tutor.reply(messages: context, onStatus: onStatus) { onUpdate(prefix + $0) }
                 try Task.checkCancellation()
                 return prefix + explanation
             } catch {

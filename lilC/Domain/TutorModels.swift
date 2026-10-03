@@ -19,6 +19,66 @@ struct TutorConversation: Identifiable, Codable, Equatable, Sendable {
 
 protocol TutorCompleting: Sendable {
     func reply(messages: [TutorMessage], onUpdate: @escaping @Sendable (String) -> Void) async throws -> String
+    func reply(messages: [TutorMessage], onStatus: @escaping GenerationStatusHandler,
+               onUpdate: @escaping @Sendable (String) -> Void) async throws -> String
+}
+
+extension TutorCompleting {
+    func reply(messages: [TutorMessage], onStatus: @escaping GenerationStatusHandler,
+               onUpdate: @escaping @Sendable (String) -> Void) async throws -> String {
+        onStatus(.generatingResponse)
+        return try await reply(messages: messages, onUpdate: onUpdate)
+    }
+}
+
+typealias GenerationStatusHandler = @Sendable (GenerationStatus) -> Void
+
+enum GenerationStatus: Sendable, Equatable {
+    case waiting, loadingModel, preparingPrompt, generatingResponse, planningCalculation, calculating
+
+    var label: String {
+        switch self {
+        case .waiting: "Waiting for the on-device engine…"
+        case .loadingModel: "Loading the on-device model…"
+        case .preparingPrompt: "Reading your request…"
+        case .generatingResponse: "Generating a response…"
+        case .planningCalculation: "Interpreting your calculation…"
+        case .calculating: "Calculating on your device…"
+        }
+    }
+}
+
+/// Geometry changes caused by growing answers must not be mistaken for a user scrolling away.
+struct TranscriptScrollState {
+    private(set) var followsLatest = true
+    private(set) var isInteracting = false
+    private(set) var isNearBottom = true
+    private(set) var hasUnreadContent = false
+
+    var shouldFollow: Bool { followsLatest && !isInteracting }
+
+    mutating func beginInteraction() {
+        isInteracting = true
+        followsLatest = false
+    }
+    mutating func updateDistanceFromBottom(_ distance: Double) {
+        isNearBottom = distance <= 80
+        if isInteracting { followsLatest = isNearBottom }
+        if isNearBottom { hasUnreadContent = false }
+    }
+    mutating func endInteraction() {
+        isInteracting = false
+        followsLatest = isNearBottom
+        if followsLatest { hasUnreadContent = false }
+    }
+    mutating func contentChanged() -> Bool {
+        if !shouldFollow && !isNearBottom { hasUnreadContent = true }
+        return shouldFollow
+    }
+    mutating func showLatest() {
+        followsLatest = true
+        hasUnreadContent = false
+    }
 }
 
 enum TutorPrompt {

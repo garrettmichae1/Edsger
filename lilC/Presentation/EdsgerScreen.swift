@@ -1,5 +1,87 @@
 import SwiftUI
 
+/// Shared by text chat and the IDE. Only explicit sends/jumps override a reading position.
+struct ConversationTranscript<Content: View>: View {
+    let conversationID: UUID?
+    let revision: Int
+    let sentMessageID: UUID?
+    @ViewBuilder let content: () -> Content
+    @State private var scrollState = TranscriptScrollState()
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    private struct GeometrySnapshot: Equatable {
+        let distanceFromBottom: Double
+        let contentHeight: Double
+        let viewportHeight: Double
+    }
+
+    var body: some View {
+        ScrollViewReader { reader in
+            ScrollView(showsIndicators: false) {
+                VStack(spacing: 0) {
+                    content()
+                    Color.clear.frame(height: 1).id("transcript-bottom")
+                }
+            }
+            .scrollDismissesKeyboard(.interactively)
+            .onScrollGeometryChange(for: GeometrySnapshot.self) { geometry in
+                GeometrySnapshot(
+                    distanceFromBottom: Double(geometry.contentSize.height + geometry.contentInsets.bottom
+                                               - geometry.contentOffset.y - geometry.containerSize.height),
+                    contentHeight: Double(geometry.contentSize.height),
+                    viewportHeight: Double(geometry.containerSize.height))
+            } action: { old, new in
+                scrollState.updateDistanceFromBottom(new.distanceFromBottom)
+                if old.contentHeight != new.contentHeight {
+                    if scrollState.contentChanged() { reader.scrollTo("transcript-bottom", anchor: .bottom) }
+                } else if old.viewportHeight != new.viewportHeight, scrollState.shouldFollow {
+                    reader.scrollTo("transcript-bottom", anchor: .bottom)
+                }
+            }
+            .onScrollPhaseChange { _, phase in
+                switch phase {
+                case .tracking, .interacting, .decelerating: scrollState.beginInteraction()
+                case .idle: scrollState.endInteraction()
+                case .animating: break
+                @unknown default: break
+                }
+            }
+            .onChange(of: revision) { _, _ in
+                if scrollState.contentChanged() { reader.scrollTo("transcript-bottom", anchor: .bottom) }
+            }
+            .onChange(of: sentMessageID) { _, _ in
+                scrollState.showLatest()
+                reader.scrollTo("transcript-bottom", anchor: .bottom)
+            }
+            .task(id: conversationID) {
+                scrollState = TranscriptScrollState()
+                reader.scrollTo("transcript-bottom", anchor: .bottom)
+            }
+            .overlay(alignment: .bottomTrailing) {
+                if !scrollState.followsLatest && !scrollState.isNearBottom {
+                    Button {
+                        scrollState.showLatest()
+                        if reduceMotion { reader.scrollTo("transcript-bottom", anchor: .bottom) }
+                        else {
+                            withAnimation(.easeOut(duration: 0.2)) {
+                                reader.scrollTo("transcript-bottom", anchor: .bottom)
+                            }
+                        }
+                    } label: {
+                        Label(scrollState.hasUnreadContent ? "New content" : "Latest", systemImage: "arrow.down")
+                            .font(.caption.weight(.semibold))
+                            .padding(.horizontal, 12).padding(.vertical, 10)
+                            .background(.regularMaterial, in: Capsule())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Jump to the latest message")
+                    .padding(12)
+                }
+            }
+        }
+    }
+}
+
 enum EdsgerSection: String, CaseIterable { case chat = "Chat", courses = "Courses" }
 
 struct EdsgerScreen<Courses: View>: View {
@@ -39,7 +121,7 @@ struct EdsgerScreen<Courses: View>: View {
         .onChange(of: section) { _, value in
             if value == .courses { composerFocused = false }
         }
-        .onDisappear { session.stop() }
+        .onDisappear { session.stop(); session.flushDrafts() }
     }
 
     private var header: some View {
@@ -93,62 +175,65 @@ struct EdsgerScreen<Courses: View>: View {
     }
 
     private var transcript: some View {
-        ScrollViewReader { reader in
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: 24) {
-                    ForEach(session.messages) { message in
-                        if message.role == .user {
-                            HStack {
-                                Spacer(minLength: 38)
-                                Text(message.text)
+        ConversationTranscript(conversationID: session.selectedID,
+                               revision: session.transcriptRevision,
+                               sentMessageID: session.messages.last(where: { $0.role == .user })?.id) {
+            LazyVStack(alignment: .leading, spacing: 24) {
+                ForEach(session.messages) { message in
+                    if message.role == .user {
+                        HStack {
+                            Spacer(minLength: 38)
+                            Text(message.text)
+                                .textSelection(.enabled)
+                                .padding(.horizontal, 17).padding(.vertical, 12)
+                                .background(selection, in: RoundedRectangle(cornerRadius: 24))
+                        }
+                    } else {
+                        VStack(alignment: .leading, spacing: 10) {
+                            Text("EDSGER").font(.system(size: 11, weight: .bold)).foregroundStyle(.secondary).tracking(1)
+                            if message.text.isEmpty {
+                                HStack(spacing: 10) {
+                                    ProgressView().controlSize(.small)
+                                    Text(session.generationStatus?.label ?? GenerationStatus.waiting.label).foregroundStyle(.secondary).font(.subheadline)
+                                }
+                            } else {
+                                MathAnswerView(text: message.text)
                                     .textSelection(.enabled)
-                                    .padding(.horizontal, 17).padding(.vertical, 12)
-                                    .background(selection, in: RoundedRectangle(cornerRadius: 24))
-                            }
-                        } else {
-                            VStack(alignment: .leading, spacing: 10) {
-                                Text("EDSGER").font(.system(size: 11, weight: .bold)).foregroundStyle(.secondary).tracking(1)
-                                if message.text.isEmpty {
-                                    HStack(spacing: 10) {
-                                        ProgressView().controlSize(.small)
-                                        Text("Thinking on your device…").foregroundStyle(.secondary).font(.subheadline)
+                                if !session.isResponding {
+                                    Button { UIPasteboard.general.string = message.text } label: {
+                                        Image(systemName: "doc.on.doc").font(.system(size: 15))
                                     }
-                                } else {
-                                    MathAnswerView(text: message.text)
-                                        .textSelection(.enabled)
-                                    if !session.isResponding {
-                                        Button { UIPasteboard.general.string = message.text } label: {
-                                            Image(systemName: "doc.on.doc").font(.system(size: 15))
-                                        }
-                                        .foregroundStyle(.secondary)
-                                        .accessibilityLabel("Copy answer")
-                                    }
+                                    .foregroundStyle(.secondary)
+                                    .accessibilityLabel("Copy answer")
                                 }
                             }
-                            .frame(maxWidth: .infinity, alignment: .leading)
                         }
+                        .frame(maxWidth: .infinity, alignment: .leading)
                     }
-                    if let error = session.errorMessage {
-                        VStack(alignment: .leading, spacing: 8) {
-                            Text(error).foregroundStyle(.secondary)
-                            if !session.messages.isEmpty { Button("Try again") { session.retry() } }
-                        }
-                        .font(.subheadline)
-                    } else if let notice = session.notice {
-                        Text(notice).foregroundStyle(.secondary).font(.footnote)
-                        if !session.messages.isEmpty { Button("Regenerate response") { session.retry() }.font(.footnote) }
-                    }
-                    Color.clear.frame(height: 1).id("answer-bottom")
                 }
-                .font(.system(size: 17))
-                .padding(.horizontal, 24)
-                .padding(.top, 15)
-                .padding(.bottom, 12)
+                if let error = session.errorMessage {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text(error).foregroundStyle(.secondary)
+                        if !session.messages.isEmpty { Button("Try again") { session.retry() } }
+                    }
+                    .font(.subheadline)
+                } else if let notice = session.notice {
+                    Text(notice).foregroundStyle(.secondary).font(.footnote)
+                    if !session.messages.isEmpty { Button("Regenerate response") { session.retry() }.font(.footnote) }
+                }
+                if session.isResponding, session.messages.last?.text.isEmpty == false {
+                    HStack(spacing: 8) {
+                        ProgressView().controlSize(.mini)
+                        Text(session.generationStatus?.label ?? GenerationStatus.waiting.label)
+                            .font(.footnote).foregroundStyle(.secondary)
+                    }
+                    .accessibilityElement(children: .combine)
+                }
             }
-            .scrollDismissesKeyboard(.interactively)
-            .onChange(of: session.messages.count) { _, _ in reader.scrollTo("answer-bottom", anchor: .bottom) }
-            .onChange(of: session.isResponding) { _, value in if !value { reader.scrollTo("answer-bottom", anchor: .bottom) } }
-            .onChange(of: composerFocused) { _, value in if value { reader.scrollTo("answer-bottom", anchor: .bottom) } }
+            .font(.system(size: 17))
+            .padding(.horizontal, 24)
+            .padding(.top, 15)
+            .padding(.bottom, 12)
         }
     }
 
@@ -257,7 +342,7 @@ struct EdsgerScreen<Courses: View>: View {
                 .listRowBackground(Color.clear)
                 .listRowSeparator(.hidden)
 
-                ForEach(session.conversations.filter { historySearch.isEmpty || $0.title.localizedCaseInsensitiveContains(historySearch) || $0.messages.contains { $0.text.localizedCaseInsensitiveContains(historySearch) } }) { chat in
+                ForEach(session.conversations.filter { historySearch.isEmpty || $0.title.localizedCaseInsensitiveContains(historySearch) || session.draft(for: $0.id).localizedCaseInsensitiveContains(historySearch) || $0.messages.contains { $0.text.localizedCaseInsensitiveContains(historySearch) } }) { chat in
                     Button {
                         session.select(chat.id); section = .chat; showsHistory = false
                     } label: {
@@ -268,7 +353,12 @@ struct EdsgerScreen<Courses: View>: View {
                                 .frame(width: 44, height: 44)
                                 .background(selection, in: Circle())
                             VStack(alignment: .leading, spacing: 7) {
-                                Text(chat.title)
+                                if !session.draft(for: chat.id).isEmpty {
+                                    Label("Draft", systemImage: "pencil")
+                                        .font(.caption).foregroundStyle(Color.blue)
+                                }
+                                Text(chat.messages.isEmpty && !session.draft(for: chat.id).isEmpty
+                                     ? String(session.draft(for: chat.id).prefix(70)) : chat.title)
                                     .font(.system(size: 17, weight: .semibold))
                                     .lineLimit(2)
                                     .foregroundStyle(.primary)

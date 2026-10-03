@@ -186,21 +186,16 @@ struct AgentChatScreen: View {
             .padding(12)
             .background(AppPalette.panel)
 
-            ScrollViewReader { proxy in
-                ScrollView(showsIndicators: false) {
-                    LazyVStack(alignment: .leading, spacing: 12) {
-                        ForEach(session.messages) { message in
-                            AgentBubble(message: message)
-                                .id(message.id)
-                        }
-                    }
-                    .padding(12)
-                }
-                .onChange(of: session.messages.count) { _, _ in
-                    if let last = session.messages.last {
-                        withAnimation { proxy.scrollTo(last.id, anchor: .bottom) }
+            ConversationTranscript(conversationID: session.messages.first?.id,
+                                   revision: session.messages.count,
+                                   sentMessageID: session.messages.last(where: { $0.role == .user })?.id) {
+                LazyVStack(alignment: .leading, spacing: 12) {
+                    ForEach(session.messages) { message in
+                        AgentBubble(message: message)
+                            .id(message.id)
                     }
                 }
+                .padding(12)
             }
             .background(AppPalette.background)
 
@@ -266,22 +261,17 @@ struct AgentConversationView: View {
             .padding(.horizontal, 6)
             .padding(.bottom, 10)
 
-            ScrollViewReader { proxy in
-                ScrollView(showsIndicators: false) {
-                    LazyVStack(alignment: .leading, spacing: 18) {
-                        ForEach(session.messages) { message in
-                            AgentBubble(message: message).id(message.id)
-                        }
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 10)
-                }
-                .onChange(of: session.messages.count) { _, _ in
-                    if let last = session.messages.last {
-                        withAnimation { proxy.scrollTo(last.id, anchor: .bottom) }
+            ConversationTranscript(conversationID: session.messages.first?.id,
+                                   revision: session.messages.count,
+                                   sentMessageID: session.messages.last(where: { $0.role == .user })?.id) {
+                LazyVStack(alignment: .leading, spacing: 18) {
+                    ForEach(session.messages) { message in
+                        AgentBubble(message: message).id(message.id)
                     }
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 6)
+                .padding(.vertical, 10)
             }
 
             HStack(alignment: .bottom, spacing: 8) {

@@ -6,14 +6,35 @@ import Observation
 final class TutorSession {
     private(set) var conversations: [TutorConversation]
     private(set) var selectedID: UUID
-    var draft = ""
+    var draft: String {
+        get { draft(for: selectedID) }
+        set {
+            guard newValue != draft else { return }
+            drafts[selectedID.uuidString] = newValue.isEmpty ? nil : newValue
+            draftStateDirty = true
+            scheduleDraftSave()
+        }
+    }
     private(set) var isResponding = false
+    private(set) var generationStatus: GenerationStatus?
+    private(set) var transcriptRevision = 0
     private(set) var errorMessage: String?
     private(set) var notice: String?
     private var task: Task<Void, Never>?
     private var runID = UUID()
     private let client: any TutorCompleting
     private let storageURL: URL
+    private let draftsURL: URL
+    private var drafts: [String: String]
+    private var draftStateDirty = false
+    private var draftSaveTask: Task<Void, Never>?
+
+    private struct DraftState: Codable {
+        var selectedID: UUID
+        var drafts: [String: String]
+    }
+
+    func draft(for id: UUID) -> String { drafts[id.uuidString] ?? "" }
 
     var current: TutorConversation { conversations.first { $0.id == selectedID } ?? conversations[0] }
     var messages: [TutorMessage] { current.messages }
@@ -22,28 +43,39 @@ final class TutorSession {
         self.client = client
         let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
         self.storageURL = storageURL ?? support.appendingPathComponent("lilC/edsger-conversations.json")
+        self.draftsURL = self.storageURL.deletingPathExtension().appendingPathExtension("drafts.json")
         let loaded = (try? Data(contentsOf: self.storageURL)).flatMap { try? JSONDecoder().decode([TutorConversation].self, from: $0) } ?? []
-        let initial = loaded.isEmpty ? [TutorConversation()] : Array(loaded.prefix(100))
+        let savedDrafts = (try? Data(contentsOf: self.draftsURL)).flatMap { try? JSONDecoder().decode(DraftState.self, from: $0) }
+        let initial = loaded.isEmpty ? [TutorConversation()] : loaded
         conversations = initial
-        selectedID = initial[0].id
+        selectedID = savedDrafts.flatMap { state in initial.contains { $0.id == state.selectedID } ? state.selectedID : nil } ?? initial[0].id
+        let validIDs = Set(initial.map { $0.id.uuidString })
+        drafts = (savedDrafts?.drafts ?? [:]).filter { validIDs.contains($0.key) && !$0.value.isEmpty }
+        // Give a newly created empty chat a durable ID before saving its first draft.
+        if loaded.isEmpty { save() }
     }
 
     func newConversation() {
         stop()
-        if let empty = conversations.first(where: { $0.messages.isEmpty }) { selectedID = empty.id }
+        if let empty = conversations.first(where: { $0.messages.isEmpty && draft(for: $0.id).isEmpty }) { selectedID = empty.id }
         else { let chat = TutorConversation(); conversations.insert(chat, at: 0); selectedID = chat.id }
-        draft = ""; errorMessage = nil; notice = nil
+        draftStateDirty = true
+        errorMessage = nil; notice = nil
         save()
     }
     func select(_ id: UUID) {
         guard conversations.contains(where: { $0.id == id }) else { return }
-        stop(); selectedID = id; draft = ""; errorMessage = nil; notice = nil
+        stop(); selectedID = id; errorMessage = nil; notice = nil
+        draftStateDirty = true
+        flushDrafts()
     }
     func delete(_ id: UUID) {
         if selectedID == id { stop() }
         conversations.removeAll { $0.id == id }
+        drafts.removeValue(forKey: id.uuidString)
+        draftStateDirty = true
         if conversations.isEmpty { conversations = [TutorConversation()] }
-        if !conversations.contains(where: { $0.id == selectedID }) { selectedID = conversations[0].id; draft = "" }
+        if !conversations.contains(where: { $0.id == selectedID }) { selectedID = conversations[0].id }
         save()
     }
     func send() {
@@ -65,12 +97,17 @@ final class TutorSession {
         let prompt = messages
         let assistant = TutorMessage(role: .assistant, text: "")
         editCurrent { $0.messages.append(assistant) }
-        isResponding = true; runID = UUID()
+        isResponding = true; generationStatus = .waiting; runID = UUID()
         let id = runID
         task = Task { [weak self] in
             guard let self else { return }
             do {
-                let response = try await client.reply(messages: prompt) { [weak self] text in
+                let response = try await client.reply(messages: prompt, onStatus: { [weak self] status in
+                    Task { @MainActor in
+                        guard let self, self.runID == id, self.isResponding else { return }
+                        self.generationStatus = status
+                    }
+                }) { [weak self] text in
                     Task { @MainActor in
                         guard let self, self.runID == id, self.isResponding else { return }
                         self.updateMessage(assistant.id, text: text)
@@ -78,10 +115,10 @@ final class TutorSession {
                 }
                 guard runID == id else { return }
                 updateMessage(assistant.id, text: response)
-                isResponding = false; task = nil; save()
+                isResponding = false; generationStatus = nil; task = nil; save()
             } catch {
                 guard runID == id else { return }
-                isResponding = false; task = nil
+                isResponding = false; generationStatus = nil; task = nil
                 if error is CancellationError || (error as? AgentTransportError) == .cancelled { notice = "Response stopped." }
                 else { errorMessage = error.localizedDescription.replacingOccurrences(of: "agent", with: "tutor") }
                 removeEmptyReply(); save()
@@ -90,7 +127,7 @@ final class TutorSession {
     }
     func stop() {
         guard isResponding else { return }
-        runID = UUID(); task?.cancel(); task = nil; isResponding = false
+        runID = UUID(); task?.cancel(); task = nil; isResponding = false; generationStatus = nil
         notice = "Response stopped."; removeEmptyReply(); save()
     }
     func waitUntilIdle() async { await task?.value }
@@ -103,15 +140,45 @@ final class TutorSession {
     private func editCurrent(_ change: (inout TutorConversation) -> Void) {
         guard let index = conversations.firstIndex(where: { $0.id == selectedID }) else { return }
         change(&conversations[index]); conversations[index].updatedAt = Date()
+        transcriptRevision &+= 1
     }
+    private func scheduleDraftSave() {
+        draftSaveTask?.cancel()
+        draftSaveTask = Task { [weak self] in
+            do { try await Task.sleep(for: .milliseconds(350)) }
+            catch { return }
+            self?.flushDrafts()
+        }
+    }
+
+    /// Flush on chat transitions and when the app becomes inactive, not only after debounce.
+    func flushDrafts() {
+        draftSaveTask?.cancel(); draftSaveTask = nil
+        guard draftStateDirty else { return }
+        do {
+            try FileManager.default.createDirectory(at: draftsURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+            let data = try JSONEncoder().encode(DraftState(selectedID: selectedID, drafts: drafts))
+            try data.write(to: draftsURL, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
+            draftStateDirty = false
+        } catch {
+            errorMessage = "Your unfinished message could not be saved on this device. \(error.localizedDescription)"
+        }
+    }
+
     private func save() {
         conversations.sort { $0.updatedAt > $1.updatedAt }
-        // Bound local history size while preserving the active conversation.
-        if conversations.count > 100 { conversations = Array(conversations.prefix(100)) }
+        // Retain active/unfinished chats even when pruning old completed history.
+        if conversations.count > 100 {
+            let protected = conversations.filter { $0.id == selectedID || !draft(for: $0.id).isEmpty }
+            let protectedIDs = Set(protected.map(\.id))
+            let remaining = conversations.filter { !protectedIDs.contains($0.id) }
+            conversations = (protected + remaining.prefix(max(0, 100 - protected.count))).sorted { $0.updatedAt > $1.updatedAt }
+        }
         do {
             try FileManager.default.createDirectory(at: storageURL.deletingLastPathComponent(), withIntermediateDirectories: true)
             let data = try JSONEncoder().encode(conversations)
             try data.write(to: storageURL, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
         } catch { errorMessage = "This chat could not be saved on this device. \(error.localizedDescription)" }
+        flushDrafts()
     }
 }

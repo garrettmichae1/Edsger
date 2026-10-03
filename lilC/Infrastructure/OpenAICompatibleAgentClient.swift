@@ -1,15 +1,6 @@
 import Foundation
 import StoreKit
 
-struct AgentCompletion {
-    var assistantText: String
-    var toolCalls: [AgentToolCall]
-}
-
-protocol AgentCompleting: Sendable {
-    func complete(messagesJSON: Data, toolsJSON: Data) async throws -> AgentCompletion
-}
-
 struct OpenAICompatibleAgentClient: AgentCompleting {
     var baseURL: URL
     var model: String

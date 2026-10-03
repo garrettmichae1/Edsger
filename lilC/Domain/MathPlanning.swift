@@ -2,6 +2,14 @@ import Foundation
 
 protocol MathPlanning: Sendable {
     func mathPlan(messages: [TutorMessage]) async throws -> MathPlan
+    func mathPlan(messages: [TutorMessage], onStatus: @escaping GenerationStatusHandler) async throws -> MathPlan
+}
+
+extension MathPlanning {
+    func mathPlan(messages: [TutorMessage], onStatus: @escaping GenerationStatusHandler) async throws -> MathPlan {
+        onStatus(.planningCalculation)
+        return try await mathPlan(messages: messages)
+    }
 }
 
 enum MathPlan: Equatable, Sendable {

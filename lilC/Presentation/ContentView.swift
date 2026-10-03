@@ -29,6 +29,7 @@ struct ContentView: View {
     @State private var editorReturn: AppScreen = .home
     @State private var filesReturn: AppScreen = .home
     @Environment(\.requestReview) private var requestReview
+    @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
         NavigationStack {
@@ -172,6 +173,9 @@ struct ContentView: View {
         }
         .task {
             await linuxCourse.loadStore()
+        }
+        .onChange(of: scenePhase) { _, phase in
+            if phase != .active { tutor.flushDrafts() }
         }
         .onReceive(NotificationCenter.default.publisher(for: .lilCAskForReview)) { _ in
             Task { @MainActor in

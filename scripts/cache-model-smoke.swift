@@ -2,11 +2,6 @@
 import Foundation
 import llama
 
-struct AgentCompletion: Sendable { var assistantText: String; var toolCalls: [AgentToolCall] }
-protocol AgentCompleting: Sendable {
-    func complete(messagesJSON: Data, toolsJSON: Data) async throws -> AgentCompletion
-}
-
 private final class CancellationHandle: @unchecked Sendable {
     private let lock = NSLock()
     private var task: Task<String, Error>?

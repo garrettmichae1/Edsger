@@ -109,13 +109,20 @@ actor LocalAgentClient: AgentCompleting, TutorCompleting, MathPlanning {
     }
 
     func complete(messagesJSON: Data, toolsJSON: Data) async throws -> AgentCompletion {
+        try await complete(messagesJSON: messagesJSON, toolsJSON: toolsJSON, onStatus: { _ in })
+    }
+
+    func complete(messagesJSON: Data, toolsJSON: Data,
+                  onStatus: @escaping GenerationStatusHandler) async throws -> AgentCompletion {
         let clock = ContinuousClock()
         let start = clock.now
         var timing = Timing()
         defer { finishTiming(&timing, since: start) }
         try checkInferenceCancellation()
+        if resources == nil { onStatus(.loadingModel) }
         try loadIfNeeded()
         timing.loadSeconds = InferenceClock.seconds(since: start)
+        onStatus(.preparingPrompt)
         let tokenizationStart = clock.now
         guard let model, let context else { throw LocalAgentError.modelLoadFailed }
         var messages = (try JSONSerialization.jsonObject(with: messagesJSON)) as? [[String: Any]] ?? []
@@ -137,6 +144,7 @@ actor LocalAgentClient: AgentCompleting, TutorCompleting, MathPlanning {
 
         timing.tokenizationSeconds = InferenceClock.seconds(since: tokenizationStart)
         try preparePrompt(Array(tokens.prefix(Int(count))), timing: &timing)
+        onStatus(.generatingResponse)
         let generationStart = clock.now
         defer { timing.generationSeconds = InferenceClock.seconds(since: generationStart) }
 
@@ -177,14 +185,21 @@ actor LocalAgentClient: AgentCompleting, TutorCompleting, MathPlanning {
 
     /// Plain-text tutoring shares this actor's one model/context, without agent grammar or tools.
     func reply(messages: [TutorMessage], onUpdate: @escaping @Sendable (String) -> Void) async throws -> String {
+        try await reply(messages: messages, onStatus: { _ in }, onUpdate: onUpdate)
+    }
+
+    func reply(messages: [TutorMessage], onStatus: @escaping GenerationStatusHandler,
+               onUpdate: @escaping @Sendable (String) -> Void) async throws -> String {
         let clock = ContinuousClock()
         let start = clock.now
         var timing = Timing()
         timing.mode = "chat"
         defer { finishTiming(&timing, since: start) }
         try checkInferenceCancellation()
+        if resources == nil { onStatus(.loadingModel) }
         try loadIfNeeded()
         timing.loadSeconds = InferenceClock.seconds(since: start)
+        onStatus(.preparingPrompt)
         let tokenizationStart = clock.now
         guard let model, let context else { throw LocalAgentError.modelLoadFailed }
         let vocab = llama_model_get_vocab(model)
@@ -202,6 +217,7 @@ actor LocalAgentClient: AgentCompleting, TutorCompleting, MathPlanning {
         }
         timing.tokenizationSeconds = InferenceClock.seconds(since: tokenizationStart)
         try preparePrompt(Array(tokens.prefix(Int(count))), timing: &timing)
+        onStatus(.generatingResponse)
         let generationStart = clock.now
         defer { timing.generationSeconds = InferenceClock.seconds(since: generationStart) }
         let sampler = llama_sampler_chain_init(llama_sampler_chain_default_params())
@@ -240,6 +256,10 @@ actor LocalAgentClient: AgentCompleting, TutorCompleting, MathPlanning {
 
     /// Short grammar-constrained planning pass on the same actor-owned model/context.
     func mathPlan(messages: [TutorMessage]) async throws -> MathPlan {
+        try await mathPlan(messages: messages, onStatus: { _ in })
+    }
+
+    func mathPlan(messages: [TutorMessage], onStatus: @escaping GenerationStatusHandler) async throws -> MathPlan {
         let clock = ContinuousClock()
         let start = clock.now
         var timing = Timing()
@@ -250,8 +270,10 @@ actor LocalAgentClient: AgentCompleting, TutorCompleting, MathPlanning {
             timing.outcome = "success"
             return .clarify("Please send a shorter question with one expression or equation to calculate.")
         }
+        if resources == nil { onStatus(.loadingModel) }
         try loadIfNeeded()
         timing.loadSeconds = InferenceClock.seconds(since: start)
+        onStatus(.preparingPrompt)
         let tokenizationStart = clock.now
         try checkInferenceCancellation()
         guard let model, let context else { throw LocalAgentError.modelLoadFailed }
@@ -265,6 +287,7 @@ actor LocalAgentClient: AgentCompleting, TutorCompleting, MathPlanning {
         guard count > 0, count < contextSize - 512 else { throw LocalAgentError.promptTooLong }
         timing.tokenizationSeconds = InferenceClock.seconds(since: tokenizationStart)
         try preparePrompt(Array(tokens.prefix(Int(count))), timing: &timing)
+        onStatus(.planningCalculation)
         let generationStart = clock.now
         defer { timing.generationSeconds = InferenceClock.seconds(since: generationStart) }
         let sampler = try GreedyGrammarSampler(vocab: vocab, grammar: MathPlannerPrompt.grammar)
