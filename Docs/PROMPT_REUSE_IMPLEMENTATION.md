@@ -1,5 +1,26 @@
 # Automatic prompt reuse — implementation and validation
 
+## Build correction — 2026-10-03 UTC
+
+The initial implementation contained an Apple OSLog compile error in
+`LocalAgentClient.finishTiming` (original line 96). Its interpolations captured an
+`inout` parameter through escaping autoclosures. The Linux no-op logging shim
+incorrectly accepted values directly, so the earlier host builds missed this.
+Logging now captures an immutable value snapshot after timing is finalized.
+
+Changing the host shim's interpolation parameters to `@autoclosure @escaping`
+reproduced 19 compiler errors in the original production client. The same Swift
+6 optimized production-client/harness build passes after the snapshot fix.
+This verifies the capture correction, not an iOS SDK build. No Xcode or iPhone
+runtime is available in the Linux test environment.
+
+On a Mac, `bash scripts/check-local-inference-build.sh` compiles the shared
+inference sources against real Apple OSLog without loading the model. It requires
+the repository's macOS llama framework. This added check has been shell-syntax
+checked here but still needs execution on macOS. Building the full app in Xcode
+remains required to validate the iOS UI, bridging header, native frameworks, and
+packaged resources.
+
 ## What changed
 
 IDE code generation, text chat, and math planning now share one prompt-processing path. It can restore an exact previously processed prompt prefix instead of decoding those tokens again. This optimizes prompt processing and time to first output; it does not claim to accelerate each generated token.

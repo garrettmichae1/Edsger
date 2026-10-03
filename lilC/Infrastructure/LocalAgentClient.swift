@@ -93,7 +93,9 @@ actor LocalAgentClient: AgentCompleting, TutorCompleting, MathPlanning {
         timing.cache.retainedBytes = promptCache.retainedBytes
         timing.totalSeconds = InferenceClock.seconds(since: start)
         lastTiming = timing
-        Self.logger.info("inference mode=\(timing.mode, privacy: .public) outcome=\(timing.outcome, privacy: .public) total=\(timing.totalSeconds) load=\(timing.loadSeconds) tokenize=\(timing.tokenizationSeconds) prompt=\(timing.promptSeconds) decode=\(timing.cache.decodeSeconds) restore=\(timing.cache.restoreSeconds) capture=\(timing.cache.captureSeconds) generation=\(timing.generationSeconds) firstToken=\(timing.firstTokenSeconds ?? -1) firstUpdate=\(timing.firstUpdateSeconds ?? -1) inputTokens=\(timing.promptTokens) reusedTokens=\(timing.cache.reusedTokens) decodedTokens=\(timing.cache.decodedTokens) outputTokens=\(timing.generatedTokens) cache=\(timing.cache.outcome, privacy: .public) captureStatus=\(timing.cache.capture, privacy: .public) cacheBytes=\(timing.cache.retainedBytes)")
+        // OSLog interpolations escape; never capture the inout parameter.
+        let snapshot = timing
+        Self.logger.info("inference mode=\(snapshot.mode, privacy: .public) outcome=\(snapshot.outcome, privacy: .public) total=\(snapshot.totalSeconds) load=\(snapshot.loadSeconds) tokenize=\(snapshot.tokenizationSeconds) prompt=\(snapshot.promptSeconds) decode=\(snapshot.cache.decodeSeconds) restore=\(snapshot.cache.restoreSeconds) capture=\(snapshot.cache.captureSeconds) generation=\(snapshot.generationSeconds) firstToken=\(snapshot.firstTokenSeconds ?? -1) firstUpdate=\(snapshot.firstUpdateSeconds ?? -1) inputTokens=\(snapshot.promptTokens) reusedTokens=\(snapshot.cache.reusedTokens) decodedTokens=\(snapshot.cache.decodedTokens) outputTokens=\(snapshot.generatedTokens) cache=\(snapshot.cache.outcome, privacy: .public) captureStatus=\(snapshot.cache.capture, privacy: .public) cacheBytes=\(snapshot.cache.retainedBytes)")
     }
 
     private func preparePrompt(_ tokens: [Int32], timing: inout Timing) throws {
