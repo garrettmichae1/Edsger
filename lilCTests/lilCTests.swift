@@ -422,14 +422,6 @@ struct lilCTests {
         #expect(LegalURLs.extraLegalRowsVisibleInThisRelease == false)
     }
 
-    @Test func picoCSettingsNoteSaysLibrariesWillNotWork() {
-        #expect(SettingsScreen.picoCExplanation.contains("interpreter, not a compiler"))
-        #expect(SettingsScreen.picoCExplanation.contains("C libraries"))
-        #expect(SettingsScreen.picoCExplanation.contains("will not work"))
-        #expect(SettingsScreen.picoCExplanation.contains("beginner programs") == false)
-        #expect(SettingsScreen.picoCExplanation.contains("standard library") == false)
-    }
-
     @MainActor
     @Test func firstLaunchShowsOnboarding() {
         let suite = UserDefaults(suiteName: "lilc-tests-\(UUID().uuidString)")!

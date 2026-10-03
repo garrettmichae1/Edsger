@@ -4,332 +4,342 @@ struct SettingsScreen: View {
     let workspace: LocalCWorkspace
     let appearance: AppearanceStore
     let agentSettings: AgentSettingsStore
-    let linuxCourse: LinuxCourseStore
     let back: () -> Void
 
+    @Environment(\.colorScheme) private var scheme
+    @Environment(\.dynamicTypeSize) private var textSize
     @State private var document: LegalDocument?
     @State private var confirmEraseAll = false
-    @State private var customKey = ""
-    @State private var githubConnected = false
+    @State private var showsTour = false
+
+    // Match the quiet surfaces used by Chat and its Info sheet.
+    private var background: Color { scheme == .dark ? Color(white: 0.055) : .white }
+    private var surface: Color { scheme == .dark ? Color(white: 0.11) : Color(white: 0.985) }
+    private var selection: Color { scheme == .dark ? Color(white: 0.19) : Color(white: 0.93) }
+    private var outline: Color { Color.primary.opacity(scheme == .dark ? 0.09 : 0.06) }
     private var appVersion: String {
         let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0.1.0"
         let build = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "1"
         return "\(version) (\(build))"
     }
 
-    #if DEBUG
-    private var debugLinuxUnlock: Binding<Bool> {
-        Binding(
-            get: { UserDefaults.standard.bool(forKey: LinuxCourseStore.debugUnlockKey) },
-            set: { value in
-                UserDefaults.standard.set(value, forKey: LinuxCourseStore.debugUnlockKey)
-                Task { await linuxCourse.refreshEntitlements() }
-            }
-        )
-    }
-    #endif
-
     var body: some View {
         VStack(spacing: 0) {
             settingsBar
-
-            List {
-                appearanceSection
-                picoCSection
-                filesSection
-                linuxCourseSection
-                if AgentRuntimeConfig.surfacesVisibleInThisRelease {
-                    agentSection
+            ScrollView {
+                VStack(alignment: .leading, spacing: 28) {
+                    appearanceSection
+                    editorSection
+                    if AgentRuntimeConfig.surfacesVisibleInThisRelease {
+                        agentSection
+                    }
+                    workspaceSection
+                    aboutSection
+                    VStack(spacing: 5) {
+                        Text("Edsger").font(.footnote.weight(.semibold))
+                        Text("Version \(appVersion)").font(.caption)
+                    }
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 8)
                 }
-                rateSection
-                legalSection
+                .padding(.horizontal, 20)
+                .padding(.top, 12)
+                .padding(.bottom, 28)
+                .frame(maxWidth: 640)
+                .frame(maxWidth: .infinity)
             }
-            .listStyle(.insetGrouped)
-            .scrollContentBackground(.hidden)
-            .listSectionSpacing(22)
-            .environment(\.defaultMinListRowHeight, 44)
-            .tint(AppPalette.green)
-            .background(AppPalette.background)
+            .accessibilityIdentifier("settings.scroll")
         }
-        .background(AppPalette.background)
+        .background(background.ignoresSafeArea())
+        .foregroundStyle(Color.primary)
+        .tint(.blue)
+        .lilCPreferredScheme(appearance.colorWay)
+        .accessibilityIdentifier("settings.root")
         .sheet(item: $document) { item in
             LegalDocumentView(document: item)
         }
-        .task {
-            await linuxCourse.loadStore()
-            guard AgentRuntimeConfig.surfacesVisibleInThisRelease else { return }
-            githubConnected = AgentKeychain.githubToken() != nil
+        .fullScreenCover(isPresented: $showsTour) {
+            OnboardingView(isReplay: true) { showsTour = false }
         }
-        .onReceive(NotificationCenter.default.publisher(for: .lilCGitHubChanged)) { _ in
-            guard AgentRuntimeConfig.surfacesVisibleInThisRelease else { return }
-            githubConnected = AgentKeychain.githubToken() != nil
-        }
-        .alert("Erase All Files?", isPresented: $confirmEraseAll) {
-            Button("Erase All", role: .destructive) {
+        .alert("Erase \(workspace.language.name) workspace?", isPresented: $confirmEraseAll) {
+            Button("Erase files", role: .destructive) {
+                guard !workspace.isRunning else { return }
                 workspace.deleteAllFiles()
             }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("Removes every \(workspace.language.name) file in this workspace. A starter file is created.")
+            Text("Deletes all files and folders in your \(workspace.language.name) workspace, including its projects, and creates a starter file. Other language workspaces are kept.")
         }
     }
 
     private var settingsBar: some View {
-        HStack {
-            Button(action: {
+        HStack(spacing: 16) {
+            Button {
                 AppHaptics.tap()
                 back()
-            }) {
+            } label: {
                 Image(systemName: "chevron.left")
                     .font(.body.weight(.semibold))
+                    .frame(width: 48, height: 48)
+                    .background(surface, in: Circle())
+                    .contentShape(Circle())
             }
+            .buttonStyle(.plain)
             .accessibilityLabel("Back")
-
+            .accessibilityIdentifier("settings.back")
             Text("Settings")
-                .font(.headline)
-            Spacer()
+                .font(.title2.weight(.semibold))
+                .accessibilityAddTraits(.isHeader)
+            Spacer(minLength: 0)
         }
-        .foregroundStyle(AppPalette.foreground)
         .padding(.horizontal, 20)
-        .padding(.vertical, 16)
-        .background(AppPalette.panel)
+        .padding(.vertical, 12)
+        .background(background)
     }
 
     private var appearanceSection: some View {
-        Section {
-            ForEach(AppColorWay.allCases) { way in
-                Button {
-                    appearance.colorWay = way
-                } label: {
-                    HStack {
-                        Text(way.title)
-                            .font(.body)
-                            .foregroundStyle(AppPalette.foreground)
-                        Spacer()
-                        if appearance.colorWay == way {
-                            Image(systemName: "checkmark")
-                                .font(.body.weight(.semibold))
-                                .foregroundStyle(AppPalette.green)
-                                .accessibilityHidden(true)
-                        }
-                    }
-                    .contentShape(Rectangle())
+        let layout = textSize.isAccessibilitySize
+            ? AnyLayout(VStackLayout(spacing: 12)) : AnyLayout(HStackLayout(spacing: 12))
+        return settingsGroup("Appearance") {
+            layout {
+                ForEach(AppColorWay.allCases) { way in
+                    appearanceChoice(way)
                 }
-                .buttonStyle(.appHapticSelect)
-                .accessibilityLabel(way.title)
-                .accessibilityAddTraits(appearance.colorWay == way ? [.isSelected] : [])
-                .listRowBackground(AppPalette.card)
             }
+            .padding(16)
+        }
+    }
+
+    private func appearanceChoice(_ way: AppColorWay) -> some View {
+        let selected = appearance.colorWay == way
+        return Button {
+            appearance.colorWay = way
+        } label: {
+            VStack(spacing: 12) {
+                appearancePreview(way)
+                HStack(spacing: 8) {
+                    Text(way.title).font(.subheadline.weight(.medium))
+                    Spacer(minLength: 0)
+                    Image(systemName: selected ? "checkmark.circle.fill" : "circle")
+                        .foregroundStyle(selected ? Color.blue : Color.secondary)
+                        .accessibilityHidden(true)
+                }
+            }
+            .padding(12)
+            .frame(maxWidth: .infinity)
+            .background(background, in: RoundedRectangle(cornerRadius: 20))
+            .overlay {
+                RoundedRectangle(cornerRadius: 20)
+                    .stroke(selected ? Color.blue : outline, lineWidth: selected ? 1.5 : 1)
+            }
+            .contentShape(RoundedRectangle(cornerRadius: 20))
+        }
+        .buttonStyle(.appHapticSelect)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(way.title + " appearance")
+        .accessibilityAddTraits(selected ? [.isSelected] : [])
+        .accessibilityIdentifier("settings.appearance." + way.rawValue)
+    }
+
+    private func appearancePreview(_ way: AppColorWay) -> some View {
+        let dark = way == .dark
+        return VStack(alignment: .leading, spacing: 9) {
+            HStack {
+                Circle().fill(Color.blue).frame(width: 7, height: 7)
+                Spacer()
+                Capsule().fill(dark ? Color(white: 0.3) : Color(white: 0.82))
+                    .frame(width: 24, height: 4)
+            }
+            HStack {
+                Spacer(minLength: 0)
+                RoundedRectangle(cornerRadius: 8)
+                    .fill(dark ? Color(white: 0.25) : Color(white: 0.9))
+                    .frame(width: 44, height: 18)
+            }
+            Capsule().fill(dark ? Color(white: 0.7) : Color(white: 0.4))
+                .frame(maxWidth: 68).frame(height: 4)
+            Capsule().fill(dark ? Color(white: 0.35) : Color(white: 0.8))
+                .frame(maxWidth: 44).frame(height: 4)
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity)
+        .background(dark ? Color(white: 0.075) : Color.white, in: RoundedRectangle(cornerRadius: 12))
+        .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.gray.opacity(0.18)))
+        .accessibilityHidden(true)
+    }
+
+    private var editorSection: some View {
+        settingsGroup("Editor") {
             Toggle(isOn: Binding(
                 get: { appearance.syntaxColoring },
                 set: { appearance.syntaxColoring = $0 }
             )) {
-                Text("Syntax Color")
-                    .font(.body)
-                    .foregroundStyle(AppPalette.foreground)
+                rowLabel("Syntax highlighting", symbol: "curlybraces")
             }
-            .listRowBackground(AppPalette.card)
-            .accessibilityLabel("Syntax Color")
-        } header: {
-            Text("Appearance")
-        } footer: {
-            Text("lilC uses Light or Dark everywhere.")
+            .padding(18)
+            .accessibilityIdentifier("settings.syntax-highlighting")
+            rowDivider
+            DisclosureGroup {
+                Text(runtimeSummary)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.top, 8)
+                    .accessibilityIdentifier("settings.runtime-summary")
+            } label: {
+                rowLabel("Runtime", symbol: "cpu", detail: "\(workspace.language.name) · \(workspace.language.runtimeName)")
+            }
+            .padding(18)
+            .accessibilityIdentifier("settings.runtime")
         }
     }
 
-    private var picoCSection: some View {
-        Section {
-            Text(workspace.language.runtimeExplanation)
-                .font(.body)
-                .foregroundStyle(AppPalette.foreground)
-                .fixedSize(horizontal: false, vertical: true)
-                .listRowBackground(AppPalette.card)
-                .accessibilityLabel("About \(workspace.language.runtimeName)")
-        } header: {
-            Text(workspace.language.runtimeName)
-        }
-    }
-
-    private var filesSection: some View {
-        Section {
-            LabeledContent("On This iPhone") {
-                Text("\(workspace.files.count)")
-                    .font(.body)
-                    .foregroundStyle(AppPalette.silver)
-            }
-            .font(.body)
-            .listRowBackground(AppPalette.card)
-
-            Button("Erase All Files", role: .destructive) {
-                AppHaptics.tap()
-                confirmEraseAll = true
-            }
-            .font(.body)
-            .foregroundStyle(AppPalette.error)
-            .listRowBackground(AppPalette.card)
-        } header: {
-            Text("Files")
-        } footer: {
-            Text("Removes every \(workspace.language.name) file in this workspace. A starter file is created.")
-        }
-    }
-
-    private var linuxCourseSection: some View {
-        Section {
-            LabeledContent("Status") {
-                Text(linuxCourse.isOwned ? "Owned" : "Not owned")
-                    .font(.body)
-                    .foregroundStyle(AppPalette.silver)
-            }
-            .font(.body)
-            .listRowBackground(AppPalette.card)
-            .accessibilityIdentifier("linux-course-status")
-
-            if !linuxCourse.isOwned {
-                Button(linuxCourse.isPurchasing ? "Working…" : "Unlock \(linuxCourse.priceText)") {
-                    AppHaptics.tap()
-                    Task { await linuxCourse.purchase() }
-                }
-                .font(.body)
-                .disabled(linuxCourse.isPurchasing)
-                .listRowBackground(AppPalette.card)
-                .accessibilityIdentifier("linux-course-unlock")
-            }
-
-            Button("Restore Purchases") {
-                AppHaptics.tap()
-                Task { await linuxCourse.restore() }
-            }
-            .font(.body)
-            .listRowBackground(AppPalette.card)
-            .accessibilityIdentifier("linux-course-restore")
-
-            #if DEBUG
-            Toggle("DEBUG: unlock without StoreKit", isOn: debugLinuxUnlock)
-                .font(.body)
-                .listRowBackground(AppPalette.card)
-                .tint(AppPalette.green)
-                .accessibilityIdentifier("linux-course-debug-unlock")
-            #endif
-        } header: {
-            Text("Linux Course")
-        } footer: {
-            Text(linuxCourse.storeMessage ?? "A one-time \(linuxCourse.priceText) purchase. C lessons stay free. Study stays on this iPhone.")
-        }
-    }
-
-    private var rateSection: some View {
-        Section {
-            if let url = LegalURLs.writeReviewURL() {
-                Link(destination: url) {
-                    settingsLinkLabel("Write a Review")
-                }
-                .appHapticTap()
-                .listRowBackground(AppPalette.card)
-                .accessibilityLabel("Write a Review")
-                .accessibilityIdentifier("write-review")
-            }
-        } footer: {
-            Text("Writing a review helps others discover lilC :)")
+    private var runtimeSummary: String {
+        switch workspace.language {
+        case .c: "C runs locally with PicoC. External C libraries and some desktop compiler features are unavailable."
+        case .python: "Python runs locally with the bundled standard library. Installing packages with pip is unavailable."
+        case .javascript: "JavaScript runs locally with JavaScriptCore. Node.js, npm, and browser APIs are unavailable."
+        case .lua: "Lua runs locally with project modules. LuaRocks and native modules are unavailable."
         }
     }
 
     private var agentSection: some View {
-        Section {
+        settingsGroup("Agent") {
             Toggle(isOn: Binding(
                 get: { agentSettings.agentsEnabled },
                 set: { agentSettings.agentsEnabled = $0 }
             )) {
-                Text("Agent Mode")
-                    .font(.body)
-                    .foregroundStyle(AppPalette.foreground)
+                rowLabel("Agent mode", symbol: "sparkles", detail: "On-device help inside the IDE.")
             }
-            .listRowBackground(AppPalette.card)
+            .padding(18)
             .accessibilityIdentifier("agent-mode-toggle")
-
             if agentSettings.agentsEnabled {
+                rowDivider
                 Toggle(isOn: Binding(
                     get: { agentSettings.safeguardsOn },
                     set: { agentSettings.safeguardsOn = $0 }
                 )) {
-                    Text("Block agent deletions")
-                        .font(.body)
-                        .foregroundStyle(AppPalette.foreground)
+                    rowLabel("Protect files from deletion", symbol: "hand.raised", detail: "Blocks the agent's delete action. Edits are still allowed.")
                 }
-                .listRowBackground(AppPalette.card)
+                .padding(18)
+                .accessibilityIdentifier("settings.agent-safeguards")
             }
-        } header: {
-            Text("Agent")
-        } footer: {
-            Text("The bundled model works on this iPhone, including offline. It can edit and run \(workspace.language.name) files in the current project.")
         }
     }
 
-    private var legalSection: some View {
-        Section {
-            if LegalURLs.extraLegalRowsVisibleInThisRelease {
-                Link(destination: LegalURLs.teachers) {
-                    settingsLinkLabel("For teachers")
-                }
-                .appHapticTap()
-                .listRowBackground(AppPalette.card)
-                Link(destination: LegalURLs.webPlayground) {
-                    settingsLinkLabel("Web playground")
-                }
-                .appHapticTap()
-                .listRowBackground(AppPalette.card)
+    private var workspaceSection: some View {
+        settingsGroup("Workspace") {
+            HStack(spacing: 12) {
+                rowLabel(workspace.language.name + " files", symbol: "folder", detail: "Stored on this device")
+                Spacer(minLength: 0)
+                Text(workspace.files.count.formatted())
+                    .font(.body.monospacedDigit())
+                    .foregroundStyle(.secondary)
             }
-            Link(destination: LegalURLs.privacy) {
-                settingsLinkLabel("Privacy Policy")
+            .padding(18)
+            .accessibilityElement(children: .combine)
+            rowDivider
+            Button(role: .destructive) {
+                AppHaptics.tap()
+                confirmEraseAll = true
+            } label: {
+                rowLabel("Erase workspace files", symbol: "trash",
+                         detail: workspace.isRunning ? "Stop the program before erasing files." : nil)
+                    .foregroundStyle(Color.red)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(18)
+                    .contentShape(Rectangle())
             }
-            .appHapticTap()
-            .listRowBackground(AppPalette.card)
-            Link(destination: LegalURLs.terms) {
-                settingsLinkLabel("Terms of Use")
-            }
-            .appHapticTap()
-            .listRowBackground(AppPalette.card)
-            legalRow("Licenses") { document = .licenses }
-            if LegalURLs.extraLegalRowsVisibleInThisRelease {
-                Link(destination: LegalURLs.support) {
-                    settingsLinkLabel("Email Support")
-                }
-                .appHapticTap()
-                .listRowBackground(AppPalette.card)
-            }
-        } header: {
-            Text("Legal")
-        } footer: {
-            Text("Version \(appVersion)")
+            .buttonStyle(.plain)
+            .disabled(workspace.isRunning)
+            .opacity(workspace.isRunning ? 0.45 : 1)
+            .accessibilityIdentifier("settings.erase-files")
         }
     }
 
-    private func legalRow(_ title: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            settingsLinkLabel(title)
+    private var aboutSection: some View {
+        settingsGroup("About Edsger") {
+            Button { showsTour = true } label: {
+                navigationRow("Take the tour", symbol: "rectangle.stack")
+            }
+            .accessibilityIdentifier("settings.tour")
+            if let url = LegalURLs.writeReviewURL() {
+                rowDivider
+                Link(destination: url) { navigationRow("Write a review", symbol: "star") }
+                    .accessibilityIdentifier("write-review")
+            }
+            rowDivider
+            Link(destination: LegalURLs.privacy) { navigationRow("Privacy policy", symbol: "lock") }
+            rowDivider
+            Link(destination: LegalURLs.terms) { navigationRow("Terms of use", symbol: "doc.text") }
+            rowDivider
+            Button { document = .licenses } label: {
+                navigationRow("Open-source licenses", symbol: "chevron.left.forwardslash.chevron.right")
+            }
+            .accessibilityIdentifier("settings.licenses")
+            if LegalURLs.extraLegalRowsVisibleInThisRelease {
+                rowDivider
+                Link(destination: LegalURLs.teachers) { navigationRow("For teachers", symbol: "person.2") }
+                rowDivider
+                Link(destination: LegalURLs.webPlayground) { navigationRow("Web playground", symbol: "safari") }
+                rowDivider
+                Link(destination: LegalURLs.support) { navigationRow("Email support", symbol: "envelope") }
+            }
         }
         .buttonStyle(.appHaptic)
-        .listRowBackground(AppPalette.card)
     }
 
-    private func settingsLinkLabel(_ title: String) -> some View {
-        HStack {
+    private func settingsGroup<Content: View>(_ title: String, @ViewBuilder content: () -> Content) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
             Text(title)
-                .font(.body)
-                .foregroundStyle(AppPalette.foreground)
-            Spacer()
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, 8)
+                .accessibilityAddTraits(.isHeader)
+            VStack(spacing: 0, content: content)
+                .background(surface, in: RoundedRectangle(cornerRadius: 26))
+                .overlay(RoundedRectangle(cornerRadius: 26).stroke(outline, lineWidth: 1))
+                .clipShape(RoundedRectangle(cornerRadius: 26))
+        }
+    }
+
+    private var rowDivider: some View {
+        Divider().overlay(outline).padding(.leading, 66).padding(.trailing, 18)
+    }
+
+    private func rowLabel(_ title: String, symbol: String, detail: String? = nil) -> some View {
+        HStack(alignment: .center, spacing: 12) {
+            Image(systemName: symbol)
+                .font(.body.weight(.medium))
+                .frame(width: 36, height: 36)
+                .background(selection, in: RoundedRectangle(cornerRadius: 11))
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 4) {
+                Text(title).font(.body)
+                if let detail {
+                    Text(detail).font(.footnote).foregroundStyle(.secondary)
+                }
+            }
+            .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    private func navigationRow(_ title: String, symbol: String) -> some View {
+        HStack(spacing: 12) {
+            rowLabel(title, symbol: symbol)
+            Spacer(minLength: 0)
             Image(systemName: "chevron.right")
-                .font(.footnote.weight(.semibold))
-                .foregroundStyle(AppPalette.silver)
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.tertiary)
                 .accessibilityHidden(true)
         }
+        .foregroundStyle(Color.primary)
+        .padding(18)
+        .frame(minHeight: 56)
         .contentShape(Rectangle())
     }
-
-    /// Learner-facing note. PicoC is an on-device interpreter, not a compiler.
-    static let picoCExplanation = """
-    PicoC is an interpreter, not a compiler. It runs C on this iPhone. Standard C libraries and extras a desktop compiler provides will not work here.
-    """
 }
 
 private enum LegalDocument: String, Identifiable {

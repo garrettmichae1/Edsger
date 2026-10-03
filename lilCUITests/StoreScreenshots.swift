@@ -293,7 +293,7 @@ final class StoreScreenshots: XCTestCase {
         XCUIDevice.shared.orientation = .portrait
 
         app = XCUIApplication()
-        app.launchArguments.append("UITEST_STORE_SHOTS")
+        app.launchArguments = ["UITEST_STORE_SHOTS", "-lilc.selected.language", "c"]
         app.launch()
         XCTAssertTrue(app.wait(for: .runningForeground, timeout: 15))
         openIDE()
@@ -303,7 +303,9 @@ final class StoreScreenshots: XCTestCase {
         XCTAssertTrue(settings.waitForExistence(timeout: 8), app.debugDescription)
         settings.tap()
         XCTAssertTrue(app.staticTexts["Appearance"].waitForExistence(timeout: 6), app.debugDescription)
-        XCTAssertTrue(app.staticTexts["PicoC"].waitForExistence(timeout: 4), app.debugDescription)
+        XCTAssertTrue(app.staticTexts["C · PicoC"].waitForExistence(timeout: 4), app.debugDescription)
+        XCTAssertFalse(app.staticTexts["settings.runtime-summary"].exists)
+        XCTAssertFalse(app.staticTexts["Linux Course"].exists)
         sleep(1)
         capture("05-settings")
     }

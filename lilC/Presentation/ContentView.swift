@@ -19,7 +19,6 @@ struct ContentView: View {
     }
     @State private var appearance = AppearanceStore.shared
     @State private var agentSettings = AgentSettingsStore.shared
-    @State private var linuxCourse = LinuxCourseStore.shared
     @State private var activeScreen: AppScreen = .learn
     @State private var tutor = TutorSession()
     @State private var editorReturn: AppScreen = .home
@@ -86,8 +85,7 @@ struct ContentView: View {
                 SettingsScreen(
                     workspace: localWorkspace,
                     appearance: appearance,
-                    agentSettings: agentSettings,
-                    linuxCourse: linuxCourse
+                    agentSettings: agentSettings
                 ) {
                     activeScreen = .home
                 }
@@ -103,9 +101,6 @@ struct ContentView: View {
         .id(appearance.colorWay)
         .lilCPreferredScheme(appearance.colorWay)
         .onAppear { AppHaptics.prepare() }
-        }
-        .task {
-            await linuxCourse.loadStore()
         }
         .onChange(of: scenePhase) { _, phase in
             if phase != .active { tutor.flushDrafts() }
