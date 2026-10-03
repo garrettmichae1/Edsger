@@ -1,247 +1,210 @@
 import SwiftUI
 
+/// The first-run tour and the replay from Chat's Info sheet share one experience.
 struct OnboardingView: View {
-    var finish: () -> Void
+    let finish: () -> Void
+    let isReplay: Bool
 
-    @State private var page = 0
+    @State private var page: Int
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @AccessibilityFocusState private var focusedPage: String?
+
+    private var secondaryInk: Color {
+        AppearanceStore.shared.colorWay == .dark
+            ? AppPalette.silver : Color(red: 0.35, green: 0.35, blue: 0.38)
+    }
+
+    init(initialPage: Int = 0, isReplay: Bool = false, finish: @escaping () -> Void) {
+        self.finish = finish
+        self.isReplay = isReplay
+        _page = State(initialValue: min(max(initialPage, 0), OnboardingCopy.pageCount - 1))
+    }
 
     var body: some View {
         VStack(spacing: 0) {
             topBar
-
             TabView(selection: $page) {
-                runPage.tag(0)
-                freePage.tag(1)
+                ForEach(Array(OnboardingCopy.pages.enumerated()), id: \.element.id) { index, item in
+                    tourPage(item).tag(index)
+                }
             }
             .tabViewStyle(.page(indexDisplayMode: .never))
-
-            pageDots
-                .padding(.bottom, 22)
-
-            Button(action: advance) {
-                Text(page == 0 ? OnboardingCopy.continueTitle : OnboardingCopy.getStartedTitle)
-                    .font(.system(size: 17, weight: .semibold))
-                    .foregroundStyle(AppPalette.onAccent)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 16)
-                    .background(AppPalette.green, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-            }
-            .buttonStyle(.plain)
-            .accessibilityIdentifier("onboarding.primary")
-            .padding(.horizontal, 20)
-            .padding(.bottom, 12)
+            controls
         }
         .background(AppPalette.background.ignoresSafeArea())
         .foregroundStyle(AppPalette.foreground)
         .lilCPreferredScheme(AppearanceStore.shared.colorWay)
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("onboarding.root")
+        .onChange(of: page) { _, newPage in
+            focusedPage = OnboardingCopy.pages[newPage].id
+        }
     }
 
     private var topBar: some View {
-        HStack {
-            Spacer()
-            if page == 0 {
-                Button(OnboardingCopy.skipTitle, action: finish)
-                    .font(.system(size: 15, weight: .semibold))
-                    .foregroundStyle(AppPalette.green)
-                    .accessibilityIdentifier("onboarding.skip")
+        HStack(spacing: 12) {
+            Button { move(to: page - 1) } label: {
+                Image(systemName: "chevron.left")
+                    .font(.body.weight(.semibold))
+                    .frame(width: 44, height: 44)
+                    .contentShape(Rectangle())
             }
+            .buttonStyle(.plain)
+            .disabled(page == 0)
+            .opacity(page == 0 ? 0 : 1)
+            .accessibilityHidden(page == 0)
+            .accessibilityLabel("Previous page")
+            .accessibilityIdentifier("onboarding.back")
+            Spacer(minLength: 0)
+            Text("Edsger")
+                .font(.headline)
+                .accessibilityAddTraits(.isHeader)
+            Spacer(minLength: 0)
+            Button(isReplay ? "Done" : OnboardingCopy.skipTitle, action: finish)
+                .font(.subheadline.weight(.medium))
+                .frame(minWidth: 44, minHeight: 44)
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("onboarding.skip")
         }
-        .padding(.horizontal, 20)
-        .padding(.top, 8)
-        .frame(height: 44)
+        .foregroundStyle(AppPalette.foreground)
+        .padding(.horizontal, 16)
+        .padding(.top, 4)
     }
 
-    private var runPage: some View {
-        onboardingPage(
-            graphic: { editorGraphic },
-            headline: OnboardingCopy.page1Headline,
-            line: OnboardingCopy.page1Line
-        )
-    }
-
-    private var freePage: some View {
-        onboardingPage(
-            graphic: { freeGraphic },
-            headline: OnboardingCopy.page2Headline,
-            line: OnboardingCopy.page2Line
-        )
-    }
-
-    private func onboardingPage<Graphic: View>(
-        @ViewBuilder graphic: () -> Graphic,
-        headline: String,
-        line: String
-    ) -> some View {
-        VStack(spacing: 0) {
-            Spacer(minLength: 8)
-            graphic()
-            Spacer(minLength: 20)
-            Text(headline)
-                .font(.system(size: 28, weight: .semibold))
-                .multilineTextAlignment(.center)
-                .foregroundStyle(AppPalette.foreground)
-                .accessibilityIdentifier("onboarding.headline")
-            Text(line)
-                .font(.system(size: 17))
-                .multilineTextAlignment(.center)
-                .foregroundStyle(AppPalette.silver)
-                .padding(.top, 8)
-                .accessibilityIdentifier("onboarding.line")
-            Spacer(minLength: 12)
-        }
-        .padding(.horizontal, 28)
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-    }
-
-    private var editorGraphic: some View {
-        VStack(spacing: 22) {
-            logoMark(height: 92)
-            OnboardingEditorMock()
-        }
-    }
-
-    private var freeGraphic: some View {
-        VStack(spacing: 28) {
-            ZStack {
-                Circle()
-                    .fill(AppPalette.green.opacity(AppearanceStore.shared.colorWay == .dark ? 0.14 : 0.10))
-                    .frame(width: 168, height: 168)
-                    .blur(radius: 2)
-                Circle()
-                    .stroke(AppPalette.green.opacity(0.28), lineWidth: 1.5)
-                    .frame(width: 148, height: 148)
-                logoMark(height: 120)
+    private func tourPage(_ item: OnboardingCopy.Page) -> some View {
+        GeometryReader { geometry in
+            ScrollView {
+                VStack(alignment: .leading, spacing: 20) {
+                    Spacer(minLength: 0)
+                    artwork(item, compact: geometry.size.height < 640)
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text(item.headline)
+                            .font(.title.weight(.semibold))
+                            .tracking(-0.7)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .accessibilityAddTraits(.isHeader)
+                            .accessibilityIdentifier("onboarding.headline." + item.id)
+                            .accessibilityFocused($focusedPage, equals: item.id)
+                        Text(item.detail)
+                            .font(.callout)
+                            .foregroundStyle(secondaryInk)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    VStack(alignment: .leading, spacing: 18) {
+                        ForEach(item.features) { feature in
+                            HStack(alignment: .top, spacing: 12) {
+                                Image(systemName: feature.symbol)
+                                    .font(.body.weight(.medium))
+                                    .foregroundStyle(AppPalette.green)
+                                    .frame(width: 24, height: 24)
+                                    .accessibilityHidden(true)
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text(feature.title).font(.subheadline.weight(.semibold))
+                                    Text(feature.detail)
+                                        .font(.subheadline)
+                                        .foregroundStyle(secondaryInk)
+                                }
+                                .fixedSize(horizontal: false, vertical: true)
+                            }
+                            .accessibilityElement(children: .combine)
+                        }
+                    }
+                    Text(item.footnote)
+                        .font(.caption)
+                        .foregroundStyle(secondaryInk)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Spacer(minLength: 0)
+                }
+                .padding(.horizontal, 24)
+                .padding(.vertical, 16)
+                .frame(maxWidth: 560)
+                .frame(minHeight: geometry.size.height)
+                .frame(maxWidth: .infinity)
             }
+            .scrollIndicators(.hidden)
         }
     }
 
-    private func logoMark(height: CGFloat) -> some View {
-        Image("LilCLogo")
-            .renderingMode(.original)
-            .resizable()
-            .interpolation(.high)
-            .scaledToFit()
-            .frame(height: height)
-            .clipShape(Circle())
-            .shadow(color: AppPalette.green.opacity(0.22), radius: 18, y: 4)
-            .accessibilityLabel("lilC")
-    }
-
-    private var pageDots: some View {
-        HStack(spacing: 8) {
-            ForEach(0..<OnboardingCopy.pageCount, id: \.self) { index in
-                Circle()
-                    .fill(index == page ? AppPalette.green : AppPalette.line)
-                    .frame(width: 7, height: 7)
-                    .shadow(color: index == page ? AppPalette.green.opacity(0.45) : .clear, radius: 4)
+    private func artwork(_ item: OnboardingCopy.Page, compact: Bool) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text(item.label)
+                .font(.caption2.weight(.semibold))
+                .tracking(1.5)
+                .foregroundStyle(secondaryInk)
+            ViewThatFits(in: .horizontal) {
+                ascii(item.artwork, size: compact ? 14 : 18)
+                ascii(item.artwork, size: 14)
+                ascii(item.artwork, size: 10)
             }
+            .frame(maxWidth: .infinity, alignment: .center)
         }
+        .padding(16)
+        .background(AppPalette.card, in: RoundedRectangle(cornerRadius: 22))
+        .overlay(RoundedRectangle(cornerRadius: 22).stroke(AppPalette.line, lineWidth: 1))
+        // Art repeats the text's meaning; reading punctuation aloud adds noise.
         .accessibilityHidden(true)
+    }
+
+    private func ascii(_ text: String, size: CGFloat) -> some View {
+        Text(verbatim: text)
+            .font(.system(size: size, weight: .medium, design: .monospaced))
+            .foregroundStyle(AppPalette.green)
+            .fixedSize()
+    }
+
+    private var controls: some View {
+        VStack(spacing: 18) {
+            HStack(spacing: 8) {
+                ForEach(0..<OnboardingCopy.pageCount, id: \.self) { index in
+                    Capsule()
+                        .fill(index == page ? AppPalette.green : AppPalette.line)
+                        .frame(width: index == page ? 22 : 6, height: 6)
+                }
+            }
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel("Page \(page + 1) of \(OnboardingCopy.pageCount)")
+            .accessibilityValue(OnboardingCopy.pages[page].headline.replacingOccurrences(of: "\n", with: " "))
+            .accessibilityAdjustableAction { direction in
+                switch direction {
+                case .increment: move(to: page + 1)
+                case .decrement: move(to: page - 1)
+                @unknown default: break
+                }
+            }
+
+            Button(action: advance) {
+                Text(page == OnboardingCopy.pageCount - 1
+                     ? (isReplay ? "Done" : OnboardingCopy.getStartedTitle)
+                     : OnboardingCopy.continueTitle)
+                    .font(.body.weight(.semibold))
+                    .foregroundStyle(AppPalette.onAccent)
+                    .frame(maxWidth: .infinity, minHeight: 52)
+                    .padding(.vertical, 4)
+                    .background(AppPalette.green, in: RoundedRectangle(cornerRadius: 18))
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("onboarding.primary")
+        }
+        .padding(.horizontal, 24)
+        .padding(.top, 12)
+        .padding(.bottom, 12)
+        .frame(maxWidth: 560)
+        .frame(maxWidth: .infinity)
+        .background(AppPalette.background)
+    }
+
+    private func move(to index: Int) {
+        let target = min(max(index, 0), OnboardingCopy.pageCount - 1)
+        withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.25)) {
+            page = target
+        }
     }
 
     private func advance() {
-        if page == 0 {
-            withAnimation(.easeInOut(duration: 0.28)) {
-                page = 1
-            }
-        } else {
+        if page == OnboardingCopy.pageCount - 1 {
             finish()
+        } else {
+            move(to: page + 1)
         }
-    }
-}
-
-private struct OnboardingEditorMock: View {
-    @State private var runGlow = false
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: 10) {
-                Text("hello.c")
-                    .font(.system(size: 13, weight: .semibold, design: .monospaced))
-                    .foregroundStyle(AppPalette.foreground)
-                Spacer()
-                Text("RUN")
-                    .font(.system(size: 11, weight: .bold, design: .monospaced))
-                    .foregroundStyle(AppPalette.onAccent)
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 5)
-                    .background(AppPalette.green, in: RoundedRectangle(cornerRadius: 4))
-                    .shadow(color: AppPalette.green.opacity(runGlow ? 0.55 : 0.18), radius: runGlow ? 10 : 4)
-            }
-            .padding(.horizontal, 14)
-            .padding(.vertical, 12)
-
-            Rectangle()
-                .fill(AppPalette.line.opacity(0.8))
-                .frame(height: 1)
-
-            VStack(alignment: .leading, spacing: 3) {
-                mockLine("int main(void) {")
-                mockLine("    printf(\"hello\\n\");")
-                mockLine("}")
-            }
-            .padding(.horizontal, 14)
-            .padding(.vertical, 14)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(AppPalette.editor)
-
-            Rectangle()
-                .fill(AppPalette.line.opacity(0.8))
-                .frame(height: 1)
-
-            HStack(spacing: 8) {
-                Circle()
-                    .fill(AppPalette.green)
-                    .frame(width: 6, height: 6)
-                    .shadow(color: AppPalette.green.opacity(0.7), radius: 3)
-                Text("hello")
-                    .font(.system(size: 14, weight: .medium, design: .monospaced))
-                    .foregroundStyle(AppPalette.green)
-            }
-            .padding(.horizontal, 14)
-            .padding(.vertical, 12)
-        }
-        .background(AppPalette.card, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .stroke(AppPalette.line.opacity(0.7), lineWidth: 1)
-        }
-        .overlay {
-            OnboardingScanlines()
-                .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-        }
-        .shadow(color: AppPalette.green.opacity(AppearanceStore.shared.colorWay == .dark ? 0.18 : 0.08), radius: 20, y: 8)
-        .padding(.horizontal, 8)
-        .accessibilityHidden(true)
-        .onAppear {
-            withAnimation(.easeInOut(duration: 1.35).repeatForever(autoreverses: true)) {
-                runGlow = true
-            }
-        }
-    }
-
-    private func mockLine(_ text: String) -> some View {
-        Text(text)
-            .font(.system(size: 13, weight: .medium, design: .monospaced))
-            .foregroundStyle(AppPalette.foreground)
-    }
-}
-
-private struct OnboardingScanlines: View {
-    var body: some View {
-        Canvas { context, size in
-            let opacity = AppearanceStore.shared.colorWay == .dark ? 0.06 : 0.035
-            var y: CGFloat = 0
-            while y < size.height {
-                var path = Path()
-                path.move(to: CGPoint(x: 0, y: y))
-                path.addLine(to: CGPoint(x: size.width, y: y))
-                context.stroke(path, with: .color(AppPalette.foreground.opacity(opacity)), lineWidth: 1)
-                y += 3
-            }
-        }
-        .allowsHitTesting(false)
     }
 }

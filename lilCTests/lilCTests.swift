@@ -436,7 +436,7 @@ struct lilCTests {
         let store = OnboardingStore(defaults: suite)
         #expect(store.hasCompleted == false)
         #expect(store.needsOnboarding)
-        #expect(OnboardingCopy.pageCount == 2)
+        #expect(OnboardingCopy.pageCount == 4)
     }
 
     @MainActor
@@ -873,24 +873,14 @@ struct lilCTests {
         #expect(texts.contains("char"))
     }
 
-    @Test func onboardingCopyIsTwoTightPages() {
-        #expect(OnboardingCopy.page1Headline == "Write C. Press Run.")
-        #expect(OnboardingCopy.page1Line == "lilC runs your code locally")
-        #expect(OnboardingCopy.continueTitle == "Continue")
-        #expect(OnboardingCopy.page2Headline == "C stays free. Zero ads.")
-        #expect(OnboardingCopy.page2Line == "For students and developers.")
-        #expect(OnboardingCopy.getStartedTitle == "Get Started")
-        #expect(OnboardingCopy.skipTitle == "Skip")
-        let all = [
-            OnboardingCopy.page1Headline,
-            OnboardingCopy.page1Line,
-            OnboardingCopy.page2Headline,
-            OnboardingCopy.page2Line,
-        ].joined(separator: " ")
-        #expect(all.split(whereSeparator: \.isWhitespace).count <= 18)
-        let banned = ["GCC", "Agent", "C Manual", "Classroom", "subscription", "revolutionary"]
-        for word in banned {
-            #expect(all.localizedCaseInsensitiveContains(word) == false)
+    @Test func onboardingPagesHaveStableIdentityAndPlainASCIIArt() {
+        let pages = OnboardingCopy.pages
+        #expect(pages.map(\.id) == ["privacy", "chat", "ide", "agent"])
+        #expect(Set(pages.map(\.id)).count == pages.count)
+        for page in pages {
+            #expect(page.artwork.unicodeScalars.allSatisfy(\.isASCII))
+            #expect(Set(page.features.map(\.id)).count == page.features.count)
+            #expect(page.artwork.split(separator: "\n").map(\.count).max()! <= 24)
         }
     }
 
@@ -900,17 +890,22 @@ struct lilCTests {
         defer { AppearanceStore.shared.colorWay = previous }
         for way in AppColorWay.allCases {
             AppearanceStore.shared.colorWay = way
-            let view = OnboardingView(finish: {})
-                .frame(width: 393, height: 852)
-                .background(AppPalette.background)
-                .lilCPreferredScheme(way)
-                .id(way)
-            let renderer = ImageRenderer(content: view)
-            renderer.scale = 1
-            let image = renderer.uiImage
-            #expect(image != nil, "Onboarding should render in \(way.title)")
-            #expect((image?.size.width ?? 0) >= 393)
-            #expect((image?.size.height ?? 0) >= 852)
+            for index in OnboardingCopy.pages.indices {
+                for size in [CGSize(width: 320, height: 568), CGSize(width: 393, height: 852), CGSize(width: 1024, height: 768)] {
+                    for textSize in [DynamicTypeSize.large, .accessibility3] {
+                        let view = OnboardingView(initialPage: index, finish: {})
+                            .environment(\.dynamicTypeSize, textSize)
+                            .frame(width: size.width, height: size.height)
+                            .background(AppPalette.background)
+                            .lilCPreferredScheme(way)
+                        let renderer = ImageRenderer(content: view)
+                        renderer.scale = 1
+                        let image = renderer.uiImage
+                        #expect(image != nil, "Page \(index) should render in \(way.title), \(size), \(textSize)")
+                        #expect(image?.size == size)
+                    }
+                }
+            }
         }
     }
 

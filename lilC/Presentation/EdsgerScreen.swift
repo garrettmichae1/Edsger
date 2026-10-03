@@ -435,6 +435,7 @@ private struct EdsgerInfoSheet: View {
     @Environment(\.colorScheme) private var scheme
     @State private var mode: Mode = .chat
     @State private var step = 0
+    @State private var showsTour = false
 
     private enum Mode: String, CaseIterable {
         case chat = "Chat", agent = "Agent"
@@ -468,7 +469,7 @@ private struct EdsgerInfoSheet: View {
                             .font(.system(size: 32, weight: .semibold))
                             .tracking(-0.8)
                             .fixedSize(horizontal: false, vertical: true)
-                        Text("The AI is built into lilC. Chat and coding-agent replies are generated on your device, without sending prompts to a cloud AI service.")
+                        Text("The AI is built into Edsger. Chat and coding-agent replies are generated on your device, without sending prompts to a cloud AI service.")
                             .font(.system(size: 16))
                             .foregroundStyle(.secondary)
                             .fixedSize(horizontal: false, vertical: true)
@@ -529,7 +530,7 @@ private struct EdsgerInfoSheet: View {
                     .shadow(color: .black.opacity(scheme == .dark ? 0 : 0.06), radius: 18, y: 6)
 
                     VStack(alignment: .leading, spacing: 0) {
-                        infoAnswer("What works without Wi-Fi?", text: "Once lilC is installed, the bundled AI can answer in Chat and work on code in Agent mode without an internet connection or a separate model download. Lessons and supported code execution are local too.")
+                        infoAnswer("What works without Wi-Fi?", text: "Once Edsger is installed, the bundled AI can answer in Chat and work on code in Agent mode without an internet connection or a separate model download. Math calculations and supported code execution are local too.")
                         Divider().padding(.vertical, 16)
                         infoAnswer("What makes this different?", text: "Your device does the AI work. Chat and Agent do not need a cloud AI account or API key. Your conversations are saved locally, and the agent works with files in your IDE. Device backups and any files you choose to share follow your normal iOS settings.")
                         Divider().padding(.vertical, 16)
@@ -537,6 +538,16 @@ private struct EdsgerInfoSheet: View {
                     }
                     .padding(20)
                     .background(surface, in: RoundedRectangle(cornerRadius: 26))
+                    Button { showsTour = true } label: {
+                        HStack {
+                            Text("Take the Edsger tour")
+                            Spacer()
+                            Image(systemName: "arrow.right")
+                        }
+                        .font(.body.weight(.medium))
+                        .frame(minHeight: 44)
+                    }
+                    .accessibilityIdentifier("edsger-info-tour")
                     Text("Your files live in the IDE. Open IDE from Chat to manage projects and code.")
                         .font(.system(size: 13))
                         .foregroundStyle(.secondary)
@@ -562,6 +573,9 @@ private struct EdsgerInfoSheet: View {
         }
         .presentationDragIndicator(.visible)
         .presentationCornerRadius(32)
+        .fullScreenCover(isPresented: $showsTour) {
+            OnboardingView(isReplay: true) { showsTour = false }
+        }
     }
 
     private func infoAnswer(_ title: String, text: String) -> some View {

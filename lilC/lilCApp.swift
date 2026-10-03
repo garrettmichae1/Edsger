@@ -5,6 +5,7 @@ import UIKit
 struct lilCApp: App {
     @State private var appearance = AppearanceStore.shared
     @State private var onboarding = OnboardingStore.shared
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some Scene {
         WindowGroup {
@@ -16,7 +17,7 @@ struct lilCApp: App {
                 }
             }
             .lilCPreferredScheme(appearance.colorWay)
-            .animation(.easeInOut(duration: 0.28), value: onboarding.hasCompleted)
+            .animation(reduceMotion ? nil : .easeInOut(duration: 0.28), value: onboarding.hasCompleted)
             .onReceive(NotificationCenter.default.publisher(for: UIApplication.didReceiveMemoryWarningNotification)) { _ in
                 LocalAgentClient.shared.handleMemoryPressure()
             }

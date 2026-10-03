@@ -7,6 +7,60 @@ import UIKit
 final class StoreScreenshots: XCTestCase {
     private var app: XCUIApplication!
 
+    func testOnboardingNavigationAndCompletion() {
+        app = XCUIApplication()
+        app.launchArguments = ["-lilc.onboarding.completed", "NO"]
+        app.launch()
+        XCTAssertTrue(app.staticTexts["onboarding.headline.privacy"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.buttons["onboarding.back"].isHittable)
+        app.buttons["onboarding.primary"].tap()
+        XCTAssertTrue(app.staticTexts["onboarding.headline.chat"].waitForExistence(timeout: 5))
+        app.buttons["onboarding.back"].tap()
+        XCTAssertTrue(app.staticTexts["onboarding.headline.privacy"].waitForExistence(timeout: 5))
+        for id in ["chat", "ide", "agent"] {
+            app.buttons["onboarding.primary"].tap()
+            XCTAssertTrue(app.staticTexts["onboarding.headline." + id].waitForExistence(timeout: 5))
+        }
+        XCTAssertEqual(app.buttons["onboarding.primary"].label, "Get started")
+        app.buttons["onboarding.primary"].tap()
+        XCTAssertTrue(app.buttons["edsger-history"].waitForExistence(timeout: 10))
+        XCTAssertFalse(app.buttons["onboarding.primary"].exists)
+    }
+
+    func testOnboardingCanSkipFromEveryPage() {
+        for index in 0..<4 {
+            app = XCUIApplication()
+            app.launchArguments = ["-lilc.onboarding.completed", "NO"]
+            app.launch()
+            XCTAssertTrue(app.buttons["onboarding.primary"].waitForExistence(timeout: 5))
+            for _ in 0..<index { app.buttons["onboarding.primary"].tap() }
+            app.buttons["onboarding.skip"].tap()
+            XCTAssertTrue(app.buttons["edsger-history"].waitForExistence(timeout: 10))
+            app.terminate()
+        }
+    }
+
+    func testOnboardingReplayReturnsToInfo() {
+        app = XCUIApplication()
+        app.launchArguments = ["UITEST_STORE_SHOTS"]
+        app.launch()
+        app.buttons["edsger-info"].tap()
+        let replay = app.buttons["edsger-info-tour"]
+        XCTAssertTrue(replay.waitForExistence(timeout: 5))
+        for _ in 0..<5 {
+            if replay.isHittable { break }
+            app.scrollViews.firstMatch.swipeUp()
+        }
+        XCTAssertTrue(replay.isHittable)
+        replay.tap()
+        XCTAssertTrue(app.staticTexts["onboarding.headline.privacy"].waitForExistence(timeout: 5))
+        XCTAssertEqual(app.buttons["onboarding.skip"].label, "Done")
+        app.buttons["onboarding.skip"].tap()
+        XCTAssertTrue(app.buttons["edsger-info-tour"].waitForExistence(timeout: 5))
+        app.navigationBars["Made to work offline"].buttons["Done"].tap()
+        XCTAssertTrue(app.buttons["edsger-history"].waitForExistence(timeout: 5))
+    }
+
     func testDirectoryAppFollowsSelectedLanguage() {
         app = XCUIApplication()
         app.launchArguments = ["UITEST_STORE_SHOTS"]
