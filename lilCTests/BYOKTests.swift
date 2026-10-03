@@ -154,6 +154,20 @@ struct BYOKTests {
         let paired = AgentWireHistory.messages([.init(role: .user, text: "Edit"), .init(role: .assistant, text: "", toolCalls: [call]), .init(role: .tool, text: "Updated", toolName: call.name, toolCallID: call.id)])
         #expect(paired[1]["tool_calls"] != nil); #expect(paired[2]["tool_call_id"] as? String == "call")
     }
+    @Test func historicalClaudeThinkingIsRemovedButLiveToolContinuationsStayIntact() throws {
+        let call = AgentToolCall(id: "call", name: "read_file", argumentsJSON: #"{"path":"main.py"}"#)
+        let saved: [String: Any] = ["provider": "anthropic", "model": "claude-opus-5-5", "items": [
+            ["type": "thinking", "thinking": "", "signature": "old-prefix-signature"],
+            ["type": "redacted_thinking", "data": "old-prefix-data"],
+            ["type": "tool_use", "id": call.id, "name": call.name, "input": ["path": "main.py"]]
+        ]]
+        let native = String(decoding: try JSONSerialization.data(withJSONObject: saved), as: UTF8.self)
+        let history = AgentWireHistory.messages([.init(role: .user, text: "Read"), .init(role: .assistant, text: "", toolCalls: [call], continuationJSON: native), .init(role: .tool, text: "contents", toolCallID: call.id)])
+        let historical = try #require(history[1]["edsger_continuation"] as? String)
+        #expect(!historical.contains("old-prefix-signature") && !historical.contains("old-prefix-data"))
+        #expect(historical.contains("tool_use"))
+        #expect(AgentWireHistory.assistant(text: "", calls: [call], continuation: native)["edsger_continuation"] as? String == native)
+    }
     @Test func invalidToolArgumentsCannotReachTheWorkspace() throws {
         for args in ["{}", "{\"path\":\"../outside.py\",\"contents\":\"x\"}", "{\"path\":\"main.py\",\"contents\":42}", "{\"path\":\"main.py\",\"contents\":\"x\",\"extra\":\"x\"}"] {
             #expect(throws: (any Error).self) { _ = try AgentToolRegistry.validatedArguments(.init(id: "x", name: "write_file", argumentsJSON: args)) }

@@ -44,6 +44,7 @@ enum BYOKError: LocalizedError, Equatable, TutorRequestFailure {
             case "invalid_key": "This API key was rejected. Replace it in Settings → BYOK."
             case "provider_permission": "This key does not have permission for that model or API. Check its provider permissions."
             case "insufficient_credit": "This provider account needs API credit. Your Edsger allowance was not used."
+            case "provider_spend_limit": "Your provider account reached a spend or usage limit. Check its API billing limits before trying again."
             case "provider_rate_limit", "relay_rate_limit": "The provider or connection is temporarily rate limited. Wait and try again."
             case "unsupported_model", "provider_rejected": "This model or request is unavailable for your API account. Choose another model in Settings → BYOK."
             case "tool_test_failed": "This model did not complete the agent tool test. Choose a different model."
@@ -79,7 +80,7 @@ enum AgentWireHistory {
                 let valid = Set(ids).count == calls.count && results.count == calls.count &&
                     Set(results.compactMap(\.toolCallID)) == Set(ids)
                 if valid {
-                    wire.append(assistant(text: item.text, calls: calls, continuation: item.continuationJSON))
+                    wire.append(assistant(text: item.text, calls: calls, continuation: historicalContinuation(item.continuationJSON)))
                     for result in results { wire.append(["role": "tool", "tool_call_id": result.toolCallID!, "content": result.text]) }
                 } else {
                     let summary = ([item.text] + results.map { "Historical \($0.toolName ?? "tool") result: \($0.text)" }).filter { !$0.isEmpty }.joined(separator: "\n")
@@ -92,7 +93,7 @@ enum AgentWireHistory {
             case .user: wire.append(["role": "user", "content": item.text])
             case .assistant:
                 if !item.text.isEmpty && !item.text.hasPrefix("I can read and edit your ") {
-                    wire.append(assistant(text: item.text, calls: [], continuation: item.continuationJSON))
+                    wire.append(assistant(text: item.text, calls: [], continuation: historicalContinuation(item.continuationJSON)))
                 }
             case .tool: wire.append(["role": "assistant", "content": "Historical \(item.toolName ?? "tool") result: \(item.text)"])
             case .system: break
@@ -107,6 +108,20 @@ enum AgentWireHistory {
         if !calls.isEmpty { message["tool_calls"] = calls.map { ["id": $0.id, "type": "function", "function": ["name": $0.name, "arguments": $0.argumentsJSON]] as [String: Any] } }
         if let continuation { message["edsger_continuation"] = continuation }
         return message
+    }
+
+    private static func historicalContinuation(_ raw: String?) -> String? {
+        guard let raw else { return nil }
+        guard var saved = try? JSONSerialization.jsonObject(with: Data(raw.utf8)) as? [String: Any] else { return nil }
+        guard saved["provider"] as? String == BYOKProvider.anthropic.rawValue else { return raw }
+        // A new task refreshes the IDE system context and may trim old turns.
+        // Claude thinking signatures are bound to the original exact prefix.
+        // Strip ALL historical thinking; keep other native blocks/call pairs.
+        // Within a live tool loop, assistant() preserves the full response.
+        guard let items = saved["items"] as? [[String: Any]] else { return nil }
+        saved["items"] = items.filter { !["thinking", "redacted_thinking"].contains($0["type"] as? String ?? "") }
+        guard let data = try? JSONSerialization.data(withJSONObject: saved) else { return nil }
+        return String(decoding: data, as: UTF8.self)
     }
 }
 

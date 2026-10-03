@@ -27,7 +27,7 @@ const providers: Record<ProviderID, { base: string; headers: (key: string) => Re
   anthropic: {
     base: "https://api.anthropic.com/v1",
     headers: key => ({ "x-api-key": key, "anthropic-version": "2023-06-01", "Content-Type": "application/json" }),
-    supports: id => /^claude-(sonnet|opus|haiku|3|4|5)/.test(id),
+    supports: id => /^claude-(sonnet|opus|haiku|fable|mythos|3|4|5)([-.]|$)/.test(id),
   },
 };
 
@@ -69,6 +69,10 @@ async function readBounded(stream: ReadableStream<Uint8Array> | null, limit: num
 }
 function parseJSON(text: string): unknown {
   try { return JSON.parse(text); } catch { throw new BYOKError("invalid_json"); }
+}
+function canonicalJSON(value: unknown): string {
+  return JSON.stringify(value, (_key, item) => item && typeof item === "object" && !Array.isArray(item)
+    ? Object.fromEntries(Object.entries(item).sort(([a], [b]) => a.localeCompare(b))) : item);
 }
 function modelID(value: unknown, provider: ProviderID): string {
   const id = string(value, 160);
@@ -128,8 +132,8 @@ function continuation(message: WireMessage, provider: ProviderID, model: string)
   const expected = message.tool_calls ?? [];
   if (calls.length !== expected.length || calls.some((c, index) =>
     (provider === "openai" ? c.call_id : c.id) !== expected[index].id || c.name !== expected[index].function.name ||
-    JSON.stringify(provider === "openai" ? record(parseJSON(string(c.arguments, 65_536))) : record(c.input)) !==
-    JSON.stringify(record(parseJSON(expected[index].function.arguments))))) throw new BYOKError("invalid_continuation");
+    canonicalJSON(provider === "openai" ? record(parseJSON(string(c.arguments, 65_536))) : record(c.input)) !==
+    canonicalJSON(record(parseJSON(expected[index].function.arguments))))) throw new BYOKError("invalid_continuation");
   return items;
 }
 
@@ -150,7 +154,7 @@ export function openAIRequest(body: CompletionBody, forcedTool?: string): Object
       parallel_tool_calls: false, tool_choice: forcedTool ? { type: "function", name: forcedTool } : "auto" } : {}),
   };
 }
-export function claudeRequest(body: CompletionBody, forcedTool?: string): ObjectMap {
+export function claudeRequest(body: CompletionBody): ObjectMap {
   const messages: { role: string; content: ObjectMap[] }[] = [];
   for (const message of body.messages) {
     if (message.role === "system") continue;
@@ -171,9 +175,11 @@ export function claudeRequest(body: CompletionBody, forcedTool?: string): Object
     else messages.push({ role, content });
   }
   return { model: body.model, system: body.messages.filter(m => m.role === "system").map(m => m.content).join("\n\n"),
-    messages, max_tokens: 8192,
+    messages, max_tokens: /^claude-3-(haiku|opus|sonnet)-/.test(body.model) ? 4096 : 8192,
     ...(body.tools.length ? { tools: body.tools.map(t => ({ name: t.function.name, description: t.function.description, input_schema: t.function.parameters })),
-      tool_choice: forcedTool ? { type: "tool", name: forcedTool, disable_parallel_tool_use: true } : { type: "auto", disable_parallel_tool_use: true } } : {}),
+      // Current always-thinking models reject forced tool choice. The harmless
+      // probe requests a call in the prompt, then verifies the actual response.
+      tool_choice: { type: "auto", disable_parallel_tool_use: true } } : {}),
   };
 }
 
@@ -184,18 +190,30 @@ async function upstream(provider: ProviderID, key: string, path: string, method:
   });
   if (!response.ok) {
     // Never echo upstream bodies: they may include credentials or private input.
-    await response.body?.cancel();
     const status = response.status;
-    throw new BYOKError(status === 401 ? "invalid_key" : status === 403 ? "provider_permission" :
+    let code = status === 401 ? "invalid_key" : status === 403 ? "provider_permission" :
       status === 402 ? "insufficient_credit" : status === 429 ? "provider_rate_limit" :
-      status === 400 || status === 404 ? "provider_rejected" : "provider_unavailable",
+      status === 400 || status === 404 ? "provider_rejected" : "provider_unavailable";
+    if (status === 400 || status === 429) {
+      try {
+        const error = record(record(parseJSON(await readBounded(response.body, 16_384))).error);
+        if (provider === "openai") {
+          if (["insufficient_quota", "credit_balance_exhausted"].includes(String(error.code)) || error.type === "insufficient_quota") code = "insufficient_credit";
+          if (["organization_spend_limit_exceeded", "project_spend_limit_exceeded", "organization_usage_limit_exceeded"].includes(String(error.code))) code = "provider_spend_limit";
+        } else if (typeof error.message === "string") {
+          if (/credit balance.{0,40}(low|exhaust|insufficient)/i.test(error.message)) code = "insufficient_credit";
+          else if (/spend(ing)? limit/i.test(error.message)) code = "provider_spend_limit";
+        }
+      } catch { /* Malformed/large errors retain the safe status classification. */ }
+    } else await response.body?.cancel();
+    throw new BYOKError(code,
       [401, 402, 403, 429].includes(status) ? status : 502);
   }
   return record(parseJSON(await readBounded(response.body, RESPONSE_LIMIT)));
 }
 async function complete(provider: ProviderID, key: string, body: CompletionBody, signal: AbortSignal, fetcher: UpstreamFetch, forcedTool?: string): Promise<Completion> {
   const root = await upstream(provider, key, provider === "openai" ? "/responses" : "/messages", "POST",
-    provider === "openai" ? openAIRequest(body, forcedTool) : claudeRequest(body, forcedTool), signal, fetcher);
+    provider === "openai" ? openAIRequest(body, forcedTool) : claudeRequest(body), signal, fetcher);
   if ((provider === "openai" && root.status !== "completed") || (provider === "anthropic" && !["end_turn", "tool_use", "stop_sequence"].includes(String(root.stop_reason)))) throw new BYOKError("incomplete_response", 502);
   const items = array(provider === "openai" ? root.output : root.content, 64).map(record);
   let text = ""; const calls: Completion["toolCalls"] = [];

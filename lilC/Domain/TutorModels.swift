@@ -84,7 +84,7 @@ enum GenerationStatus: Sendable, Equatable {
 
     var label: String {
         switch self {
-        case .waiting: "Waiting for the on-device engine…"
+        case .waiting: "Waiting for the model…"
         case .loadingModel: "Loading the on-device model…"
         case .preparingPrompt: "Reading your request…"
         case .generatingResponse: "Generating a response…"

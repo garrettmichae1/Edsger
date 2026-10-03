@@ -154,3 +154,36 @@ test('simultaneous users never share credentials or rate identities', async () =
   assert.deepEqual([...observed].sort(), keys.map(secret => `Bearer ${secret}`).sort());
   assert.equal(identities.size, 2);
 });
+test('current Claude verification accepts always-on thinking without forced tool choice', async () => {
+  let count = 0;
+  const { value } = await send('anthropic', 'verify', { model: 'claude-opus-5-5' }, async (_, init) => {
+    const p = JSON.parse(init.body); count++;
+    assert.equal(p.tool_choice.type, 'auto');
+    if (count === 1) return json({ stop_reason: 'tool_use', content: [{ type: 'thinking', thinking: '', signature: 'prefix-bound-signature' }, { type: 'tool_use', id: 'probe', name: 'edsger_connection_check', input: { value: 'OK' } }] });
+    assert.deepEqual(p.messages[1].content[0], { type: 'thinking', thinking: '', signature: 'prefix-bound-signature' });
+    assert.equal(p.messages[0].content[0].text, 'Call edsger_connection_check with value OK, then acknowledge its result in one word.');
+    return json({ stop_reason: 'end_turn', content: [{ type: 'thinking', thinking: '', signature: 'next-signature' }, { type: 'text', text: 'OK' }] });
+  });
+  assert.deepEqual(value, { ok: true });
+});
+test('Claude catalog includes current named coding/reasoning families and legacy output caps are respected', async () => {
+  const { value } = await send('anthropic', 'models', {}, async () => json({ data: [{ id: 'claude-fable-5-1', display_name: 'Fable' }, { id: 'claude-mythos-5-1', display_name: 'Mythos' }], has_more: false }));
+  assert.equal(value.models.length, 2);
+  assert.equal(claudeRequest(body('claude-3-haiku-20240307')).max_tokens, 4096);
+});
+for (const [provider, status, error, expected] of [
+  ['openai', 429, { code: 'credit_balance_exhausted', type: 'insufficient_quota' }, 'insufficient_credit'],
+  ['openai', 429, { code: 'project_spend_limit_exceeded', type: 'insufficient_quota' }, 'provider_spend_limit'],
+  ['anthropic', 400, { type: 'invalid_request_error', message: 'Your credit balance is too low to access the API.' }, 'insufficient_credit'],
+  ['anthropic', 400, { type: 'invalid_request_error', message: 'Your workspace spend limit was reached.' }, 'provider_spend_limit'],
+]) test(`${provider} billing errors are distinguished from temporary traffic limits`, async () => {
+  let count = 0;
+  const { value } = await send(provider, 'completions', body(provider === 'openai' ? 'gpt-4.1-mini' : 'claude-opus-5-5'), async () => { count++; return new Response(JSON.stringify({ error: { ...error, private: key } }), { status }); });
+  assert.deepEqual(value, { error: expected }); assert.equal(count, 1);
+});
+test('saved native tool arguments tolerate JSON object-key reordering', () => {
+  const b = body('claude-opus-5-5');
+  const c = { id: 'write', type: 'function', function: { name: 'write_file', arguments: '{"path":"main.py","contents":"print(1)"}' } };
+  b.messages.push({ role: 'assistant', content: '', tool_calls: [c], edsger_continuation: JSON.stringify({ provider: 'anthropic', model: b.model, items: [{ type: 'tool_use', id: c.id, name: c.function.name, input: { contents: 'print(1)', path: 'main.py' } }] }) }, { role: 'tool', tool_call_id: c.id, content: 'Created' });
+  assert.equal(claudeRequest(b).messages[1].content[0].input.path, 'main.py');
+});
