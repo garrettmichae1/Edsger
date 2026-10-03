@@ -212,7 +212,7 @@ struct EdsgerScreen: View {
                         if !session.messages.isEmpty { Button("Try again") { session.retry() } }
                     }
                     .font(.subheadline)
-                } else if let notice = session.notice {
+                } else if let notice = session.notice, !session.canUndoDocumentContext {
                     Text(notice).foregroundStyle(.secondary).font(.footnote)
                     if !session.messages.isEmpty { Button("Regenerate response") { session.retry() }.font(.footnote) }
                 }
@@ -253,13 +253,18 @@ struct EdsgerScreen: View {
                 .accessibilityLabel("Ask EDSGER about coding or any academic subject")
             }
             VStack(alignment: .leading, spacing: 16) {
-                if let document = session.pendingDocument {
-                    ChatDocumentChip(document: document, remove: { session.attach(nil) })
-                } else if let document = session.activeDocument {
-                    HStack(spacing: 6) {
-                        Image(systemName: "doc.text")
-                        Text("Discussing \(document.name)").lineLimit(1)
-                    }.font(.caption).foregroundStyle(.secondary)
+                if let document = session.pendingDocument ?? session.activeDocument {
+                    ChatDocumentContextPill(document: document, isResponding: session.isResponding,
+                                            clear: { session.clearDocumentContext() })
+                } else if session.canUndoDocumentContext, let notice = session.notice {
+                    HStack(spacing: 12) {
+                        Text(notice).font(.footnote).foregroundStyle(.secondary)
+                        Button("Undo") { session.undoClearDocumentContext() }
+                            .font(.footnote.weight(.semibold))
+                            .frame(minWidth: 44, minHeight: 44)
+                            .accessibilityLabel("Undo clearing document context")
+                            .accessibilityIdentifier("edsger-undo-document-context")
+                    }
                 }
                 TextField("Ask EDSGER", text: $session.draft, prompt: Text("Ask EDSGER").fontWeight(.semibold).foregroundStyle(.secondary), axis: .vertical)
                     .font(.system(size: 21))

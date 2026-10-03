@@ -177,6 +177,54 @@ private func zip(_ url: URL, entries: [(String, Data)], symlink: Bool = false) t
         try check(!saved.isResponding && saved.draft.count == 2001, "question validation preserves draft")
         saved.newConversation(); saved.attach(word); saved.send(); await saved.waitUntilIdle()
         try check(saved.messages.first?.text == "Give me an overview of this document." && saved.activeDocument == word, "attachment-only message")
+        // Clearing context is a durable inference boundary, not deletion of displayed history.
+        let leaving = TutorSession(client: client, storageURL: root.appendingPathComponent("leaving.json"))
+        leaving.attach(word); leaving.draft = "Hello"; leaving.send(); await leaving.waitUntilIdle()
+        let originalMessages = leaving.messages
+        let originalActivity = leaving.current.updatedAt
+        leaving.draft = "Keep this unfinished question"
+        leaving.clearDocumentContext()
+        try check(leaving.activeDocument == nil && leaving.pendingDocument == nil && leaving.canUndoDocumentContext, "clear did not leave context")
+        try check(leaving.messages == originalMessages && leaving.current.updatedAt == originalActivity && leaving.draft == "Keep this unfinished question", "clear changed history, activity or draft")
+        try check(try await store.read(word.id).reference == word, "clear deleted shared original")
+        leaving.retry()
+        try check(leaving.messages == originalMessages && !leaving.isResponding, "retry resurrected a cleared document turn")
+        let leavingReopen = TutorSession(client: client, storageURL: root.appendingPathComponent("leaving.json"))
+        try check(leavingReopen.activeDocument == nil && leavingReopen.messages == originalMessages && !leavingReopen.canUndoDocumentContext, "clear boundary did not survive relaunch")
+        leaving.undoClearDocumentContext()
+        try check(leaving.activeDocument == word && leaving.messages == originalMessages && !leaving.canUndoDocumentContext, "undo failed to restore active file")
+        leaving.attach(a); leaving.clearDocumentContext(); leaving.undoClearDocumentContext()
+        try check(leaving.pendingDocument == a && leaving.activeDocument == word, "undo lost pending replacement or previous active file")
+        leaving.clearDocumentContext()
+        let documentCallsBefore = await grounded.requests.count
+        leaving.draft = String(repeating: "x", count: 2001); leaving.send(); await leaving.waitUntilIdle()
+        let ordinaryAfterClear = await ordinary.requests.last!
+        try check(ordinaryAfterClear.count == 1 && ordinaryAfterClear[0].text.utf8.count == 2001 && ordinaryAfterClear[0].document == nil,
+                  "ordinary prompt retained old document turns or file question limit")
+        try check(await grounded.requests.count == documentCallsBefore && !leaving.canUndoDocumentContext && leaving.activeDocument == nil,
+                  "sending after clear reused document model path or retained stale undo")
+        leaving.undoClearDocumentContext()
+        try check(leaving.activeDocument == nil, "stale undo changed a later turn")
+        leaving.attach(word); leaving.draft = "Hello"; leaving.send(); await leaving.waitUntilIdle()
+        try check(leaving.activeDocument == word && leaving.messages.last?.sources?.first?.documentID == word.id, "reselecting did not resume document Q&A")
+        leaving.clearDocumentContext(); let leavingID = leaving.selectedID
+        leaving.newConversation(); leaving.undoClearDocumentContext()
+        try check(leaving.activeDocument == nil && !leaving.canUndoDocumentContext, "undo crossed conversations")
+        leaving.select(leavingID)
+        try check(leaving.activeDocument == nil, "switching resurrected cleared file")
+        let pendingOnly = TutorSession(client: client, storageURL: root.appendingPathComponent("pending-only.json"))
+        pendingOnly.draft = "Ordinary earlier question"; pendingOnly.send(); await pendingOnly.waitUntilIdle()
+        pendingOnly.attach(word); pendingOnly.clearDocumentContext()
+        try check(pendingOnly.current.documentContextStartIndex == nil && pendingOnly.pendingDocument == nil, "unsent attachment cleared ordinary conversation context")
+        pendingOnly.undoClearDocumentContext()
+        try check(pendingOnly.pendingDocument == word && pendingOnly.activeDocument == nil, "undo did not restore unsent attachment")
+        pendingOnly.clearDocumentContext(); pendingOnly.draft = "Ordinary followup"; pendingOnly.send(); await pendingOnly.waitUntilIdle()
+        try check(await ordinary.requests.last?.count == 3, "removing unsent file lost ordinary-chat history")
+        let malformedURL = root.appendingPathComponent("malformed-boundary.json")
+        let invalidHistory = TutorConversation(messages: [.init(role: .user, text: "Hello", document: word)], documentContextStartIndex: -1)
+        try JSONEncoder().encode([invalidHistory]).write(to: malformedURL)
+        try check(TutorSession(client: client, storageURL: malformedURL).activeDocument == word, "invalid boundary did not recover")
+        print("PASS clear/undo, preserved drafts/history/originals, relaunch, ordinary routing, reattach and boundary recovery")
         let json = "{\"id\":\"\(UUID().uuidString)\",\"role\":\"user\",\"text\":\"legacy\"}"
         try check(try JSONDecoder().decode(TutorMessage.self, from: Data(json.utf8)).document == nil, "old chat migration")
         try await store.remove(a.id)
@@ -190,6 +238,19 @@ private func zip(_ url: URL, entries: [(String, Data)], symlink: Bool = false) t
         stopped.newConversation()
         try await Task.sleep(for: .milliseconds(120))
         try check(stopped.messages.isEmpty && !stopped.isResponding, "late source/update contaminated new conversation")
+        let lateClear = LateDocumentTutor(sources: sources)
+        let clearWhileRunning = TutorSession(client: lateClear, storageURL: root.appendingPathComponent("clear-running.json"))
+        clearWhileRunning.attach(word); clearWhileRunning.draft = "Hello"; clearWhileRunning.send()
+        while !(await lateClear.started) { await Task.yield() }
+        clearWhileRunning.draft = "Next draft"
+        clearWhileRunning.clearDocumentContext()
+        try await Task.sleep(for: .milliseconds(120))
+        try check(!clearWhileRunning.isResponding && clearWhileRunning.activeDocument == nil && clearWhileRunning.messages.count == 1 &&
+                  clearWhileRunning.draft == "Next draft" && clearWhileRunning.canUndoDocumentContext,
+                  "clearing active response lost draft or accepted stale callbacks")
+        clearWhileRunning.undoClearDocumentContext()
+        try check(clearWhileRunning.activeDocument == word && !clearWhileRunning.isResponding, "undo resumed cancelled generation")
+        print("PASS clear during generation stops response and rejects late document sources/updates")
         let quota = ChatDocumentStore(root: root.appendingPathComponent("quota"))
         for _ in 0..<DocumentLimits.libraryFiles { _ = try await quota.importFile(txt) }
         try await rejectsAsync({ _ = try await quota.importFile(txt) }, "recent file count quota")

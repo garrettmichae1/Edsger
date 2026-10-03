@@ -172,6 +172,43 @@ struct ChatDocumentChip: View {
     }
 }
 
+/// The composer shows one compact file control, for pending and active document context.
+struct ChatDocumentContextPill: View {
+    let document: ChatDocumentReference
+    let isResponding: Bool
+    let clear: () -> Void
+    @State private var showsPreview = false
+
+    var body: some View {
+        HStack(spacing: 0) {
+            Button { showsPreview = true } label: {
+                HStack(spacing: 8) {
+                    Image(systemName: "doc.text").accessibilityHidden(true)
+                    Text(document.name).lineLimit(1).truncationMode(.middle)
+                }
+                .padding(.leading, 14).padding(.trailing, 6).frame(minHeight: 44)
+                .contentShape(Rectangle())
+            }
+            .accessibilityLabel("Preview \(document.name)")
+            .accessibilityIdentifier("edsger-document-preview")
+            Button(action: clear) {
+                Image(systemName: "xmark").font(.system(size: 12, weight: .semibold))
+                    .frame(width: 44, height: 44).contentShape(Rectangle())
+            }
+            .accessibilityLabel("Stop using document")
+            .accessibilityHint(isResponding ? "Stops the response and clears the file for future messages." : "Returns future messages to ordinary chat. The file and earlier answers are kept.")
+            .accessibilityIdentifier("edsger-clear-document-context")
+        }
+        .font(.subheadline.weight(.medium))
+        .foregroundStyle(.primary)
+        .background(.thinMaterial, in: Capsule())
+        .overlay(Capsule().stroke(.primary.opacity(0.08)))
+        .buttonStyle(.plain)
+        .accessibilityIdentifier("edsger-document-context")
+        .sheet(isPresented: $showsPreview) { ChatDocumentPreview(document: document) }
+    }
+}
+
 private struct ChatDocumentPreview: View {
     let document: ChatDocumentReference
     @Environment(\.dismiss) private var dismiss

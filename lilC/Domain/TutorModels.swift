@@ -42,6 +42,9 @@ struct TutorConversation: Identifiable, Codable, Equatable, Sendable {
     var updatedAt = Date()
     // Optional so conversation files written before pinning still decode unchanged.
     var pinnedAt: Date?
+    // Earlier messages remain visible, but are excluded from inference after leaving a document.
+    // Missing in older histories: preserve their existing document-followup behavior.
+    var documentContextStartIndex: Int?
     var isPinned: Bool { pinnedAt != nil }
 
     static func historyOrder(_ lhs: Self, _ rhs: Self) -> Bool {

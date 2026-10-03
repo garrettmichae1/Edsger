@@ -29,6 +29,12 @@ final class TutorSession {
     private var documentDrafts: [String: ChatDocumentReference]
     private var draftStateDirty = false
     private var draftSaveTask: Task<Void, Never>?
+    private var documentContextUndo: DocumentContextUndo?
+    private struct DocumentContextUndo {
+        let conversationID: UUID
+        let startIndex: Int?
+        let pending: ChatDocumentReference?
+    }
 
     private struct DraftState: Codable {
         var selectedID: UUID
@@ -42,8 +48,45 @@ final class TutorSession {
     var messages: [TutorMessage] { current.messages }
     func documentDraft(for id: UUID) -> ChatDocumentReference? { documentDrafts[id.uuidString] }
     var pendingDocument: ChatDocumentReference? { documentDraft(for: selectedID) }
-    var activeDocument: ChatDocumentReference? { messages.last(where: { $0.role == .user && $0.document != nil })?.document }
+    private var contextMessages: [TutorMessage] {
+        Array(messages.dropFirst(current.documentContextStartIndex ?? 0))
+    }
+    var activeDocument: ChatDocumentReference? { contextMessages.last(where: { $0.role == .user && $0.document != nil })?.document }
+    var canUndoDocumentContext: Bool { documentContextUndo?.conversationID == selectedID && !isResponding }
+
+    /// Leave the file without deleting its messages or shared imported original.
+    func clearDocumentContext() {
+        guard pendingDocument != nil || activeDocument != nil else { return }
+        let undo = DocumentContextUndo(conversationID: selectedID, startIndex: current.documentContextStartIndex, pending: pendingDocument)
+        let wasActive = activeDocument != nil
+        stop()
+        documentDrafts[selectedID.uuidString] = nil
+        draftStateDirty = true
+        // Removing an unsent attachment alone must not discard ordinary-chat context.
+        setDocumentContextStart(wasActive ? messages.count : undo.startIndex)
+        documentContextUndo = undo
+        errorMessage = nil
+        notice = "Document context cleared."
+        save()
+    }
+
+    func undoClearDocumentContext() {
+        guard canUndoDocumentContext, let undo = documentContextUndo else { return }
+        setDocumentContextStart(undo.startIndex)
+        documentDrafts[selectedID.uuidString] = undo.pending
+        draftStateDirty = true
+        documentContextUndo = nil
+        notice = nil; errorMessage = nil
+        save()
+    }
+
+    private func setDocumentContextStart(_ index: Int?) {
+        guard let chat = conversations.firstIndex(where: { $0.id == selectedID }) else { return }
+        conversations[chat].documentContextStartIndex = index
+    }
     func attach(_ document: ChatDocumentReference?) {
+        documentContextUndo = nil
+        if notice == "Document context cleared." { notice = nil }
         documentDrafts[selectedID.uuidString] = document
         draftStateDirty = true
         flushDrafts()
@@ -56,7 +99,13 @@ final class TutorSession {
         self.draftsURL = self.storageURL.deletingPathExtension().appendingPathExtension("drafts.json")
         let loaded = (try? Data(contentsOf: self.storageURL)).flatMap { try? JSONDecoder().decode([TutorConversation].self, from: $0) } ?? []
         let savedDrafts = (try? Data(contentsOf: self.draftsURL)).flatMap { try? JSONDecoder().decode(DraftState.self, from: $0) }
-        let initial = loaded.isEmpty ? [TutorConversation()] : loaded.sorted(by: TutorConversation.historyOrder)
+        var initial = loaded.isEmpty ? [TutorConversation()] : loaded.sorted(by: TutorConversation.historyOrder)
+        // Reject a malformed persisted boundary before dropFirst or future appends use it.
+        for index in initial.indices {
+            if let start = initial[index].documentContextStartIndex, !(0...initial[index].messages.count).contains(start) {
+                initial[index].documentContextStartIndex = nil
+            }
+        }
         conversations = initial
         selectedID = savedDrafts.flatMap { state in initial.contains { $0.id == state.selectedID } ? state.selectedID : nil } ?? initial[0].id
         let validIDs = Set(initial.map { $0.id.uuidString })
@@ -67,6 +116,7 @@ final class TutorSession {
     }
 
     func newConversation() {
+        documentContextUndo = nil
         stop()
         if let empty = conversations.first(where: { !$0.isPinned && $0.messages.isEmpty && draft(for: $0.id).isEmpty && documentDrafts[$0.id.uuidString] == nil }) { selectedID = empty.id }
         else { let chat = TutorConversation(); conversations.insert(chat, at: 0); selectedID = chat.id }
@@ -76,11 +126,13 @@ final class TutorSession {
     }
     func select(_ id: UUID) {
         guard conversations.contains(where: { $0.id == id }) else { return }
+        documentContextUndo = nil
         stop(); selectedID = id; errorMessage = nil; notice = nil
         draftStateDirty = true
         flushDrafts()
     }
     func delete(_ id: UUID) {
+        if documentContextUndo?.conversationID == id { documentContextUndo = nil }
         if selectedID == id { stop() }
         conversations.removeAll { $0.id == id }
         drafts.removeValue(forKey: id.uuidString)
@@ -112,11 +164,14 @@ final class TutorSession {
     }
     func retry() {
         guard !isResponding, let index = current.messages.lastIndex(where: { $0.role == .user }) else { return }
+        // A retry must not resurrect a document turn that was explicitly left behind.
+        guard index >= (current.documentContextStartIndex ?? 0) else { return }
+        documentContextUndo = nil
         editCurrent { $0.messages = Array($0.messages.prefix(index + 1)) }
         errorMessage = nil; notice = nil; generate()
     }
     private func generate() {
-        let prompt = messages
+        let prompt = contextMessages
         let assistant = TutorMessage(role: .assistant, text: "")
         editCurrent { $0.messages.append(assistant) }
         isResponding = true; generationStatus = .waiting; runID = UUID()

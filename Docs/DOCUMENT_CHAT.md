@@ -6,15 +6,29 @@ Implemented 2026-10-03. No Pro entitlement is enforced in this version.
 
 Open **+ → Files** in chat. The Add files sheet has Upload files, a searchable
 Recent grid with text previews and selection circles, and a close action.
-Importing or selecting a recent file attaches it to the current draft. Remove it
-with the chip's × before sending. A file without a typed question sends a request
-for an overview. Tap an attachment to inspect extracted text or Quick Look the
+Importing or selecting a recent file attaches it to the current draft. The composer
+shows a compact filename pill: tap its name to preview, or × to leave file context.
+A file without a typed question sends a request for an overview. Tap an attachment to inspect extracted text or Quick Look the
 original. Long-press a Recent card to delete the imported file.
 
 Each message can attach one document. A thread can contain multiple documents.
 The **most recently attached document** supplies subsequent answers; the composer
-shows its name. Select an earlier file from Recent and send it again to switch
-back. Starting a new chat clears active document context. This version does not
+shows its name in the pill. Tap × to return to ordinary chat in the same thread.
+Earlier attachments, answers and source passages remain visible, and the imported
+original is kept. Active document context is cleared persistently per conversation;
+future inference starts after the cleared document turns. Removing only an unsent
+attachment preserves earlier ordinary-chat inference context.
+
+Clearing during generation stops the response, retaining any partial answer and
+the next draft. The composer offers **Document context cleared → Undo**, restoring
+the previous active context and any pending replacement file. Undo does not resume
+cancelled generation. It is available until sending, selecting a file, changing
+conversations, or relaunching; the cleared state itself survives relaunch. Retrying
+an old turn cannot reactivate context after clearing it. Conversation activity
+order is not changed by Clear or Undo.
+
+Select an earlier file from Recent and send it again to switch back or resume it.
+Starting a new chat clears active document context. This version does not
 combine or compare separate files in one answer.
 
 Attachment drafts survive conversation switches and relaunch, including drafts
@@ -118,6 +132,9 @@ Executed on a Linux Swift 6.0.3 host:
   follow-ups, no-match model bypass and active-file isolation.
 - Production session attachment drafts, switching, source persistence, old JSON
   compatibility, attachment-only send and stale callbacks after cancellation.
+- Clear/Undo restores pending and active files, preserves messages/drafts/originals,
+  survives relaunch/switching, returns to ordinary routing, handles unsent files and
+  rejects late callbacks when clearing during generation.
 - Existing chat-experience, model-selection, prompt-cache and ten math-domain
   regressions; Xcode source/product/license membership and immutable package pins.
 - Swift 6 integration typecheck with the real SelectedChatClient and document
@@ -155,7 +172,8 @@ SDK. Before release, build in Xcode and run them, then verify on iPhone/iPad:
 2. Real exported DOCX tables, UTF-16 TXT and PDFs with columns, blank pages,
    encryption, Unicode and complex formatting; confirm preview and source labels.
 3. Import A, follow up, attach B, reopen, reselect A, stop a streamed reply and
-   delete a recent file. Confirm drafts, thread isolation and saved passages.
+   clear context during a reply, Undo, and delete a recent file. Confirm drafts,
+   thread isolation, saved passages and the pill's preview/clear accessibility.
 4. Measure import, first-token time and peak memory on the oldest supported device
    with both models, near-limit files, memory pressure and cold/warm starts.
 5. Recheck ordinary math, chat formatting, history pinning and IDE run/agent flows.
