@@ -169,11 +169,108 @@ def array_number(value):
     return item
 
 
+def integral_work(original, variable, result, bounds):
+    """Small allowlist of student-style rules. Failure leaves the existing answer intact.
+
+    Only trusted SymPy objects enter here; no model text, LaTeX, or source eval.
+    Captions/equations are rendered by the app without an explanatory model pass.
+    """
+    from sympy.integrals import manualintegrate as m
+    if bounds:
+        domain = s.Interval(min(bounds), max(bounds))
+    else:
+        domain = continuous_domain(original, variable, s.S.Reals)
+    canonical = bounded(original.doit())
+    rule = m.integral_steps(canonical, variable)
+    allowed = {m.ConstantRule, m.PowerRule, m.ReciprocalRule, m.ExpRule,
+               m.SinRule, m.CosRule, m.ArctanRule, m.AddRule, m.ConstantTimesRule,
+               m.PartsRule, m.RewriteRule, m.AlternativeRule, m.URule}
+    nodes, pending = [], [(rule, 0, {})]
+    while pending:
+        node, depth, substitutions = pending.pop()
+        if type(node) not in allowed or depth > 8 or len(nodes) >= 32:
+            return None
+        if isinstance(node, m.AlternativeRule):
+            if not node.alternatives: return None
+            pending.append((node.alternatives[0], depth + 1, substitutions))
+            continue
+        nodes.append((node, substitutions))
+        if isinstance(node, m.PartsRule):
+            if node.second_step is None: return None
+            children = [node.v_step, node.second_step]
+        elif isinstance(node, m.AddRule): children = node.substeps
+        elif isinstance(node, (m.ConstantTimesRule, m.RewriteRule)): children = [node.substep]
+        elif isinstance(node, m.URule):
+            substitutions = dict(substitutions)
+            substitutions[node.u_var] = node.u_func.xreplace(substitutions)
+            children = [node.substep]
+        else: children = []
+        pending.extend((child, depth + 1, substitutions) for child in reversed(children))
+    if not nodes: return None
+    # Reject narrowing domains (e.g. log(x) on a negative real interval), unresolved
+    # derivatives and rewrites. Symbolic equality alone is not a domain check.
+    for node, substitutions in nodes:
+        integrated = bounded(node.eval())
+        if integrated.has(s.Integral) or s.simplify(s.diff(integrated, node.variable) - node.integrand) != 0:
+            return None
+        expressions = [node.integrand, integrated]
+        if isinstance(node, m.PartsRule):
+            v = node.v_step.eval()
+            if (s.simplify(node.u*node.dv - node.integrand) != 0 or
+                s.simplify(s.diff(v, node.variable) - node.dv) != 0 or
+                s.simplify(s.diff(node.u, node.variable)*v - node.second_step.integrand) != 0): return None
+            expressions.extend([node.u, node.dv, v])
+        if isinstance(node, m.RewriteRule):
+            if s.simplify(node.integrand - node.rewritten) != 0: return None
+            expressions.append(node.rewritten)
+        for expression in expressions:
+            expression = expression.xreplace(substitutions)
+            if domain.is_subset(continuous_domain(expression, variable, s.S.Reals)) is not True:
+                return None
+    antiderivative = bounded(rule.eval())
+    if s.simplify(s.diff(antiderivative, variable) - canonical) != 0: return None
+    if bounds:
+        values = [bounded(s.simplify(antiderivative.subs(variable, bound))) for bound in bounds]
+        if any(v.is_real is not True or v.is_finite is not True for v in values): return None
+        if s.simplify(values[1] - values[0] - result) != 0: return None
+    elif s.simplify(antiderivative - result) != 0:
+        return None
+    steps = []
+    def add(title, latex):
+        if len(latex.encode('utf-8')) > 1400: raise ValueError('Work display limit.')
+        steps.append({'title': title, 'latex': latex})
+    parts = next((node for node, substitutions in nodes if isinstance(node, m.PartsRule) and not substitutions), None)
+    if parts is not None:
+        u, dv, v = parts.u, parts.dv, parts.v_step.eval()
+        du = s.diff(u, variable)
+        add('Use integration by parts', r'\begin{aligned}u &= ' + s.latex(u) +
+            r'\\ dv &= ' + s.latex(dv) + r'\,d' + s.latex(variable) +
+            r'\\ du &= ' + s.latex(du) + r'\,d' + s.latex(variable) + r'\\ v &= ' + s.latex(v) + r'\end{aligned}')
+        add('Apply the integration-by-parts formula', s.latex(s.Integral(parts.integrand, variable)) +
+            ' = ' + s.latex(u*v) + ' - ' + s.latex(s.Integral(du*v, variable)))
+    rewrite = next((node for node, substitutions in nodes if isinstance(node, m.RewriteRule) and not substitutions), None)
+    if rewrite is not None:
+        add('Rewrite the integrand', s.latex(rewrite.integrand) + ' = ' + s.latex(rewrite.rewritten))
+    add('Find an antiderivative', 'F(' + s.latex(variable) + ') = ' + s.latex(antiderivative))
+    if bounds:
+        add('Evaluate the upper and lower bounds',
+            'F(' + s.latex(bounds[1]) + ') - F(' + s.latex(bounds[0]) + ') = ' +
+            r'\left(' + s.latex(values[1]) + r'\right) - \left(' + s.latex(values[0]) + r'\right) = ' + s.latex(result))
+    else:
+        add('Include the integration constant', s.latex(s.Integral(original, variable)) + ' = ' + s.latex(result) + ' + C')
+    if len(steps) > 6 or sum(len(v.encode('utf-8')) for step in steps for v in step.values()) > 5000:
+        return None
+    return steps
+
+
 def calculate(request):
-    if not isinstance(request, dict) or set(request) - {'operation', 'expression', 'variable', 'lower', 'upper'}:
+    if not isinstance(request, dict) or set(request) - {'operation', 'expression', 'variable', 'lower', 'upper', 'include_work'}:
         raise ValueError('Invalid calculation request.')
     operation = request.get('operation')
     if not isinstance(operation, str) or operation not in _OPERATIONS: raise ValueError('Unsupported calculation.')
+    include_work = request.get('include_work', False)
+    if type(include_work) is not bool or (include_work and operation != 'integrate'):
+        raise ValueError('Work is only supported for integration requests.')
     variable = request.get('variable', 'x')
     if not isinstance(variable, str) or variable not in _SYMBOLS: raise ValueError('Unsupported variable.')
     x = _SYMBOLS[variable]
@@ -295,13 +392,27 @@ def calculate(request):
     if operation == 'integrate' and not lower: latex += ' + C'
     if any(len(v) > 2500 for v in (latex, exact, input_latex)) or len(note) > 2500:
         raise ValueError('The result is too large to display safely.')
-    return {'ok': True, 'input': input_latex, 'latex': latex, 'exact': exact, 'note': note}
+    answer = {'ok': True, 'input': input_latex, 'latex': latex, 'exact': exact, 'note': note}
+    if include_work:
+        try:
+            steps = integral_work(original, x, result, (lo, hi) if lower else None)
+            if steps: answer['steps'] = steps
+        except (TimeoutError, KeyboardInterrupt):
+            raise  # Host cancellation/deadline semantics must remain unchanged.
+        except Exception:
+            pass  # A failed optional derivation must not replace a successful calculation.
+    return answer
 
 
 def _calculate_json(raw):
     try:
         if not isinstance(raw, str) or len(raw.encode('utf-8')) > 4096: raise ValueError('Calculation request is too large.')
-        return json.dumps(calculate(json.loads(raw)), ensure_ascii=True, allow_nan=False)
+        answer = calculate(json.loads(raw))
+        encoded = json.dumps(answer, ensure_ascii=True, allow_nan=False)
+        if 'steps' in answer and len(encoded.encode('utf-8')) > 16384:
+            del answer['steps']
+            encoded = json.dumps(answer, ensure_ascii=True, allow_nan=False)
+        return encoded
     except (TimeoutError, KeyboardInterrupt):
         # The host must observe interruption; never turn a deadline into a successful transport response.
         raise

@@ -39,6 +39,7 @@ struct MathCalculation: Codable, Sendable {
     var exact: String?
     var note: String?
     var error: String?
+    var steps: [MathWorkStep]?
 
     static func unavailable(_ reason: String) -> Self { .init(ok: false, error: reason) }
     func answer(for request: MathRequest) -> String? {
@@ -53,8 +54,29 @@ struct MathCalculation: Codable, Sendable {
     }
 }
 
+/// Equations and captions supplied only by the bounded on-device calculator.
+struct MathWorkStep: Codable, Equatable, Sendable {
+    let title: String
+    let latex: String
+
+    static func render(_ steps: [Self]?) -> String? {
+        guard let steps, (1...6).contains(steps.count),
+              steps.allSatisfy({ !$0.title.isEmpty && $0.title.utf8.count <= 100 &&
+                  !$0.latex.isEmpty && $0.latex.utf8.count <= 1400 }),
+              steps.reduce(0, { $0 + $1.title.utf8.count + $1.latex.utf8.count }) <= 5000 else { return nil }
+        return steps.enumerated().map { index, step in
+            "**\(index + 1). \(step.title)**\n\n\\[\(step.latex)\\]"
+        }.joined(separator: "\n\n")
+    }
+}
+
 protocol MathCalculating: Sendable {
     func calculate(_ request: MathRequest) async throws -> MathCalculation
+}
+
+/// Optional work capability leaves existing calculator clients and planner schemas unchanged.
+protocol IntegralWorkCalculating: MathCalculating {
+    func calculateIntegralWork(_ request: MathRequest) async throws -> MathCalculation
 }
 
 /// Optional capability for a focused explanation prompt; existing tutor clients remain compatible.
@@ -161,6 +183,22 @@ struct CalculatingTutorClient: TutorCompleting {
             onUpdate(calculated)
             // Answer-only requests stop here: no explanatory inference or model switch.
             guard explanationStyle != .answerOnly else { return calculated }
+            if request.operation == "integrate", explanationStyle == .steps {
+                // Publish the answer first. Work has its own bounded job/cache entry, so
+                // unavailable or interrupted work cannot discard a completed calculation.
+                if let workCalculator = calculator as? any IntegralWorkCalculating {
+                    onStatus(.calculating)
+                    do {
+                        let worked = try await workCalculator.calculateIntegralWork(request)
+                        try Task.checkCancellation()
+                        if worked.ok, worked.input == result.input, worked.exact == result.exact,
+                           worked.latex == result.latex, let steps = MathWorkStep.render(worked.steps) {
+                            return publish(calculated + "\n\n**Worked steps** · Calculated on device\n\n" + steps, onUpdate)
+                        }
+                    } catch { try propagateCancellation(error) }
+                }
+                return publish(calculated + "\n\n*Checked steps aren't available for this integral. The calculated answer above is retained.*", onUpdate)
+            }
             var context = messages
             let recoveredRequest = followsCalculation ? "\nCalculation request: \(calculationQuestion.text)" : ""
             context.append(TutorMessage(role: .user, text: """

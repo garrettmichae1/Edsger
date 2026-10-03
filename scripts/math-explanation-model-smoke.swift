@@ -10,17 +10,26 @@ private func require(_ condition: Bool, _ message: String) throws {
     if !condition { throw SmokeFailure.failed(message) }
 }
 
-private struct HostMathCalculator: MathCalculating {
+private struct HostMathCalculator: IntegralWorkCalculating {
     let python: URL
     let bootstrap: URL
     func calculate(_ request: MathRequest) async throws -> MathCalculation {
+        try await run(request, includeWork: false)
+    }
+    func calculateIntegralWork(_ request: MathRequest) async throws -> MathCalculation {
+        try await run(request, includeWork: true)
+    }
+    private func run(_ request: MathRequest, includeWork: Bool) async throws -> MathCalculation {
+        var object = try JSONSerialization.jsonObject(with: JSONEncoder().encode(request)) as! [String: Any]
+        if includeWork { object["include_work"] = true }
+        let encoded = try JSONSerialization.data(withJSONObject: object, options: .sortedKeys)
         let process = Process(), output = Pipe()
         process.executableURL = python
         process.arguments = ["-c", """
         import runpy, sys
         engine = runpy.run_path(sys.argv[1], init_globals={'_math_packages': ''})
         print(engine['_calculate_json'](sys.argv[2]))
-        """, bootstrap.path, String(decoding: try JSONEncoder().encode(request), as: UTF8.self)]
+        """, bootstrap.path, String(decoding: encoded, as: UTF8.self)]
         process.standardOutput = output
         try process.run()
         let data = output.fileHandleForReading.readDataToEndOfFile()
@@ -63,7 +72,7 @@ private actor CountingTutor: MathExplanationCompleting {
             miniModelURL: URL(fileURLWithPath: CommandLine.arguments[1]))
         let calculator = HostMathCalculator(python: URL(fileURLWithPath: CommandLine.arguments[3]),
             bootstrap: URL(fileURLWithPath: CommandLine.arguments[4]))
-        let baseQuestion = "Integrate x^2 * ln(1+x) with respect to x from 0 to 1."
+        let baseQuestion = "Integrate x^2 * ln(1+x) from 0 to 1. Just the answer."
         for model in [ChatModel.mini, .standard] {
             let bound = ModelBoundChatClient(model: model, engine: engine)
             let tutor = CountingTutor(base: bound)
@@ -81,6 +90,12 @@ private actor CountingTutor: MathExplanationCompleting {
                     try require(calls == 0 && !reply.contains("AI-generated"), "Default request started an explanation")
                     try require(await engine.loadedChoice == .standard, "Default result switched to another model")
                     print("PASS \(model.rawValue) answer-only: zero explanatory calls, total=\(start.duration(to: .now))")
+                } else if suffix.contains("steps") {
+                    try require(calls == 0 && !reply.contains("AI-generated") && reply.contains("**Worked steps** · Calculated on device"), "Integral work must bypass AI")
+                    try require(reply.contains(#"x^{2} - x + 1 - \frac{1}{x + 1}"#), "Correct polynomial division missing")
+                    try require(reply.contains("**5. Evaluate the upper and lower bounds**"), "Five bounded steps missing")
+                    print("WORKED STEPS \(model.rawValue)\n\(reply)\nEND WORKED STEPS")
+                    print("PASS \(model.rawValue) checked steps: zero explanatory calls, total=\(start.duration(to: .now))")
                 } else {
                     let ordinaryCalls = await tutor.ordinaryCalls
                     try require(calls == 1 && reply.contains("**Explanation** · AI-generated") && ordinaryCalls == 0, "Requested explanation routing")
@@ -93,15 +108,10 @@ private actor CountingTutor: MathExplanationCompleting {
                     if suffix.contains("briefly") {
                         try require(!explanation.contains("5/18") && !explanation.contains(#"\frac{5}{18}"#), "Brief method repeated the result in a worked calculation")
                     }
-                    if suffix.contains("steps") {
-                        let compact = explanation.filter { !$0.isWhitespace }
-                        try require(compact.contains(#"\frac{x^3}{3}"#) || compact.contains(#"\frac{x^{3}}{3}"#) || compact.contains("x^3/3"), "Example antiderivative in the requested derivation")
-                        try require(!explanation.lowercased().contains("taylor"), "Exact derivation switched to a series")
-                    }
                     print("PASS \(model.rawValue)\(suffix): words=\(wordCount), total=\(start.duration(to: .now))")
                 }
             }
         }
-        print("PASS both chat choices: default result only; requested explanations reuse Standard")
+        print("PASS both chat choices: default result only; brief explanations reuse Standard; integral work bypasses AI")
     }
 }

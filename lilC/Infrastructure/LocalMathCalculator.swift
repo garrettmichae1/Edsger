@@ -1,15 +1,32 @@
 import Foundation
 
 /// Python access is serialized by the existing C engine lock. Never waits behind an IDE run.
-actor LocalMathCalculator: MathCalculating {
+actor LocalMathCalculator: IntegralWorkCalculating {
     static let shared = LocalMathCalculator()
     private var cache: [String: MathCalculation] = [:]
 
     func calculate(_ request: MathRequest) async throws -> MathCalculation {
+        try await calculate(request, includeWork: false)
+    }
+
+    func calculateIntegralWork(_ request: MathRequest) async throws -> MathCalculation {
+        guard request.operation == "integrate" else { return .unavailable("Integral work requires an integral request.") }
+        return try await calculate(request, includeWork: true)
+    }
+
+    private func calculate(_ request: MathRequest, includeWork: Bool) async throws -> MathCalculation {
         try Task.checkCancellation()
         guard request.isValid else { return .unavailable("Unsupported calculation request.") }
         let encoder = JSONEncoder(); encoder.outputFormatting = .sortedKeys
-        let json = String(decoding: try encoder.encode(request), as: UTF8.self)
+        var data = try encoder.encode(request)
+        if includeWork {
+            guard var object = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+                return .unavailable("The calculator request could not be encoded.")
+            }
+            object["include_work"] = true
+            data = try JSONSerialization.data(withJSONObject: object, options: .sortedKeys)
+        }
+        let json = String(decoding: data, as: UTF8.self)
         if let cached = cache[json] { return cached }
         let job = MathJob()
         // Startup has its own budget in the native bridge.

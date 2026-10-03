@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 import runpy
 import unittest
+from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
 ENGINE = runpy.run_path(str(ROOT / 'lilC/Infrastructure/math_bootstrap.py'), init_globals={'_math_packages': ''})
@@ -62,6 +63,61 @@ class MathEngineTests(unittest.TestCase):
         self.assertFalse(calculate('integrate', '1/x', lower='-1', upper='1')['ok'])
         self.assertFalse(calculate('integrate', 'x', lower='0')['ok'])
         self.assertFalse(calculate('integrate', 'x', lower='x', upper='1')['ok'])
+
+    def test_checked_integral_work_matches_answer(self):
+        normal = calculate('integrate', 'x^2*ln(1+x)', lower='0', upper='1')
+        worked = calculate('integrate', 'x^2*ln(1+x)', lower='0', upper='1', include_work=True)
+        self.assertEqual({k: v for k, v in worked.items() if k != 'steps'}, normal)
+        self.assertEqual(len(worked['steps']), 5)
+        self.assertEqual(worked['steps'][2]['latex'], r'\frac{x^{3}}{x + 1} = x^{2} - x + 1 - \frac{1}{x + 1}')
+        self.assertIn(normal['latex'], worked['steps'][-1]['latex'])
+        self.assertNotIn(r'- \frac{1}{9}', worked['steps'][-1]['latex'])
+        for source, kwargs in [('x^2', {}), ('x^2', {'lower': '1', 'upper': '0'}),
+                               ('sin(x)', {'lower': '0', 'upper': 'pi'}),
+                               ('exp(x)', {}), ('1/(1+x^2)', {}), ('x*exp(x)', {}),
+                               ('y^2', {'variable': 'y', 'lower': '0', 'upper': '1'})]:
+            with self.subTest(source=source, kwargs=kwargs):
+                answer = calculate('integrate', source, include_work=True, **kwargs)
+                self.assertTrue(answer['ok'], answer)
+                self.assertTrue(answer.get('steps'), answer)
+                self.assertLessEqual(len(answer['steps']), 6)
+                self.assertLessEqual(sum(len(v.encode()) for step in answer['steps'] for v in step.values()), 5000)
+
+    def test_work_rejects_unsafe_domains_without_losing_answer(self):
+        for source, kwargs in [('1/x', {}), ('1/x', {'lower': '-2', 'upper': '-1'}), ('sqrt(x^2)', {})]:
+            with self.subTest(source=source):
+                normal = calculate('integrate', source, **kwargs)
+                self.assertTrue(normal['ok'], normal)
+                self.assertEqual(calculate('integrate', source, include_work=True, **kwargs), normal)
+        self.assertFalse(calculate('integrate', '1/x', lower='-1', upper='1', include_work=True)['ok'])
+
+    def test_work_checks_reject_incorrect_rules(self):
+        from sympy.integrals import manualintegrate as m
+        import sympy as s
+        x = ENGINE['_SYMBOLS']['x']
+        # A permitted-looking rule whose integral is wrong must never be rendered.
+        wrong = m.PowerRule(x**2, x, x, s.Integer(1))
+        with patch.object(m, 'integral_steps', return_value=wrong):
+            answer = calculate('integrate', 'x^2', include_work=True)
+            self.assertTrue(answer['ok'])
+            self.assertNotIn('steps', answer)
+        with patch.object(m, 'integral_steps', return_value=object()):
+            self.assertNotIn('steps', calculate('integrate', 'x^2', include_work=True))
+
+    def test_optional_work_failures_and_interruptions(self):
+        globals_ = ENGINE['calculate'].__globals__
+        with patch.dict(globals_, integral_work=lambda *args: (_ for _ in ()).throw(ValueError('unsupported'))):
+            self.assertEqual(calculate('integrate', 'x^2', include_work=True), calculate('integrate', 'x^2'))
+        for error in [TimeoutError('deadline'), KeyboardInterrupt()]:
+            def interrupted(*args): raise error
+            with patch.dict(globals_, integral_work=interrupted):
+                # Default/false path never starts optional work.
+                self.assertTrue(calculate('integrate', 'x^2')['ok'])
+                self.assertTrue(calculate('integrate', 'x^2', include_work=False)['ok'])
+                with self.assertRaises(type(error)): calculate('integrate', 'x^2', include_work=True)
+        for flag in ['true', 1, None]:
+            self.assertFalse(calculate('integrate', 'x^2', include_work=flag)['ok'])
+        self.assertFalse(calculate('evaluate', '2+2', include_work=True)['ok'])
 
     def test_matrices(self):
         self.assertEqual(calculate('determinant', '[[1,2],[3,4]]')['exact'], '-2')

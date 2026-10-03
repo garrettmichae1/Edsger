@@ -30,6 +30,20 @@ static void success(void) {
     assert(status == 0); assert(strstr(captured, "\"exact\": \"1/2\""));
     lilc_python_destroy(job);
 }
+static void integral_work(void) {
+    const char *worked = "{\"operation\":\"integrate\",\"expression\":\"x^2*ln(1+x)\",\"lower\":\"0\",\"upper\":\"1\",\"include_work\":true}";
+    lilc_python_job *job = lilc_python_create(); assert(job);
+    captured[0] = 0;
+    assert(lilc_python_calculate(job, home, math_bootstrap, packages, worked, 8, output, NULL) == 0);
+    assert(strstr(captured, "\"steps\":"));
+    assert(strstr(captured, "-5/18 + 2*log(2)/3"));
+    assert(strstr(captured, "Rewrite the integrand"));
+    lilc_python_destroy(job);
+    job = lilc_python_create();
+    assert(lilc_python_calculate(job, home, math_bootstrap, packages, worked, 0.000000001, output, NULL) == 4);
+    lilc_python_destroy(job);
+    success(); // optional work deadline does not poison the next calculation
+}
 static void *ide(void *arg) {
     int status = lilc_python_run(arg, home, ide_bootstrap, script, root, discard, wait_changed, NULL);
     assert(status == 0); return NULL;
@@ -52,6 +66,7 @@ int main(int argc, char **argv) {
     lilc_python_destroy(startup_job);
     math_bootstrap = production_bootstrap;
     success(); success(); // cold and warm interpreter
+    integral_work();
     pthread_t worker;
     pthread_create(&worker, NULL, math_on_worker, NULL); pthread_join(worker, NULL);
     lilc_python_job *job = lilc_python_create(); assert(job);

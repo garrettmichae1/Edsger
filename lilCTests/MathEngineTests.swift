@@ -116,9 +116,77 @@ import Testing
             #expect(await tutor.messages.count == 1)
             #expect(await tutor.messages.last?.text.contains("Calculation request: " + question) == true)
             #expect(await tutor.messages.last?.text.contains("OLD_SPECULATION") == false)
-            #expect(reply.contains("Calculated on device") && reply.contains("AI-generated"))
+            #expect(reply.contains("Calculated on device"))
+            if followup.contains("steps") {
+                #expect(!reply.contains("AI-generated") && reply.contains("Checked steps aren't available"))
+            } else { #expect(reply.contains("AI-generated")) }
         }
         #expect(await calculator.requests == [request, request, request])
+    }
+
+    @Test func integralWorkIsRenderedWithoutInference() async throws {
+        let request = MathRequest(operation: "integrate", expression: "x^2", lower: "0", upper: "1")
+        let result = MathCalculation(ok: true, input: "x^2", latex: "1/3", exact: "1/3")
+        var work = result
+        work.steps = [.init(title: "Find an antiderivative", latex: "F(x)=x^3/3"),
+                      .init(title: "Evaluate the bounds", latex: "F(1)-F(0)=1/3")]
+        let calculator = MathTestWorkCalculator(result: result, work: work), tutor = MathTestFocusedTutor()
+        let updates = MathTestUpdates()
+        let client = CalculatingTutorClient(tutor: tutor, planner: MathTestPlanner(.calculate(request)), calculator: calculator)
+        let reply = try await client.reply(messages: [.init(role: .user, text: "Integrate x^2 from 0 to 1; show steps")]) { updates.append($0) }
+        #expect(reply.contains("**Worked steps** · Calculated on device") && reply.contains("F(1)-F(0)=1/3"))
+        #expect(!reply.contains("AI-generated"))
+        #expect(updates.values.first == result.answer(for: request))
+        #expect(await calculator.workCalls == 1)
+        #expect(await tutor.messages.isEmpty)
+            #expect(await tutor.normalCalls == 0)
+    }
+
+    @Test func integralAnswerAndBriefNeverRequestWork() async throws {
+        let request = MathRequest(operation: "integrate", expression: "x^2")
+        for question in ["Integrate x^2", "Integrate x^2 and explain briefly"] {
+            let calculator = MathTestWorkCalculator(), tutor = MathTestFocusedTutor()
+            let client = CalculatingTutorClient(tutor: tutor, planner: MathTestPlanner(.calculate(request)), calculator: calculator)
+            let reply = try await client.reply(messages: [.init(role: .user, text: question)]) { _ in }
+            #expect(await calculator.workCalls == 0)
+            #expect(reply.contains("AI-generated") == question.contains("briefly"))
+        }
+    }
+
+    @Test func integralWorkFailuresPreserveAnswerAndNeverAskAI() async throws {
+        let request = MathRequest(operation: "integrate", expression: "x^2")
+        let result = MathCalculation(ok: true, input: "x^2", latex: "x^3/3 + C", exact: "x**3/3")
+        var good = result; good.steps = [.init(title: "Antiderivative", latex: "x^3/3 + C")]
+        var differentInput = good; differentInput.input = "x"
+        var differentResult = good; differentResult.exact = "0"
+        var differentLatex = good; differentLatex.latex = "0"
+        var tooLong = good; tooLong.steps = [.init(title: "Antiderivative", latex: String(repeating: "x", count: 1401))]
+        for work in [result, differentInput, differentResult, differentLatex, tooLong, .unavailable("Unsupported")] {
+            let calculator = MathTestWorkCalculator(result: result, work: work), tutor = MathTestFocusedTutor()
+            let client = CalculatingTutorClient(tutor: tutor, planner: MathTestPlanner(.calculate(request)), calculator: calculator)
+            let reply = try await client.reply(messages: [.init(role: .user, text: "Integrate x^2 and show steps")]) { _ in }
+            #expect(reply.hasPrefix(result.answer(for: request)!))
+            #expect(reply.contains("Checked steps aren't available") && !reply.contains("AI-generated"))
+            #expect(await tutor.messages.isEmpty)
+            #expect(await tutor.normalCalls == 0)
+        }
+        for failure in [MathTestError.failure, .cancelled] {
+            let client = CalculatingTutorClient(tutor: MathTestFocusedTutor(), planner: MathTestPlanner(.calculate(request)),
+                calculator: MathTestWorkCalculator(result: result, work: good, failure: failure))
+            do {
+                let reply = try await client.reply(messages: [.init(role: .user, text: "Integrate x^2 and show steps")]) { _ in }
+                #expect(failure == .failure && reply.hasPrefix(result.answer(for: request)!))
+            } catch { #expect(failure == .cancelled && error is CancellationError) }
+        }
+    }
+
+    @Test func optionalWorkIsBackwardCompatibleAndBounded() throws {
+        let legacy = try JSONDecoder().decode(MathCalculation.self, from: Data(#"{"ok":true,"input":"x","latex":"1","exact":"1"}"#.utf8))
+        #expect(legacy.steps == nil)
+        #expect(MathWorkStep.render([]) == nil)
+        #expect(MathWorkStep.render(Array(repeating: .init(title: "Step", latex: "x"), count: 7)) == nil)
+        #expect(MathWorkStep.render([.init(title: "", latex: "x")]) == nil)
+        #expect(MathWorkStep.render(Array(repeating: .init(title: "Step", latex: String(repeating: "x", count: 1000)), count: 6)) == nil)
     }
 
     @Test func arithmeticExplanationReusesFastPath() async throws {
@@ -345,4 +413,19 @@ private final class MathTestUpdates: @unchecked Sendable {
     private var stored: [String] = []
     var values: [String] { lock.lock(); defer { lock.unlock() }; return stored }
     func append(_ value: String) { lock.lock(); defer { lock.unlock() }; stored.append(value) }
+}
+
+private actor MathTestWorkCalculator: IntegralWorkCalculating {
+    let result: MathCalculation
+    let work: MathCalculation
+    let failure: MathTestError?
+    private(set) var workCalls = 0
+    init(result: MathCalculation = .init(ok: true, input: "x^2", latex: "x^3/3 + C", exact: "x**3/3"),
+         work: MathCalculation = .unavailable("No work"), failure: MathTestError? = nil) {
+        self.result = result; self.work = work; self.failure = failure
+    }
+    func calculate(_ request: MathRequest) async throws -> MathCalculation { result }
+    func calculateIntegralWork(_ request: MathRequest) async throws -> MathCalculation {
+        workCalls += 1; try throwMathTestError(failure); return work
+    }
 }

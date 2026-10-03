@@ -15,6 +15,27 @@ struct lilCTests {
     }
 
     @MainActor
+    @Test func bundledIntegralWorkMatchesAnswerAndTypesets() async throws {
+        let request = MathRequest(operation: "integrate", expression: "x^2*ln(1+x)", lower: "0", upper: "1")
+        let answer = try await LocalMathCalculator.shared.calculate(request)
+        let work = try await LocalMathCalculator.shared.calculateIntegralWork(request)
+        #expect(answer.ok && work.ok)
+        #expect(work.input == answer.input && work.exact == answer.exact && work.latex == answer.latex)
+        let steps = try #require(work.steps)
+        #expect(steps.count == 5)
+        #expect(MathWorkStep.render(steps) != nil)
+        for step in steps {
+            for dark in [false, true] {
+                #expect(MathTypesetter.shared.render(step.latex, size: 21, display: true, dark: dark).image != nil,
+                        "Integral work failed to typeset: \(step.title)")
+            }
+        }
+        let unsupported = try await LocalMathCalculator.shared.calculateIntegralWork(
+            .init(operation: "integrate", expression: "1/x", lower: "-2", upper: "-1"))
+        #expect(unsupported.ok && unsupported.steps == nil)
+    }
+
+    @MainActor
     @Test func chatMarkdownPreservesStructureAndSwiftMathAttachments() throws {
         let runs: [MathMessage.Inline] = [
             .text("## Derivative rules\n\n| Function | Derivative |\n| --- | --- |\n| "),
