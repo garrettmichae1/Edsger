@@ -1,7 +1,4 @@
 export interface Env {
-  BYOK_ENABLED?: string;
-  BYOK_RATE_SALT?: string;
-  BYOK_RATE_LIMIT?: { limit(options: { key: string }): Promise<{ success: boolean }> };
   OPENAI_API_KEY?: string;
   GROQ_API_KEY?: string;
   GOOGLE_API_KEY?: string;

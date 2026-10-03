@@ -557,6 +557,14 @@ final class LocalCWorkspace {
         guard !path.isEmpty, !path.hasPrefix("/"), !path.contains("..") else { return nil }
         let parts = path.split(separator: "/").map(String.init)
         guard parts.allSatisfy({ !$0.isEmpty && $0 != "." && $0 != ".." }) else { return nil }
+        // Agent tools do not follow imported project symlinks, including dangling
+        // links. Lexical project-relative paths alone are not a filesystem boundary.
+        var entry = directoryURL.resolvingSymlinksInPath()
+        for part in parts {
+            entry.appendPathComponent(part)
+            if let attributes = try? fileManager.attributesOfItem(atPath: entry.path),
+               attributes[.type] as? FileAttributeType == .typeSymbolicLink { return nil }
+        }
         return parts.joined(separator: "/")
     }
 

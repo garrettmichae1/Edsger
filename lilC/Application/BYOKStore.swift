@@ -18,7 +18,7 @@ final class BYOKStore {
     private var consentVersions: [BYOKProvider: Int] = [:]
     private static let configurationKey = "edsger.byok.configurations"
 
-    init(defaults: UserDefaults = .standard, credentials: any ProviderCredentialStoring = ProviderKeychain(), connection: any BYOKConnecting = BYOKRelayClient()) {
+    init(defaults: UserDefaults = .standard, credentials: any ProviderCredentialStoring = ProviderKeychain(), connection: any BYOKConnecting = BYOKProviderClient()) {
         self.defaults = defaults; self.credentials = credentials; self.connection = connection
         configurations = Self.read([String: BYOKConfiguration].self, Self.configurationKey, defaults) ?? [:]
         chatChoice = Self.read(BYOKChoice.self, "edsger.byok.chat", defaults)
@@ -58,13 +58,13 @@ final class BYOKStore {
         isConfiguring = true; defer { isConfiguring = false }
         let models = try await connection.models(provider: provider, key: key)
         try Task.checkCancellation()
-        guard !models.isEmpty else { throw BYOKError.relayCode("unsupported_model") }
+        guard !models.isEmpty else { throw BYOKError.providerCode("unsupported_model") }
         return models
     }
     func save(provider: BYOKProvider, draftKey: String, modelID: String, models: [BYOKModel], consent: Bool) async throws {
         guard canConfigure else { throw BYOKError.busy }
         guard consent else { throw BYOKError.consentRequired }
-        guard models.contains(where: { $0.id == modelID }) else { throw BYOKError.relayCode("unsupported_model") }
+        guard models.contains(where: { $0.id == modelID }) else { throw BYOKError.providerCode("unsupported_model") }
         let key = try key(provider: provider, draft: draftKey)
         isConfiguring = true; defer { isConfiguring = false }
         let consentVersion = consentVersions[provider, default: 0]

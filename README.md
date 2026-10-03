@@ -42,7 +42,7 @@ Settings stores Light or Dark in UserDefaults. The chrome is spare on purpose: p
 
 ## Optional cloud models on iPhone
 
-Settings → **BYOK** accepts personal OpenAI or Claude API keys, with explicit sharing consent and secure device-only Keychain storage. Select your verified model in Chat or Agent IDE. Chat keeps documents/math; IDE agents use the existing scoped project tools and local runtimes. Provider API usage is billed separately. The relay must be configured and deployed before cloud use; see [BYOK setup and release checks](Docs/BYOK.md). No Pro gating is added yet.
+Settings → **BYOK** accepts personal OpenAI or Claude API keys, with explicit sharing consent and secure device-only Keychain storage. Select your verified model in Chat or Agent IDE. Chat keeps documents/math; IDE agents use the existing scoped project tools and local runtimes. Provider API usage is billed separately. BYOK connects directly to the provider; no Edsger backend deployment is required. See [BYOK setup and release checks](Docs/BYOK.md). No Pro gating is added yet.
 
 ## Open in Xcode
 

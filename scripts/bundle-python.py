@@ -22,8 +22,9 @@ for arch in arches:
 frameworks = app / 'Frameworks'
 frameworks.mkdir(exist_ok=True)
 for stale in frameworks.glob('PythonModule-*.framework'): shutil.rmtree(stale)
-# Upstream test-only extensions are not part of the supported student library.
-for pattern in ('_test*.so', '_xxtest*.so', 'xx*.so'):
+# Test-only and unsafe FFI/network/process extensions are not shipped.
+# Runtime audit guards alone must not be the only protection for native modules.
+for pattern in ('_test*.so', '_xxtest*.so', 'xx*.so', '_ctypes*.so', '_socket*.so', '_posixsubprocess*.so', '_multiprocessing*.so'):
     for file in (lib / 'lib-dynload').glob(pattern): file.unlink()
 shutil.rmtree(lib / 'test', ignore_errors=True)
 for ext in sorted((lib / 'lib-dynload').glob('*.so')):

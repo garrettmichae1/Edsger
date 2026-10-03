@@ -47,7 +47,7 @@ final class AgentSettingsStore {
             ? true : defaults.bool(forKey: enabledKey)
         sharingConsent = defaults.bool(forKey: consentKey)
         if defaults.object(forKey: safeguardsKey) == nil {
-            safeguardsOn = false
+            safeguardsOn = true
         } else {
             safeguardsOn = defaults.bool(forKey: safeguardsKey)
         }

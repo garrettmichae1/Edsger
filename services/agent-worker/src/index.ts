@@ -13,14 +13,14 @@ import {
 } from "./quota";
 import { handleGitHubAuth } from "./github";
 import type { Env } from "./types";
-import { handleBYOK } from "./byok";
 
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
 
-    const byok = await handleBYOK(request, env, url);
-    if (byok) return byok;
+    // Personal keys now travel directly from iPhone to their provider.
+    // Retire the old route without reading bodies or credentials.
+    if (url.pathname.startsWith("/v1/byok/")) return json({ error: "byok_direct_only" }, 410);
 
     if (request.method === "GET" && url.pathname === "/health") {
       return json({ ok: true, service: "lilc-agent" });

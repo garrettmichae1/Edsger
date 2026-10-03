@@ -233,3 +233,76 @@ enum AgentCompletionReview {
     Before finishing, verify the original request against the file changes you actually made. Does the code implement the requested behavior, including function bodies rather than only declarations? If something is missing, read the file and fix it with tools now. Otherwise give a brief accurate final answer. Do not repeat successful changes.
     """
 }
+
+/// App-authored reference. Available through the shared tool engine to every
+/// provider; never downloaded, model-authored, or interpreted as executable code.
+enum AgentRuntimeDocumentation {
+    static let version = "1"
+    static let topics: Set<String> = ["overview", "files", "modules", "limits"]
+    static func read(language: String, topic: String) -> String? {
+        guard topics.contains(topic), let text = guides[language]?[topic] else { return nil }
+        return "Edsger runtime guide v\(version) · \(language) · \(topic)\n" + text
+    }
+    private static let guides: [String: [String: String]] = [
+        "c": [
+            "overview": """
+            C runs in the bundled PicoC interpreter, not GCC/Clang and not a POSIX shell. Use .c and .h source files, simple complete functions, loops, arrays and structs. One main() is the entry point. Include the required headers and provide function bodies. Avoid function pointers and qsort; they are unsupported by this app. Prefer small explicit algorithms. Validate behavior with run_file/run_current and inspect actual output rather than assuming desktop C behavior.
+            Example: #include <stdio.h> followed by int main(void) { printf("Hello\\n"); return 0; }.
+            """,
+            "files": """
+            Tool paths are relative to the active project. The editor accepts .c/.h files. Read existing files before edits; replace_text requires one unique exact match. stdio file access uses project-relative paths. Do not use absolute paths or parent traversal. Deletion tools are blocked when Protect files from deletion is enabled; edits are still allowed. Generated programs can change project data, so review writes and keep restore points. Code execution starts at the selected .c file and uses the active project as its include/file root.
+            """,
+            "modules": """
+            There is no package manager, linker, external native library loading or desktop build command. Use project-local headers and the bundled PicoC adapters: stdio.h, stdlib.h, string.h, math.h, ctype.h, errno.h, stdbool.h and time.h. These are limited adapters, not a complete libc. Put simple static helper definitions in headers when needed. Do not assume POSIX headers, sockets, pthreads, fork/exec, system(), qsort or arbitrary third-party APIs exist. Run one main() per project.
+            """,
+            "limits": """
+            PicoC is an educational interpreter with C feature limits and cooperative Stop. system() is disabled. Unsupported library calls can fail even if similar code compiles on a desktop. Native operations may need to return before cancellation is observed. Check runtime diagnostics, then simplify the source; do not invent successful test results or suggest bypassing the interpreter restrictions. Use calculate_math for supported symbolic math rather than unavailable libraries.
+            """
+        ],
+        "python": [
+            "overview": """
+            Python runs in bundled CPython 3.14.7 on iPhone. Execute the selected .py script, using print(), input(), four-space indentation, functions, classes and local imports. Each IDE run uses a fresh interpreter; files persist, Python globals do not. Console input may wait for the user; EOF must be handled. There is no pip, desktop shell, GUI, background thread, subprocess or network access.
+            Example: def square(x): return x * x followed by print(square(3)).
+            """,
+            "files": """
+            Use project-relative paths with normal open() or pathlib. Project files can be read/written; bundled Python resources are read-only. Native audit policy resolves paths and symlinks and rejects outside-project writes, parent traversal, raw file descriptors and directory-fd tricks. Do not modify Python bootstrap globals or use ctypes to bypass rules. Programs may modify project data; the agent deletion-tool safeguard is not a blanket ban on program writes. Existing checkpoints support recovery. Read the current source before editing it.
+            """,
+            "modules": """
+            Use local .py modules and the bundled standard library, such as math, json, collections and pathlib. Project-local imports start at the active project. Do not assume packages are installed or run pip. SymPy is bundled for Edsger's dedicated calculate_math tool, not promised as an import in ordinary IDE scripts. ctypes/_ctypes, subprocess, multiprocessing, threading, socket, signal, resource and unsafe native facilities are restricted. Prefer calculate_math for supported symbolic operations and respect its expression/operation limits.
+            """,
+            "limits": """
+            The host installs native file/import/network/process restrictions before CPython initialization and enforces them during script execution and cleanup. Python callbacks cannot turn them off. Do not access app credentials, environment/process controls, other projects or arbitrary native modules. Stop is cooperative and native work can delay cancellation; console output is capped at 1 MB. Avoid unbounded loops, huge allocations and output floods. A fresh interpreter is not a separate OS process or proof against every hostile-runtime exploit; generate small reviewed programs.
+            """
+        ],
+        "javascript": [
+            "overview": """
+            JavaScript runs in Apple's JavaScriptCore console, not Node.js or a browser. Use .js, console.log(), input(prompt), and ordinary functions/arrays/objects. input returns null at EOF. Source is parsed as an ECMAScript 2025 script and instrumented for cooperative Stop. Use synchronous console programs. There is no DOM, document/window, fetch, npm, timers or Node process/Buffer APIs.
+            Example: const value = input('Number:'); if (value !== null) console.log(Number(value) * 2);
+            """,
+            "files": """
+            Use readFile(path) and writeFile(path, text) for project text files, with project-relative paths. IDE tool writes accept .js source. Read existing files before edits. All file operations stay within the active project. Do not use Node fs/path packages, absolute paths or parent traversal to access other projects. Generated programs can change project data; review writes and use restore points. Runtime errors refer to source locations before Stop instrumentation when available.
+            """,
+            "modules": """
+            Local CommonJS-style modules are supported: require('./helper') or require('./helper.js') and module.exports. Resolution is relative to the importing file and constrained to the project. No npm registry or Node built-in modules are supplied. ES import/export declarations are unsupported because files run as scripts. Use module.exports = { name } and const { name } = require('./helper') instead. Keep dependencies as local .js files.
+            """,
+            "limits": """
+            eval and Function constructors, including constructor-based variants, are disabled to prevent bypassing Stop instrumentation. Loops and function entries have cancellation checkpoints; long native operations can delay Stop. Do not attempt dynamic-code workarounds, network calls, GUI APIs or unsupported async timers. Use calculate_math for supported symbolic calculations and read_output to inspect actual results.
+            """
+        ],
+        "lua": [
+            "overview": """
+            Lua runs in the bundled Lua 5.5.1 interpreter, offline. Use .lua, print(), io.read(), io.write(), tables, functions and coroutines. Run the selected script. Handle nil at EOF. This is the app console, not a desktop shell. Process commands, LuaRocks, native modules and the debug library are unavailable.
+            Example: local text = io.read(); if text then print(string.upper(text)) end.
+            """,
+            "files": """
+            io.open(name, mode), io.lines(name), loadfile(name) and dofile(name) resolve within the active project. Use project-relative paths. IDE edits accept .lua source; read it before changing it. File writes can change project data, so review them and preserve restore points. io.popen, io.tmpfile, io.input and io.output are unavailable. Do not attempt absolute/parent paths to other projects or the app's private files.
+            """,
+            "modules": """
+            require('helper') loads helper.lua or helper/init.lua from the project. Dotted names resolve to local subfolders. Return a table from the module. Built-in os, io, math, string, table, utf8 and coroutine are provided with the app's restrictions. No C/native-module loading or LuaRocks installation is supported. Circular local imports fail. Text chunks may use load, but bytecode loading is disabled.
+            """,
+            "limits": """
+            os.execute, os.exit, os.getenv, os.setlocale, os.remove, os.rename and os.tmpname are removed. io.popen is removed; the debug library is unavailable. File paths remain project-scoped. Use small bounded loops, handle EOF, inspect real console output, and use Stop when needed. calculate_math supplies supported symbolic operations independently of Lua packages. Do not suggest bypassing the host restrictions.
+            """
+        ]
+    ]
+}

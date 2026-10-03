@@ -1,11 +1,13 @@
 import Foundation
 
 /// Provider identity is distinct from a model ID. Add providers here and in the
-/// relay registry; settings, pickers and the local tool engine remain shared.
+/// native protocol adapter; settings, pickers and the local tool engine remain shared.
 enum BYOKProvider: String, CaseIterable, Identifiable, Codable, Sendable {
     case openai, anthropic
     var id: String { rawValue }
-    var title: String { self == .openai ? "OpenAI" : "Claude" }
+    var title: String { switch self { case .openai: "OpenAI"; case .anthropic: "Claude" } }
+    var apiBaseURL: String { switch self { case .openai: "https://api.openai.com/v1"; case .anthropic: "https://api.anthropic.com/v1" } }
+    var completionPath: String { switch self { case .openai: "/responses"; case .anthropic: "/messages" } }
 }
 
 struct BYOKModel: Identifiable, Codable, Equatable, Sendable {
@@ -28,8 +30,8 @@ struct BYOKConfiguration: Codable, Sendable {
 }
 
 enum BYOKError: LocalizedError, Equatable, TutorRequestFailure {
-    case consentRequired, missingKey, busy, invalidKey, keychain, invalidResponse, relayUnavailable
-    case relayCode(String)
+    case consentRequired, missingKey, busy, invalidKey, keychain, invalidResponse, providerUnavailable
+    case providerCode(String)
     var errorDescription: String? {
         switch self {
         case .consentRequired: "Allow sharing with this provider in Settings → BYOK before using it."
@@ -38,19 +40,19 @@ enum BYOKError: LocalizedError, Equatable, TutorRequestFailure {
         case .invalidKey: "Enter a valid API key without spaces or line breaks."
         case .keychain: "The API key could not be accessed securely. Unlock this device and try again."
         case .invalidResponse: "The provider returned an incomplete or invalid response. No new tool actions were executed."
-        case .relayUnavailable: "The secure BYOK service is unavailable. Your selected model was kept. Try again later."
-        case .relayCode(let code):
+        case .providerUnavailable: "Could not connect to your AI provider. Check your internet connection and the provider’s service status. Your selected model was kept."
+        case .providerCode(let code):
             switch code {
             case "invalid_key": "This API key was rejected. Replace it in Settings → BYOK."
             case "provider_permission": "This key does not have permission for that model or API. Check its provider permissions."
             case "insufficient_credit": "This provider account needs API credit. Your Edsger allowance was not used."
             case "provider_spend_limit": "Your provider account reached a spend or usage limit. Check its API billing limits before trying again."
-            case "provider_rate_limit", "relay_rate_limit": "The provider or connection is temporarily rate limited. Wait and try again."
+            case "provider_rate_limit": "The provider or connection is temporarily rate limited. Wait and try again."
             case "unsupported_model", "provider_rejected": "This model or request is unavailable for your API account. Choose another model in Settings → BYOK."
             case "tool_test_failed": "This model did not complete the agent tool test. Choose a different model."
             case "payload_too_large": "This request is too large for the secure AI connection. Use a smaller task or conversation."
             case "incomplete_response": "The model reached its response limit. Try a smaller task. No new tool actions were executed."
-            default: "The secure AI request could not finish. Your selected provider was kept. Try again later."
+            default: "The provider request could not finish. Your selected provider was kept. Try again later."
             }
         }
     }
@@ -129,6 +131,7 @@ enum AgentToolRegistry {
     static var specifications: [[String: Any]] {
         let path = ["path": stringProperty]
         return [
+            function("read_runtime_guide", "Read Edsger’s active-language runtime guide only when uncertain about a runtime API, module or restriction. Fetch each needed topic once; do not routinely reread it.", ["topic": ["type": "string", "enum": AgentRuntimeDocumentation.topics.sorted()]], ["topic"]),
             function("list_files", "List source files in the project."),
             function("list_folders", "List project folders."),
             function("read_file", "Read a file.", path, ["path"]),
@@ -160,6 +163,9 @@ enum AgentToolRegistry {
               args.values.allSatisfy({ $0 is String }) else { throw BYOKError.invalidResponse }
         if let path = args["path"] as? String {
             guard !path.isEmpty, path.utf8.count <= 1024, !path.contains("\0"), !path.contains("\\"), !path.hasPrefix("/"), !path.contains("..") else { throw BYOKError.invalidResponse }
+        }
+        if call.name == "read_runtime_guide" {
+            guard let topic = args["topic"] as? String, AgentRuntimeDocumentation.topics.contains(topic) else { throw BYOKError.invalidResponse }
         }
         if call.name == "calculate_math" {
             let request = try JSONDecoder().decode(MathRequest.self, from: Data(call.argumentsJSON.utf8))

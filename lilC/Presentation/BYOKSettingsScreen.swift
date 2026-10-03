@@ -32,7 +32,7 @@ struct BYOKSettingsScreen: View {
                         Text("How it works").font(.headline)
                         Text("Chat keeps its document and on-device math tools. Agent IDE can create and edit project files, run supported code, inspect output, and use on-device math. Your model choice never expands file permissions.")
                         Text("API usage is billed by your selected provider, separately from Edsger. Consumer subscriptions do not supply an API key. Edsger never switches providers or paying accounts automatically.")
-                        Text("Keys are stored securely on this device. Requests pass through Edsger’s secure relay and Cloudflare to your chosen provider. The relay processes the key and request in memory without saving them. Provider handling follows its data policy.")
+                        Text("Keys are stored securely on this device. Requests go directly from this device to your chosen provider. Edsger’s servers do not receive your API key or BYOK requests. Provider handling follows its data policy.")
                     }.font(.subheadline).foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
                 }.padding(.horizontal, 20).padding(.bottom, 28)
@@ -79,7 +79,7 @@ private struct BYOKProviderCard: View {
                 if !value { pendingTask?.cancel() }
                 if configured { store.setConsent(value, provider: provider) }
             }
-            Text("When selected, your prompts, conversation context, file passages, IDE source and tool results are sent through Edsger’s relay to " + provider.title + ". Testing a model makes small billable API requests. You can turn sharing off anytime.")
+            Text("When selected, your prompts, conversation context, file passages, IDE source and tool results are sent directly to " + provider.title + ". Testing a model makes small billable API requests. You can turn sharing off anytime.")
                 .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             Button("Load models") { start {
                 models = try await store.loadModels(provider: provider, draftKey: draftKey, consent: consent)
