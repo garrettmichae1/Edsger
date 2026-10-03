@@ -1,23 +1,29 @@
-# Edsger mini
+# Bundled Chat models
 
-Chat now offers **Edsger** (the existing bundled Qwen3.5 4B) and **Edsger mini**
-(Liquid AI LFM2.5-1.2B-Instruct, Q4_K_M). Existing installs keep Edsger selected.
-Mini is experimental and optional; its weights are not added to the app bundle.
+Chat offers exactly two choices: **Edsger 1.0** (Qwen3.5 4B Q4_K_M) and
+**Edsger Mini 1.0** (Liquid AI LFM2.5-1.2B-Instruct Q4_K_M). Tap the name/chevron
+at the top of Chat for a compact native menu. Settings uses the same menu.
+Neither picker contains descriptions, download controls, or technical details.
+The existing saved choice is preserved; new installs still default to Edsger 1.0.
 
-## Using and removing Mini
+## Build setup
 
-Tap the model name at the top of Chat, or open Settings → Chat → Model.
-Download Mini (731 MB), then select it. The download does not change the selection.
-Afterward both models work offline. Downloading contacts Hugging Face and its
-delivery network; prompts, conversations, and project contents are never sent.
+Both model files are copied into the built app by Xcode's Resources phase.
+A fresh checkout requires `bash scripts/fetch-agent-assets.sh`, which now also
+fetches Mini. When updating an existing checkout with the original assets, run:
 
-Choose Edsger at any time between replies. **Delete download** releases Mini's
-context/weights, selects Edsger, and deletes only Mini's optional model file.
-Conversations, drafts, pins, project files, and restore points are untouched.
-If deletion fails, Edsger remains selected and an error is shown; deletion can be
-retried. Selection is global for Chat, not stored as a migration in conversation
-files. The feature can also be removed by reverting its single integration commit;
-old app versions ignore the new preference and optional model directory.
+```sh
+bash scripts/fetch-mini-assets.sh
+```
+
+The large GGUF binaries remain excluded from Git. Pulling supplies the resource
+references and setup script; running the script supplies the actual Mini weights
+before building. It downloads an immutable revision to a temporary file, checks
+SHA-256 before publishing it, and verifies existing files on subsequent runs.
+Bundling Mini adds 730,895,168 bytes (about 731 MB) of model storage to the app.
+Both choices work offline immediately after installation; there is no in-app
+model download or deletion screen. Required model notices remain in Settings →
+Open-source licenses.
 
 ## What uses which model
 
@@ -59,68 +65,63 @@ supports the `lfm2` architecture. Mini uses its native start-of-text token exact
 once, ChatML turns, no Qwen thinking prefix, and Liquid's temperature 0.1 / top-k
 50 / repetition penalty 1.05 profile. Standard's prompt and sampler are unchanged.
 
-## Runtime and installation safety
+## Runtime and upgrade safety
 
 - One `LocalAgentClient` actor owns at most one native model/context. Before loading
-  another it frees the prior context, model, and prompt snapshots. Agent and math
-  always explicitly request Standard; Chat never changes the IDE's model policy.
-- `SelectedChatClient` pins the selection and holds a reply lease through planning,
-  calculation, and explanation. Switching/deleting is blocked until the reply has
-  actually exited, including after Stop. Draft editing and history are independent.
-- Download uses URLSession's disk download API, not a 731 MB in-memory `Data`.
-  Progress and cancellation are available. Byte count, GGUF magic, and streaming
-  SHA-256 must match before the completed temporary file is installed.
-- Verification runs off the main actor in 1 MiB chunks. Existing downloads are
-  reverified on first use after launch; incomplete/invalid files never reach llama.
-- Optional files live in `Application Support/lilC/OptionalModels`, excluded from
-  backups. Download checks for approximately 1.5 GB free storage. The original
-  bundled model is never overwritten or removed.
-- A missing download after restore falls back to Standard. A failed Mini selection
-  also restores Standard as the preference. Background suspension can pause a
-  download; termination requires restarting it. There is no background resume
-  service or automatic download.
-- OSLog performance records include model identity, phase timings and token counts,
-  never prompt contents. Downloading an inactive model adds disk usage, not another
-  resident model's RAM. Verification/download buffers still have transient costs.
+  another it frees the prior context, model, and prompt snapshots. Adding a bundled
+  asset does not keep a second model resident in RAM.
+- `SelectedChatClient` holds a reply lease through planning, calculation, and
+  explanation. Switching is blocked until the reply has exited, including Stop.
+  Conversations, drafts, pins, project files, and restore points are preserved.
+- Mini is resolved from the app bundle. Its byte count, GGUF magic, and streaming
+  SHA-256 are verified off the UI actor on first use after launch, using 1 MiB
+  chunks. Missing or invalid assets fall back to Standard and show an error.
+- After successful verification, the exact legacy Mini file in
+  `Application Support/lilC/OptionalModels` is removed to reclaim duplicate storage.
+  Bundle resources and the surrounding directory are never deleted. Cleanup
+  failure does not prevent using the verified bundled model.
+- OSLog records include model identity, phase timings and token counts, never
+  prompt contents. Model loading and verification still have transient costs.
 
 ## Verification
 
-Portable state tests: `bash scripts/test-model-selection.sh`.
-Existing chat regressions: `bash scripts/test-chat-experience.sh`.
-Math engine regressions: `python scripts/test-math-engine.py` (SymPy environment).
-Project reference check: `python scripts/check-editor-project.py`.
+```sh
+bash scripts/test-model-selection.sh
+python3 scripts/check-editor-project.py
+bash scripts/fetch-mini-assets.sh
+bash scripts/test-chat-experience.sh
+```
 
-For a real-model macOS smoke test, fetch the normal assets, download the exact Mini
-artifact above to a local path, then run:
+State tests cover exact names, bundle lookup, defaults, selection persistence,
+reply leases, missing/corrupt assets, load failure recovery, and native templates.
+The project check ensures both model resources are linked exactly once and that
+Mini's fetch revision/filename/hash agree with runtime metadata. The asset script
+verifies the real artifact. Swift 6 strict-concurrency host type checks and SwiftUI
+syntax parsing supplement these checks; Apple-only modules use compile-only host
+stand-ins, so those checks do not establish an Apple SDK build or CryptoKit runtime
+verification.
+
+Earlier live Linux smoke tests with llama.cpp b11306 and both exact artifacts passed
+Mini text/display-math, Standard percentage/integration/RREF planning, ambiguous
+variance, unsupported limits, follow-up planning, model transitions, cancellation,
+and resource release. This packaging change leaves their inference paths intact.
+For a real-model macOS check after fetching assets:
 
 ```sh
-bash scripts/test-mini-model.sh /path/to/LFM2.5-1.2B-Instruct-Q4_K_M.gguf
+bash scripts/test-mini-model.sh lilC/Resources/Models/LFM2.5-1.2B-Instruct-Q4_K_M.gguf
 bash scripts/check-local-inference-build.sh
 ```
 
-The smoke uses production inference and checks Mini text/display math, Standard
-planning under a Mini selection, model transitions, cancellation, and release.
-State tests cover install/cancel, persistence, corrupted/missing weights, failed
-loads/deletions, reply leases, and prompt control-token escaping.
+For this packaging change, bundle/selection tests, project references, the real
+asset hash, strict-concurrency type checks and UI syntax checks passed on Linux.
+The unchanged chat regression harness compiled but hit a host Foundation crash
+while accessing `/proc`; it needs a macOS rerun. A native iOS build and visual
+checks require Xcode and a device.
 
-This implementation was checked on a Linux host with Swift 6 strict concurrency,
-llama.cpp b11306, and the exact pinned Mini and bundled Standard artifacts. The
-live smoke passed Mini physics/display-math responses, exact Standard planning for
-percentage/integration/RREF, ambiguous variance, unsupported limits, a follow-up,
-return to Mini, streaming cancellation, and resource release. Model state and
-existing chat regression harnesses passed; all 10 Python math tests passed.
-Apple-only imports used compile-only host stand-ins where necessary, so these
-checks are not an Apple SDK build. The downloaded file's hash was independently
-verified with Python SHA-256. Host timings are not iPhone benchmarks.
-
-Native iOS build, CryptoKit/URLSession installation, and visual/device performance
-remain Xcode/device checks. Linux can check Swift concurrency and native llama
-inference but does not validate SwiftUI types or Apple's SDK implementations.
-
-On a physical iPhone: download/cancel/retry; select Mini; send a normal question;
-compute `1/3 + 1/6`; integrate `x^2` from 0 to 1; open the IDE; return to Mini;
-stop a streaming response; switch/delete Mini; confirm histories and projects
-remain; relaunch with Mini selected and after deletion. Exercise low storage,
-offline download failure, light/dark appearances, Dynamic Type, and VoiceOver.
-Compare cold and warm first-token time, complete-answer time, peak app memory,
-and sustained 20-turn heat/battery behavior on the same device.
+On iPhone, test the two-option menu in light/dark mode, Dynamic Type and VoiceOver;
+select Mini, send a normal question, compute `1/3 + 1/6`, integrate `x^2` from 0 to 1,
+open the IDE, return to Mini, stop a response, switch models and relaunch. Confirm
+both choices work in airplane mode and histories/projects remain. An upgrade with
+Mini already selected should preserve the choice and reclaim its old duplicate
+on first verified use. Compare cold/warm first-token time, answer time, peak app
+memory and sustained heat/battery behavior on the same device.

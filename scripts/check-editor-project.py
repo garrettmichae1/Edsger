@@ -67,10 +67,25 @@ for name, phase in [('Domain/EditorSupport.swift', '100000000000000000000901'),
     assert len(refs) == 1 and (root / 'lilC' / name).is_file()
     assert any(objects[build].get('fileRef') in refs for build in objects[phase]['files'])
 
+# Both large assets are staged locally by the fetch scripts, then copied into the app.
+# Git/CI checkouts need not contain the ignored binaries to validate resource membership.
+resources = objects['100000000000000000000A01']['files']
+for filename in ['Qwen3.5-4B-Q4_K_M.gguf', 'LFM2.5-1.2B-Instruct-Q4_K_M.gguf']:
+    refs = {key for key, obj in objects.items()
+            if obj.get('path') == 'lilC/Resources/Models/' + filename and obj.get('sourceTree') == 'SOURCE_ROOT'}
+    assert len(refs) == 1, f'Missing or duplicate bundled model: {filename}'
+    assert sum(objects[build].get('fileRef') in refs for build in resources) == 1
+asset_source = (root / 'lilC/Domain/ChatModel.swift').read_text()
+fetch_source = (root / 'scripts/fetch-mini-assets.sh').read_text()
+for key in ['revision', 'filename', 'sha256']:
+    pin = re.search(r'static let ' + key + r' = "([^"\n]+)"', asset_source).group(1)
+    assert pin in fetch_source, f'Mini asset fetch disagrees with runtime {key}'
+assert 'fetch-mini-assets.sh' in (root / 'scripts/fetch-agent-assets.sh').read_text()
+
 pins = json.loads((root / 'lilC.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved').read_text())['pins']
 pins = {p['identity']: p['state'] for p in pins}
 for identity, version, revision in [('runestone', '0.5.2', '592434a103a4d1ab83e14f87ac6eef569dd7a99d'),
                                    ('treesitterlanguages', '0.1.10', '15cf3a9ec3ab95e0d058b7df9f35619123c9e02d'),
                                    ('tree-sitter', '0.20.9', '98be227227af10cc7a269cb3ffb23686c0610b17')]:
     assert pins[identity] == dict(version=version, revision=revision)
-print('PASS: Xcode project references, linked language products, bundled licenses, and pinned revisions')
+print('PASS: Xcode project references, linked language products, bundled models/licenses, and pinned revisions')

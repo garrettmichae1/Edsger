@@ -2,7 +2,7 @@
 
 The iPhone app includes Qwen3.5-4B Q4_K_M (text only) and llama.cpp. Inference stays on the iPhone. The Xcode project targets iOS 18 or later.
 
-Before opening the Xcode project on a new checkout, run `scripts/fetch-agent-assets.sh`. It downloads the pinned model and iOS device XCFramework, verifies SHA-256 hashes, and puts them where the project references them. The large binaries are excluded from Git; they are copied into the built app by Xcode.
+Before opening the Xcode project on a new checkout, run `scripts/fetch-agent-assets.sh`. It downloads both pinned models and the iOS device XCFramework, verifies SHA-256 hashes, and puts them where the project references them. The large binaries are excluded from Git; they are copied into the built app by Xcode.
 
 For simulator builds, install CMake 3.28 or later and run `scripts/build-llama-simulator.sh` once. The official release archive contains the device slice but not a simulator slice.
 
@@ -27,9 +27,11 @@ Run `scripts/test-local-agent.sh` on macOS for an opt-in real-model test. It use
 
 See [Agent performance](AGENT_PERFORMANCE.md) for the measured bottlenecks, first optimizations, retained correctness checks, and the path toward 20–30-second requests. Small selected files are now supplied as current snapshots, and the agent's successful edits refresh its inspection state. Physical iPhone latency remains to be measured. Run `scripts/test-local-agent.sh --snapshot --binary-search` for the expanded real-model check and per-stage timing output.
 
-## Optional Chat model
+## Bundled Chat models
 
-Chat can download and select **Edsger mini** without changing the IDE agent.
-The shared actor releases each model before loading another; the agent and math
-planner still explicitly request the bundled Qwen model. See [Edsger mini](EDSGER_MINI.md)
-for the artifact, deletion/rollback, lifecycle tests, and device validation.
+Chat selects **Edsger 1.0** or **Edsger Mini 1.0** from a compact two-option menu.
+Both GGUF files are bundled by Xcode after asset setup; existing checkouts can run
+`bash scripts/fetch-mini-assets.sh` to add Mini. The shared actor releases each
+model before loading another; the agent and math planner still explicitly request
+Qwen. See [Chat models](EDSGER_MINI.md) for provenance, packaging, upgrade safety,
+lifecycle tests, and device validation.

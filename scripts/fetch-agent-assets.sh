@@ -9,6 +9,8 @@ FRAMEWORK_ZIP="$FRAMEWORK_DIR/llama-b11306-xcframework.zip"
 
 mkdir -p "$MODEL_DIR" "$FRAMEWORK_DIR"
 
+bash "$ROOT_DIR/scripts/fetch-mini-assets.sh"
+
 if [[ ! -f "$MODEL_FILE" ]]; then
     curl --fail --location --retry 3 --output "$MODEL_FILE" \
         'https://huggingface.co/Canfield/Qwen3.5-4B-Q4_K_M-GGUF/resolve/main/Qwen3.5-4B-Q4_K_M.gguf'

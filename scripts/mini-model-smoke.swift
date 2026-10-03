@@ -66,7 +66,7 @@ private func require(_ value: Bool, _ description: String) throws {
         _ = try await mini.reply(messages: [.init(role: .user, text: "Say hello in one sentence.")], onUpdate: { _ in })
         try require(await engine.loadedChoice == .mini, "Return to Mini after math")
         await engine.unloadMiniModel()
-        try require(await engine.loadedChoice == nil, "Delete path releases the model and context")
+        try require(await engine.loadedChoice == nil, "Unloading releases the model and context")
         do {
             _ = try await mini.reply(messages: [.init(role: .user, text: "Write a detailed story about a voyage to Mars.")], onUpdate: { _ in
                 withUnsafeCurrentTask { $0?.cancel() }

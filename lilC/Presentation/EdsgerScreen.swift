@@ -92,7 +92,6 @@ struct EdsgerScreen: View {
     @FocusState private var composerFocused: Bool
     @State private var showsHistory = false
     @State private var showsInfo = false
-    @State private var showsModels = false
     @State private var models = ChatModelStore.shared
     @State private var historySearch = ""
     @State private var pendingDelete: TutorConversation?
@@ -112,7 +111,6 @@ struct EdsgerScreen: View {
             if !composerFocused { navigation }
         }
         .sheet(isPresented: $showsHistory) { history }
-        .sheet(isPresented: $showsModels) { ChatModelPicker() }
         .task { await models.refresh() }
         .sheet(isPresented: $showsInfo) {
             EdsgerInfoSheet(background: background, surface: surface, selection: selection)
@@ -136,18 +134,8 @@ struct EdsgerScreen: View {
             .accessibilityLabel("Chat history")
             .accessibilityIdentifier("edsger-history")
             Spacer(minLength: 0)
-            Button { composerFocused = false; showsModels = true } label: {
-                HStack(spacing: 6) {
-                    Text(models.selected == .mini ? "EDSGER mini" : "EDSGER")
-                        .font(.system(size: 18, weight: .semibold))
-                        .accessibilityIdentifier("edsger-title")
-                    Image(systemName: "chevron.down").font(.caption2.weight(.semibold))
-                }
-                .frame(minHeight: 44)
-            }
-            .accessibilityLabel("Chat model: " + models.selected.title)
-            .accessibilityHint("Choose or download a model")
-            .accessibilityIdentifier("edsger-model-picker")
+            ChatModelPicker()
+                .font(.system(size: 18, weight: .semibold))
             Spacer(minLength: 0)
             Button {
                 session.newConversation(); composerFocused = true

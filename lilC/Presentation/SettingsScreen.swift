@@ -11,8 +11,6 @@ struct SettingsScreen: View {
     @State private var document: LegalDocument?
     @State private var confirmEraseAll = false
     @State private var showsTour = false
-    @State private var showsModels = false
-    @State private var models = ChatModelStore.shared
 
     // Match the quiet surfaces used by Chat and its Info sheet.
     private var background: Color { scheme == .dark ? Color(white: 0.055) : .white }
@@ -59,8 +57,6 @@ struct SettingsScreen: View {
         .tint(.blue)
         .lilCPreferredScheme(appearance.colorWay)
         .accessibilityIdentifier("settings.root")
-        .sheet(isPresented: $showsModels) { ChatModelPicker() }
-        .task { await models.refresh() }
         .sheet(item: $document) { item in
             LegalDocumentView(document: item)
         }
@@ -176,10 +172,14 @@ struct SettingsScreen: View {
 
     private var modelsSection: some View {
         settingsGroup("Chat") {
-            Button { showsModels = true } label: {
-                navigationRow("Model · " + models.selected.title, symbol: "cpu")
+            HStack(spacing: 12) {
+                rowLabel("Model", symbol: "cpu")
+                Spacer(minLength: 8)
+                ChatModelPicker()
+                    .font(.subheadline.weight(.medium))
             }
-            .buttonStyle(.plain)
+            .padding(.horizontal, 18)
+            .padding(.vertical, 6)
             .accessibilityIdentifier("settings.models")
         }
     }

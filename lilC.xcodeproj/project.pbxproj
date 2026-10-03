@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+        FAE000000000000000000001 /* Mini model in Resources */ = {isa = PBXBuildFile; fileRef = FAE000000000000000000002 /* Mini model */; };
         FAC000000000000000000006 = {isa = PBXBuildFile; fileRef = FAD000000000000000000006; };
         FAC000000000000000000005 = {isa = PBXBuildFile; fileRef = FAD000000000000000000005; };
         FAC000000000000000000004 = {isa = PBXBuildFile; fileRef = FAD000000000000000000004; };
@@ -160,6 +161,7 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+        FAE000000000000000000002 /* Mini model */ = {isa = PBXFileReference; lastKnownFileType = file; path = lilC/Resources/Models/LFM2.5-1.2B-Instruct-Q4_K_M.gguf; sourceTree = SOURCE_ROOT; };
         FAD000000000000000000006 = {isa = PBXFileReference; lastKnownFileType = text; path = "Resources/LiquidAI-LICENSE.txt"; sourceTree = "<group>"; };
         FAD000000000000000000005 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Presentation/ChatModelPicker.swift"; sourceTree = "<group>"; };
         FAD000000000000000000004 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Infrastructure/SelectedChatClient.swift"; sourceTree = "<group>"; };
@@ -416,6 +418,7 @@
                 B2C000000000000000000101,
                 B2C000000000000000000100,
                 A1C000000000000000000012 /* Qwen model */,
+                FAE000000000000000000002 /* Mini model */,
                 A1C000000000000000000014 /* Qwen license */,
                 A1C000000000000000000015 /* llama license */,
 				100000000000000000000001 /* lilCApp.swift */,
@@ -632,6 +635,7 @@
                 FAC000000000000000000006,
                 F8B000000000000000000011,
                 A1C000000000000000000002 /* Qwen model in Resources */,
+                FAE000000000000000000001 /* Mini model in Resources */,
                 A1C000000000000000000005 /* Qwen license in Resources */,
                 F5B000000000000000000004,
                 F6B000000000000000000002,

@@ -43,7 +43,7 @@ Settings stores Light or Dark in UserDefaults. The chrome is spare on purpose: p
 ## Open in Xcode
 
 1. Clone this repository.
-2. Run `scripts/fetch-agent-assets.sh`, `scripts/fetch-python-assets.sh`, and `python3 scripts/fetch-math-assets.py` to fetch the pinned model, inference framework, and CPython runtime.
+2. Run `scripts/fetch-agent-assets.sh`, `scripts/fetch-python-assets.sh`, and `python3 scripts/fetch-math-assets.py` to fetch both pinned models, inference framework, and CPython runtime.
 3. Open `lilC.xcodeproj` (iOS 18 or later). For simulator builds, see [local agent setup](Docs/LOCAL_AGENT.md).
 4. Select the **lilC** scheme and a simulator or device.
 5. Build and run.
@@ -109,4 +109,4 @@ Home also offers JavaScript (Apple JavaScriptCore) and Lua 5.5.1. Each has separ
 
 ## EDSGER
 
-**EDSGER** opens on launch as a free offline teaching chat for C, Python, JavaScript, Lua, and other academic subjects. It shares the bundled model, streams text responses, and saves conversations locally. The **Courses** tab retains existing lessons, while **IDE** opens the project home screen. It has no coding-agent tools and cannot modify project files. See [EDSGER](Docs/EDSGER.md).
+**EDSGER** opens on launch as a free offline teaching chat for C, Python, JavaScript, Lua, and other academic subjects. It offers **Edsger 1.0** and **Edsger Mini 1.0** through a compact model menu, streams text responses, and saves conversations locally. Both models are bundled after [asset setup](Docs/EDSGER_MINI.md); only one loads into memory at a time. **IDE** opens the project home screen. It has no coding-agent tools and cannot modify project files. See [EDSGER](Docs/EDSGER.md).

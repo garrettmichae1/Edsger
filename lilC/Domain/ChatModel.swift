@@ -3,10 +3,7 @@ import Foundation
 enum ChatModel: String, CaseIterable, Identifiable, Sendable {
     case standard, mini
     var id: String { rawValue }
-    var title: String { self == .mini ? "Edsger mini" : "Edsger" }
-    var subtitle: String {
-        self == .mini ? "A lighter model for everyday chat. Experimental." : "The original model for deeper answers."
-    }
+    var title: String { self == .mini ? "Edsger Mini 1.0" : "Edsger 1.0" }
 
     /// Keep Qwen's established template unchanged. Liquid requires BOS and no thinking prefix.
     func adaptPrompt(_ qwenPrompt: String) -> String {
@@ -23,23 +20,24 @@ enum MiniModelAsset {
     static let filename = "LFM2.5-1.2B-Instruct-Q4_K_M.gguf"
     static let byteCount: Int64 = 730_895_168
     static let sha256 = "b1b3de114215d9507409a662a501a631095a479a419584e8a2ded6304b19b4f5"
-    static let downloadURL = URL(string: "https://huggingface.co/LiquidAI/LFM2.5-1.2B-Instruct-GGUF/resolve/\(revision)/\(filename)")!
-    static let licenseURL = URL(string: "https://huggingface.co/LiquidAI/LFM2.5-1.2B-Instruct-GGUF/blob/\(revision)/LICENSE")!
-    static var directory: URL {
+    static func bundledURL(in bundle: Bundle = .main) -> URL? {
+        bundle.url(forResource: filename, withExtension: nil)
+    }
+    // Only the exact download from the previous release is eligible for cleanup.
+    static var legacyDownloadURL: URL {
         FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("lilC/OptionalModels", isDirectory: true)
+            .appendingPathComponent(filename)
     }
-    static var installedURL: URL { directory.appendingPathComponent(filename) }
 }
 
 enum ChatModelError: LocalizedError {
-    case busy, missing, invalidDownload, insufficientSpace
+    case busy, missing, invalidAsset
     var errorDescription: String? {
         switch self {
         case .busy: "Wait for the current response or model change to finish."
-        case .missing: "Download Edsger mini before selecting it."
-        case .invalidDownload: "The Mini download could not be verified. Delete it and download it again."
-        case .insufficientSpace: "Free at least 1.5 GB of storage before downloading Edsger mini."
+        case .missing: "Edsger Mini is missing from this app installation."
+        case .invalidAsset: "Edsger Mini could not be verified. Reinstall the app to restore its model."
         }
     }
 }
@@ -52,6 +50,4 @@ protocol ChatModelActivating: Sendable {
 protocol ModelFileManaging: Sendable {
     func isInstalled() async -> Bool
     func verify() async throws
-    func download(onProgress: @escaping @Sendable (Double) -> Void) async throws
-    func remove() async throws
 }

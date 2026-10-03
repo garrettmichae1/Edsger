@@ -354,7 +354,7 @@ actor LocalAgentClient: AgentCompleting, TutorCompleting, MathPlanning, ChatMode
     private func loadIfNeeded(_ choice: ChatModel) throws {
         if resources != nil && loadedChoice == choice { return }
         unloadModel()
-        let resolvedURL = choice == .mini ? MiniModelAsset.installedURL : Bundle.main.url(forResource: "Qwen3.5-4B-Q4_K_M", withExtension: "gguf")
+        let resolvedURL = choice == .mini ? MiniModelAsset.bundledURL() : Bundle.main.url(forResource: "Qwen3.5-4B-Q4_K_M", withExtension: "gguf")
         guard let url = (choice == .mini ? miniModelURL : modelURL) ?? resolvedURL, FileManager.default.fileExists(atPath: url.path) else {
             throw LocalAgentError.modelMissing
         }
