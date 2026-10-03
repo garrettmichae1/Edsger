@@ -45,7 +45,7 @@ private func report(_ text: String) {
         if CommandLine.arguments.contains("--binary-search") {
             requests.append("In hello.c implement int binary_search(int *arr, int n, int target). Return the index when found and -1 when absent. Add tests for found, absent, and empty input in main, and run hello.c.")
         }
-        for (index, request) in requests.enumerated() {
+        for (index, request) in requests.enumerated() where !CommandLine.arguments.contains("--header-only") || index == 1 {
             let files = try FileManager.default.contentsOfDirectory(atPath: root.path).sorted().joined(separator: ", ")
             var wire: [[String: Any]] = [
                 ["role": "system", "content": "Current project: demo. All paths are relative to demo. Current file: hello.c. Files: \(files). Deleting is allowed. Only read_file, write_file, replace_text, list_files delete_file and run_file are supported in this test."],
@@ -60,18 +60,18 @@ private func report(_ text: String) {
             }
             var finished = false
             var reviewed = false
+            var changedFiles = false
             let start = Date()
             for hop in 1...8 {
+                if changedFiles && !reviewed {
+                    reviewed = true
+                    wire.append(["role": "user", "content": AgentCompletionReview.prompt])
+                }
                 let result = try await client.complete(messagesJSON: JSONSerialization.data(withJSONObject: wire), toolsJSON: Data("[]".utf8))
                 let timing = await client.lastTiming
                 report(String(format: "TIMING load=%.3f prompt=%.3f generation=%.3f total=%.3f input=%d output=%d", timing.loadSeconds, timing.promptSeconds, timing.generationSeconds, timing.totalSeconds, timing.promptTokens, timing.generatedTokens))
                 report("Scenario \(index + 1), hop \(hop), \(Int(Date().timeIntervalSince(start)))s: \(result.assistantText) \(result.toolCalls.map(\.name))")
                 if result.toolCalls.isEmpty {
-                    if !reviewed {
-                        reviewed = true
-                        wire.append(["role": "user", "content": AgentCompletionReview.prompt])
-                        continue
-                    }
                     finished = true; break
                 }
                 wire.append(["role": "assistant", "content": result.assistantText, "tool_calls": result.toolCalls.map {
@@ -128,6 +128,8 @@ private func report(_ text: String) {
                         default: break
                         }
                     }
+                    if ["write_file", "replace_text", "delete_file"].contains(call.name),
+                       ["Wrote", "Updated", "Deleted"].contains(where: output.hasPrefix) { changedFiles = true }
                     if CommandLine.arguments.contains("--snapshot"), ["write_file", "replace_text", "delete_file"].contains(call.name),
                        ["Wrote", "Updated", "Deleted"].contains(where: output.hasPrefix) {
                         inspected[path] = try? String(contentsOf: url, encoding: .utf8)

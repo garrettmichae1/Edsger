@@ -47,3 +47,48 @@ Without `--snapshot`, the harness retains the original read/inspection behavior.
 A second independent agent/process is not the preferred first change. It would compete for the same device memory bandwidth and GPU while the write→run→inspect chain remains dependent. Running two full models is not expected to halve single-request latency. A remote inference option could change that hardware limit, but it changes the offline product's privacy, connectivity, and operating-cost model and was not introduced here.
 
 A useful feasibility check is `total ≈ loading + prompt processing + generated tokens / generation rate + tools`. At 397 output tokens, a phone generating 10 tokens/second already needs nearly 40 seconds for generation alone. Achieving 20–30 seconds on that phone would require fewer output tokens, a faster model/runtime, or verified speculation—not merely moving work to another queue.
+
+
+## October 2 follow-up: greedy grammar checking and earlier review
+
+This pass implements two changes without changing the model, grammar, response budgets, tool permissions, or inference-context clearing:
+
+- `GreedyGrammarSampler` first selects the unconstrained greedy candidate and checks that single token against the grammar. If valid, it advances the grammar exactly once; if invalid, it falls back to the original full-vocabulary grammar-first greedy selection. Both paths use reusable sampler-chain buffers. The IDE agent and math planner use it; ordinary text chat already has no grammar. This follows the rejection-sampling approach in the pinned llama.cpp [common sampler](https://github.com/ggml-org/llama.cpp/blob/b11306/common/sampling.cpp).
+- After a successful mutation batch, `AgentSession` adds the existing review instruction before the next model call. Previously it waited for a no-tool answer, discarded that answer, and then asked for review. Review can still read, repair, run, and continue through the normal bounded tool loop. Failed writes alone do not trigger review. The instruction stays in the active turn, and token budgeting explicitly excludes it as a new user-task boundary so the original request, snapshot, and tool history stay together.
+
+An attempted system-message placement was rejected during real-model testing: the model completed a declaration-only header without repairing it. The shipped placement retains the original latest-user-instruction behavior. Faster but incomplete output was not counted as success.
+
+### Measurements
+
+Environment: Linux x86-64 CPU backend, Swift 6.0.3 optimized build, unchanged Qwen3.5-4B Q4_K_M and llama.cpp b11306. These are single exploratory runs, not iPhone/Metal measurements or a promised device speedup. Both agent runs include a fresh model load (about 2 seconds).
+
+The task was: `Create math.h with a complete function int square(int n) that returns n*n. Do not run it.` The harness supplied a small C project description and emulated write/read/replace tool results using a temporary header. This isolates inference and the review flow; it does not measure the real iOS editor or PicoC. The final header was independently compiled with strict host C warnings and checked for square(0), square(7), square(-3), and repeated inclusion.
+
+| Metric | Before | After |
+| --- | ---: | ---: |
+| Whole task | 62.35 s | 46.83 s |
+| Model calls | 5 | 4 |
+| Generated tokens | 168 | 153 |
+| Prompt processing | 42.27 s | 34.07 s |
+| Generation | 18.07 s | 10.84 s |
+
+Both runs first wrote a declaration and then repaired it. The optimized sequence retains read, repair, and final confirmation while eliminating the discarded answer. Total elapsed time fell about 25% in this sample. Baseline instrumentation also ran the candidate sampler for equivalence, adding approximately 0.16 seconds; correcting for it leaves the rounded improvement unchanged. Timing variation and differences between CPU and Metal mean this percentage must not be treated as a phone benchmark.
+
+The baseline probe measured 5.13 seconds of grammar-first sampling versus 0.16 seconds for candidate checking on identical logits, with the same 168 selected tokens. That is a component measurement, not a whole-task speedup. Raw traces are in `Docs/benchmarks/agent-latency-2026-10-02-{baseline,optimized}.txt`.
+
+### Validation and reproduction
+
+- Production sampler regression: 198 identical decisions against grammar-first greedy, including 98 deliberately rejected candidates, escaped strings, Unicode, four-call batches, math plans, EOS, and fresh grammar state.
+- Production `AgentSession` compiled and ran against host workspace/settings doubles: immediate review after successful writes; failed writes do not trigger review; failed-run output and the original task remain available; repairs proceed; ordinary answers use one call.
+- iOS unit assertions were updated for earlier review, repair, and token-budget boundaries. They still need execution in Xcode; the host doubles do not validate iOS file/runtime behavior.
+- Optimized Swift 6 compilation and actual model planning/repair passed on the host. No physical iPhone or Xcode build was available for this pass.
+
+On a Mac with the pinned assets:
+
+```sh
+scripts/test-local-sampler.sh
+scripts/test-local-agent.sh --snapshot --header-only
+scripts/test-local-agent.sh --snapshot --binary-search
+```
+
+The header-only smoke command independently compiles and checks the generated function. Its project prompt differs from the exploratory trace, so use it for repeatable correctness/performance comparisons rather than expecting the exact recorded timings. For device measurements, use the existing `app.lilc` / `AgentPerformance` logs and record several warm runs plus a separate cold run. Context reuse remains a later, separately validated change because this hybrid model has recurrent state; removing the memory clear alone is unsafe.

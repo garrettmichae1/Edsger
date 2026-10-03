@@ -109,7 +109,13 @@ final class AgentSession {
             while hops < 20 {
                 if Task.isCancelled { throw AgentTransportError.cancelled }
                 hops += 1
-                statusLine = hops == 1 ? "Thinking…" : "Working in lilC…"
+                if changedFiles && !reviewedCompletion {
+                    // Review the completed tool batch in the very next inference pass.
+                    // The local token budget treats this instruction as a continuation.
+                    wire.append(["role": "user", "content": AgentCompletionReview.prompt])
+                    reviewedCompletion = true
+                }
+                statusLine = reviewedCompletion ? "Checking changes…" : (hops == 1 ? "Thinking…" : "Working in lilC…")
                 let messagesJSON = try JSONSerialization.data(withJSONObject: wire)
                 let selectedPath = workspace.currentFile.relativePath
                 let result = try await client.complete(messagesJSON: messagesJSON, toolsJSON: toolsJSON)
@@ -129,12 +135,6 @@ final class AgentSession {
                     return
                 }
                 if result.toolCalls.isEmpty {
-                    if changedFiles && !reviewedCompletion {
-                        reviewedCompletion = true
-                        wire.append(["role": "user", "content": AgentCompletionReview.prompt])
-                        statusLine = "Checking changes…"
-                        continue
-                    }
                     let text = result.assistantText.trimmingCharacters(in: .whitespacesAndNewlines)
                     if !text.isEmpty {
                         messages.append(AgentChatMessage(role: .assistant, text: text))

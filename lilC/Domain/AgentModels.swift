@@ -113,6 +113,14 @@ enum AgentRuntimeConfig {
 
 /// One bounded completion review after mutations, before claiming the task is done.
 enum AgentCompletionReview {
+    /// App-inserted review continues the active task; it must never allow budgeting
+    /// to discard that task's request, snapshot, or earlier tool results.
+    static func userTurnIndices(in messages: [[String: Any]]) -> [Int] {
+        messages.indices.filter {
+            messages[$0]["role"] as? String == "user" && messages[$0]["content"] as? String != prompt
+        }
+    }
+
     static let prompt = """
     Before finishing, verify the original request against the file changes you actually made. Does the code implement the requested behavior, including function bodies rather than only declarations? If something is missing, read the file and fix it with tools now. Otherwise give a brief accurate final answer. Do not repeat successful changes.
     """

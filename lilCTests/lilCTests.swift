@@ -597,7 +597,7 @@ struct lilCTests {
         #expect(!FileManager.default.fileExists(atPath: directory.appendingPathComponent("demo/helper.h").path))
         #expect(session.messages.contains { $0.toolName == "run_file" && $0.text.contains("updated") })
         let requests = await client.requests
-        #expect(requests.count == 7)
+        #expect(requests.count == 6)
         #expect(requests[0].contains("Current file (project-relative): main.c"))
     }
 
@@ -648,7 +648,8 @@ struct lilCTests {
         let requests = await client.requests
         #expect(requests.first?.contains("Current file snapshot") == true)
         #expect(requests.first?.contains("original") == true)
-        #expect(requests.count == 3) // Edit batch, final attempt, required completion review.
+        #expect(requests.count == 2) // Edit batch, then review and completion together.
+        #expect(requests[1].contains("Before finishing, verify"))
     }
 
     @MainActor
@@ -692,6 +693,19 @@ struct lilCTests {
         #expect(session.messages.contains { $0.text.contains("Change not applied") })
     }
 
+    @Test func completionReviewDoesNotStartANewBudgetableTask() {
+        let wire: [[String: Any]] = [
+            ["role": "system", "content": "Rules"],
+            ["role": "user", "content": "Earlier task"],
+            ["role": "assistant", "content": "Done"],
+            ["role": "user", "content": "Active task and selected file snapshot"],
+            ["role": "tool", "content": "Updated main.c"],
+            ["role": "user", "content": AgentCompletionReview.prompt]
+        ]
+        #expect(AgentCompletionReview.userTurnIndices(in: wire) == [1, 3])
+        #expect(AgentCompletionReview.userTurnIndices(in: Array(wire[3...])) == [0])
+    }
+
     @MainActor
     @Test func agentReviewsAndRepairsBeforePublishingCompletion() async {
         let suite = UserDefaults(suiteName: "lilc-tests-\(UUID().uuidString)")!
@@ -700,7 +714,6 @@ struct lilCTests {
         let workspace = LocalCWorkspace(defaults: suite, directoryURL: directory)
         let client = ScriptedAgentClient(responses: [
             AgentCompletion(assistantText: "Creating", toolCalls: [agentCall("write_file", ["path": "square.h", "contents": "int square(int n);"])]),
-            AgentCompletion(assistantText: "Premature completion", toolCalls: []),
             AgentCompletion(assistantText: "Checking", toolCalls: [agentCall("read_file", ["path": "square.h"])]),
             AgentCompletion(assistantText: "Implementing", toolCalls: [agentCall("write_file", ["path": "square.h", "contents": "static int square(int n) { return n * n; }"])]),
             AgentCompletion(assistantText: "Implemented square", toolCalls: [])
@@ -710,11 +723,11 @@ struct lilCTests {
         session.send()
         await session.waitUntilIdle()
         #expect(workspace.agentReadFile("square.h")?.contains("return n * n;") == true)
-        #expect(!session.messages.contains { $0.text == "Premature completion" })
         #expect(session.messages.last?.text == "Implemented square")
         let requests = await client.requests
-        #expect(requests.count == 5)
-        #expect(requests[2].contains("Before finishing, verify"))
+        #expect(requests.count == 4)
+        #expect(requests[1].contains("Before finishing, verify"))
+        #expect(requests[3].contains("Before finishing, verify"))
     }
 
     @MainActor

@@ -84,7 +84,7 @@ actor LocalAgentClient: AgentCompleting, TutorCompleting, MathPlanning {
                 llama_tokenize(vocab, cString, Int32(strlen(cString)), &tokens, tokenCapacity, true, true)
             }
             if count > 0 && count < contextSize - 3072 { break }
-            let userIndices = messages.indices.filter { messages[$0]["role"] as? String == "user" }
+            let userIndices = AgentCompletionReview.userTurnIndices(in: messages)
             guard userIndices.count > 1 else { throw LocalAgentError.promptTooLong }
             messages.removeSubrange(userIndices[0]..<userIndices[1])
         }
@@ -105,20 +105,14 @@ actor LocalAgentClient: AgentCompleting, TutorCompleting, MathPlanning {
         let generationStart = clock.now
         defer { timing.generationSeconds = seconds(generationStart.duration(to: clock.now)) }
 
-        let sampler = llama_sampler_chain_init(llama_sampler_chain_default_params())
-        defer { llama_sampler_free(sampler) }
-        guard let grammar = llama_sampler_init_grammar(vocab, Self.responseGrammar, "root") else {
-            throw LocalAgentError.inferenceFailed
-        }
-        llama_sampler_chain_add(sampler, grammar)
-        llama_sampler_chain_add(sampler, llama_sampler_init_greedy())
+        let sampler = try GreedyGrammarSampler(vocab: vocab, grammar: Self.responseGrammar)
 
         var generated = Data()
         var complete = false
         var bytes = [CChar](repeating: 0, count: 4096)
         for _ in 0..<3072 {
             if Task.isCancelled { throw AgentTransportError.cancelled }
-            let token = llama_sampler_sample(sampler, context, -1)
+            let token = sampler.sample(context: context)
             if llama_vocab_is_eog(vocab, token) { break }
             timing.generatedTokens += 1
             let length = llama_token_to_piece(vocab, token, &bytes, Int32(bytes.count), 0, false)
@@ -220,18 +214,12 @@ actor LocalAgentClient: AgentCompleting, TutorCompleting, MathPlanning {
             }
             guard status == 0 else { throw LocalAgentError.inferenceFailed }
         }
-        let sampler = llama_sampler_chain_init(llama_sampler_chain_default_params())
-        defer { llama_sampler_free(sampler) }
-        guard let grammar = llama_sampler_init_grammar(vocab, MathPlannerPrompt.grammar, "root") else {
-            throw LocalAgentError.inferenceFailed
-        }
-        llama_sampler_chain_add(sampler, grammar)
-        llama_sampler_chain_add(sampler, llama_sampler_init_greedy())
+        let sampler = try GreedyGrammarSampler(vocab: vocab, grammar: MathPlannerPrompt.grammar)
         var data = Data()
         var bytes = [CChar](repeating: 0, count: 4096)
         for _ in 0..<512 {
             try Task.checkCancellation()
-            let token = llama_sampler_sample(sampler, context, -1)
+            let token = sampler.sample(context: context)
             if llama_vocab_is_eog(vocab, token) { break }
             let length = llama_token_to_piece(vocab, token, &bytes, Int32(bytes.count), 0, false)
             guard length >= 0, Int(length) <= bytes.count else { throw LocalAgentError.invalidResponse }
@@ -375,5 +363,50 @@ actor LocalAgentClient: AgentCompleting, TutorCompleting, MathPlanning {
             calls.append(AgentToolCall(id: UUID().uuidString, name: name, argumentsJSON: json))
         }
         return AgentCompletion(assistantText: message, toolCalls: calls)
+    }
+}
+
+/// Greedy selection with a grammar fast path, as in llama.cpp's common sampler.
+/// Owned by one synchronous inference call; never shared between tasks/contexts.
+final class GreedyGrammarSampler {
+    private let candidates: UnsafeMutablePointer<llama_sampler>
+    private let constrained: UnsafeMutablePointer<llama_sampler>
+    // Borrowed from constrained, which owns and frees the grammar.
+    private let grammar: UnsafeMutablePointer<llama_sampler>
+    private(set) var fallbackCount = 0
+
+    init(vocab: OpaquePointer?, grammar source: String) throws {
+        guard let grammar = llama_sampler_init_grammar(vocab, source, "root") else {
+            throw LocalAgentError.inferenceFailed
+        }
+        self.grammar = grammar
+        // Chains retain reusable vocabulary buffers instead of allocating them per token.
+        candidates = llama_sampler_chain_init(llama_sampler_chain_default_params())
+        constrained = llama_sampler_chain_init(llama_sampler_chain_default_params())
+        llama_sampler_chain_add(candidates, llama_sampler_init_greedy())
+        llama_sampler_chain_add(constrained, grammar)
+        llama_sampler_chain_add(constrained, llama_sampler_init_greedy())
+    }
+
+    deinit { llama_sampler_free(candidates); llama_sampler_free(constrained) }
+
+    func sample(context: OpaquePointer) -> llama_token {
+        let preferred = llama_sampler_sample(candidates, context, -1)
+        var token = llama_token_data(id: preferred, logit: 1, p: 0)
+        let allowed = withUnsafeMutablePointer(to: &token) { pointer in
+            var one = llama_token_data_array(data: pointer, size: 1, selected: -1, sorted: false)
+            // Applying the grammar checks legality without advancing its state.
+            llama_sampler_apply(grammar, &one)
+            return pointer.pointee.logit != -Float.infinity
+        }
+        if allowed {
+            // The highest-scoring token is valid: full-vocabulary masking selects it too.
+            llama_sampler_accept(constrained, preferred)
+            return preferred
+        }
+        fallbackCount += 1
+        // Rejected candidate: retain the original grammar-first selection over ALL tokens.
+        // sample() accepts exactly once; do not accept again in this branch.
+        return llama_sampler_sample(constrained, context, -1)
     }
 }
