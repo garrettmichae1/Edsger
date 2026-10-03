@@ -29,7 +29,7 @@
 			</array>
 		</dict>
 	</array>
-	<!-- Optional BYOK: content, account/rate identifiers and API credentials.
+	<!-- Optional BYOK: content, provider account identifiers and API credentials.
 	     Treat provider-account linkage conservatively; no advertising/tracking. -->
 	<key>NSPrivacyCollectedDataTypes</key>
 	<array>

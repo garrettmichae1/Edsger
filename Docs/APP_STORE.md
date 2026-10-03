@@ -20,7 +20,7 @@ In-repo. Does not replace App Store Connect. Use this while uploading the first 
 2. Create the iOS app if it does not exist. Bundle ID in the project is `lilC` — confirm it matches the App ID in the developer portal (reverse-DNS such as `app.lilc` is typical if you still need to register one).
 3. Upload a Release build from Xcode (Organizer → Distribute) or `xcodebuild -scheme lilC -configuration Release`.
 4. Age rating questionnaire.
-5. App Privacy nutrition labels: reassess user content and identifiers processed by the optional BYOK relay/Cloudflare and AI providers. The earlier local-only “data not collected” answer cannot be reused without reviewing the production handling and Apple’s definitions. See [BYOK release checks](BYOK.md).
+5. App Privacy nutrition labels: reassess user content and identifiers processed by the optional direct BYOK connections to AI providers. The earlier local-only “data not collected” answer cannot be reused without reviewing the production handling and Apple’s definitions. See [BYOK release checks](BYOK.md).
 6. Screenshots. Minimum for iPhone:
    - 6.7" (iPhone 16 Pro Max / 17 Pro Max class): home, editor + hello world output, syntax error / jump-to-error, Settings Light, Settings Dark
    - 6.1" (iPhone 16 / 17 class): the same five frames

@@ -28,7 +28,7 @@ private actor FixtureConnection: BYOKConnecting {
     func verify(choice: BYOKChoice, key: String) async throws {
         started = true
         if pauseVerification { await withCheckedContinuation { pending = $0 } }
-        if rejectVerification { throw BYOKError.relayCode("invalid_key") }
+        if rejectVerification { throw BYOKError.providerCode("invalid_key") }
     }
     func complete(choice: BYOKChoice, key: String, messagesJSON: Data, toolsJSON: Data) async throws -> AgentCompletion {
         completeCount += 1; requests.append(messagesJSON)
@@ -98,7 +98,7 @@ struct BYOKTests {
         let store = BYOKStore(defaults: defaults(), credentials: credentials, connection: connection)
         try await store.save(provider: .openai, draftKey: secret, modelID: choice.modelID, models: models, consent: true)
         await connection.configure(reject: true)
-        await #expect(throws: BYOKError.relayCode("invalid_key")) {
+        await #expect(throws: BYOKError.providerCode("invalid_key")) {
             try await store.save(provider: .openai, draftKey: "rejected-replacement-key-12345", modelID: choice.modelID, models: models, consent: true)
         }
         #expect(try credentials.read(.openai) == secret)
@@ -210,6 +210,21 @@ struct BYOKTests {
         let final = try JSONSerialization.jsonObject(with: requests.last!) as! [[String: Any]]
         #expect(Set(final.filter { $0["role"] as? String == "tool" }.compactMap { $0["tool_call_id"] as? String }) == Set(["edit", "create", "run", "math"]))
     }
+    @Test func workspaceAgentToolsRejectExistingAndDanglingSymlinks() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("byok.symlinks." + UUID().uuidString)
+        let project = root.appendingPathComponent("project")
+        try FileManager.default.createDirectory(at: project, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let outside = root.appendingPathComponent("outside.py")
+        try "sentinel".write(to: outside, atomically: true, encoding: .utf8)
+        try FileManager.default.createSymbolicLink(at: project.appendingPathComponent("link.py"), withDestinationURL: outside)
+        try FileManager.default.createSymbolicLink(at: project.appendingPathComponent("dangling.py"), withDestinationURL: root.appendingPathComponent("new.py"))
+        let workspace = LocalCWorkspace(defaults: defaults(), directoryURL: project, language: .python)
+        #expect(workspace.agentSafeRelativePath("link.py") == nil)
+        #expect(workspace.agentSafeRelativePath("dangling.py") == nil)
+        #expect(workspace.agentWriteFile("link.py", contents: "changed").hasPrefix("Rejected"))
+        #expect(try String(contentsOf: outside, encoding: .utf8) == "sentinel")
+    }
     @Test func malformedProviderBatchCannotPartiallyEditAProject() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }
@@ -230,41 +245,183 @@ struct BYOKTests {
     }
     #endif
 
-    private func httpClient(baseURL: URL = URL(string: "https://api.lilc.app/v1/byok")!) -> BYOKRelayClient {
+    private func httpClient() -> BYOKProviderClient {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = [FixtureURLProtocol.self]
-        return BYOKRelayClient(baseURL: baseURL, configuration: configuration)
+        return BYOKProviderClient(configuration: configuration)
+    }
+    private var userMessages: Data { Data(#"[{"role":"user","content":"Help"}]"#.utf8) }
+    private var readTool: [[String: Any]] { [["type": "function", "function": ["name": "read_file", "description": "Read a file", "parameters": ["type": "object", "properties": ["path": ["type": "string"]], "required": ["path"]]]]] }
+    private nonisolated static func wireBody(_ request: URLRequest) throws -> [String: Any] {
+        if let data = request.httpBody { return try BYOKNativeCodec.parseObject(data) }
+        guard let stream = request.httpBodyStream else { throw BYOKError.invalidResponse }
+        stream.open(); defer { stream.close() }
+        var data = Data(), buffer = [UInt8](repeating: 0, count: 4096)
+        while stream.hasBytesAvailable {
+            let count = stream.read(&buffer, maxLength: buffer.count)
+            guard count >= 0 else { throw BYOKError.invalidResponse }
+            if count == 0 { break }; data.append(contentsOf: buffer.prefix(count))
+        }
+        return try BYOKNativeCodec.parseObject(data)
     }
     @Test func transportUsesOnlyPersonalKeyAndDecodesNativeCalls() async throws {
         let expectedKey = secret
         FixtureURLProtocol.fixture.set { request in
-            #expect(request.url?.absoluteString == "https://api.lilc.app/v1/byok/openai/completions")
+            #expect(request.url?.absoluteString == "https://api.openai.com/v1/responses")
             #expect(request.httpMethod == "POST")
             #expect(request.value(forHTTPHeaderField: "Authorization") == "Bearer " + expectedKey)
+            #expect(request.value(forHTTPHeaderField: "x-api-key") == nil)
             #expect(request.value(forHTTPHeaderField: "X-LilC-Device") == nil)
             #expect(request.value(forHTTPHeaderField: "X-LilC-GitHub") == nil)
-            return (200, Data(#"{"assistantText":"","toolCalls":[{"id":"call_1","name":"read_file","argumentsJSON":"{\"path\":\"main.py\"}"}],"continuationJSON":"opaque"}"#.utf8))
+            return (200, Data(#"{"status":"completed","output":[{"type":"function_call","call_id":"call_1","name":"read_file","arguments":"{\"path\":\"main.py\"}"}]}"#.utf8))
         }
-        let result = try await httpClient().complete(choice: choice, key: secret, messagesJSON: Data("[]".utf8), toolsJSON: Data("[]".utf8))
+        let result = try await httpClient().complete(choice: choice, key: secret, messagesJSON: userMessages, toolsJSON: JSONSerialization.data(withJSONObject: readTool))
         #expect(result.toolCalls[0].name == "read_file")
-        #expect(result.continuationJSON == "opaque")
+        let saved = try BYOKNativeCodec.parseObject(Data(result.continuationJSON!.utf8))
+        #expect(saved["provider"] as? String == "openai")
+    }
+    @Test func claudeTransportUsesNativeHostAndCredentialHeaders() async throws {
+        let expectedKey = secret
+        FixtureURLProtocol.fixture.set { request in
+            #expect(request.url?.absoluteString == "https://api.anthropic.com/v1/messages")
+            #expect(request.value(forHTTPHeaderField: "x-api-key") == expectedKey)
+            #expect(request.value(forHTTPHeaderField: "Authorization") == nil)
+            #expect(request.value(forHTTPHeaderField: "anthropic-version") == "2023-06-01")
+            return (200, Data(#"{"stop_reason":"end_turn","content":[{"type":"text","text":"Done"}]}"#.utf8))
+        }
+        let result = try await httpClient().complete(choice: .init(provider: .anthropic, modelID: "claude-opus-5-5"), key: secret, messagesJSON: userMessages, toolsJSON: Data("[]".utf8))
+        #expect(result.assistantText == "Done")
     }
     @Test func transportSanitizesErrorsAndRejectsInvalidResponses() async throws {
-        FixtureURLProtocol.fixture.set { _ in (401, Data(#"{"error":"invalid_key","private":"fixture-personal-key-123456789"}"#.utf8)) }
-        await #expect(throws: BYOKError.relayCode("invalid_key")) { _ = try await httpClient().models(provider: .openai, key: secret) }
+        FixtureURLProtocol.fixture.set { _ in (401, Data(#"{"error":{"message":"fixture-personal-key-123456789"}}"#.utf8)) }
+        await #expect(throws: BYOKError.providerCode("invalid_key")) { _ = try await httpClient().models(provider: .openai, key: secret) }
         FixtureURLProtocol.fixture.set { _ in (200, Data("malformed response".utf8)) }
         await #expect(throws: BYOKError.invalidResponse) { _ = try await httpClient().models(provider: .openai, key: secret) }
-        FixtureURLProtocol.fixture.set { _ in (200, Data(#"{"assistantText":"","toolCalls":[]}"#.utf8)) }
-        await #expect(throws: BYOKError.invalidResponse) { _ = try await httpClient().complete(choice: choice, key: secret, messagesJSON: Data("[]".utf8), toolsJSON: Data("[]".utf8)) }
+        FixtureURLProtocol.fixture.set { _ in (200, Data(#"{"status":"completed","output":[]}"#.utf8)) }
+        await #expect(throws: BYOKError.invalidResponse) { _ = try await httpClient().complete(choice: choice, key: secret, messagesJSON: userMessages, toolsJSON: Data("[]".utf8)) }
     }
-    @Test func transportRejectsInsecureURLsAndCancelledTasksBeforeSending() async throws {
+    @Test func transportRejectsUnsupportedModelsAndCancelledTasksBeforeSending() async throws {
         FixtureURLProtocol.fixture.set { _ in Issue.record("No HTTP request should be made"); return (500, Data()) }
-        for raw in ["http://api.lilc.app/v1/byok", "https://user:pass@api.lilc.app/v1/byok", "https://api.lilc.app/v1/byok?secret=x"] {
-            await #expect(throws: BYOKError.relayUnavailable) { _ = try await httpClient(baseURL: URL(string: raw)!).models(provider: .openai, key: secret) }
+        for model in ["https://evil.invalid", "gpt-4o-realtime-preview", "tts-1"] {
+            await #expect(throws: BYOKError.providerCode("unsupported_model")) { _ = try await httpClient().complete(choice: .init(provider: .openai, modelID: model), key: secret, messagesJSON: userMessages, toolsJSON: Data("[]".utf8)) }
         }
         let cancelled = Task { try Task.checkCancellation(); _ = try await httpClient().models(provider: .openai, key: secret) }
         cancelled.cancel()
         await #expect(throws: CancellationError.self) { try await cancelled.value }
+    }
+    @Test func modelCatalogUsesDirectGETFiltersAndPaginates() async throws {
+        FixtureURLProtocol.fixture.set { request in
+            #expect(request.httpMethod == "GET")
+            if request.url?.query?.contains("after_id") == true {
+                #expect(request.url?.host == "api.anthropic.com")
+                return (200, Data(#"{"data":[{"id":"claude-haiku-4-5","display_name":"Haiku"}],"has_more":false}"#.utf8))
+            }
+            return (200, Data(#"{"data":[{"id":"claude-opus-5-5","display_name":"Opus"},{"id":"embedding-v1"}],"has_more":true,"last_id":"claude-opus-5-5"}"#.utf8))
+        }
+        let models = try await httpClient().models(provider: .anthropic, key: secret)
+        #expect(models.map(\.name) == ["Haiku", "Opus"])
+    }
+    @Test func bothProvidersVerifyWithAnActualNativeToolRoundTrip() async throws {
+        for provider in BYOKProvider.allCases {
+            FixtureURLProtocol.fixture.set { request in
+                let body = try! Self.wireBody(request)
+                if provider == .openai {
+                    let input = try! BYOKNativeCodec.objects(body["input"], maximum: 10)
+                    if input.last?["type"] as? String == "function_call_output" {
+                        #expect(input.last?["output"] as? String == "OK")
+                        return (200, Data(#"{"status":"completed","output":[{"type":"message","content":[{"type":"output_text","text":"OK"}]}]}"#.utf8))
+                    }
+                    #expect(try! BYOKNativeCodec.object(body["tool_choice"])["name"] as? String == "edsger_connection_check")
+                    return (200, Data(#"{"status":"completed","output":[{"type":"function_call","call_id":"probe","name":"edsger_connection_check","arguments":"{\"value\":\"OK\"}"}]}"#.utf8))
+                }
+                #expect(try! BYOKNativeCodec.object(body["tool_choice"])["type"] as? String == "auto")
+                let turns = try! BYOKNativeCodec.objects(body["messages"], maximum: 10)
+                if turns.count > 1 {
+                    let content = try! BYOKNativeCodec.objects(turns.last?["content"], maximum: 10)
+                    #expect(content[0]["tool_use_id"] as? String == "probe")
+                    #expect(content[0]["content"] as? String == "OK")
+                    return (200, Data(#"{"stop_reason":"end_turn","content":[{"type":"text","text":"OK"}]}"#.utf8))
+                }
+                return (200, Data(#"{"stop_reason":"tool_use","content":[{"type":"thinking","thinking":"","signature":"signed"},{"type":"tool_use","id":"probe","name":"edsger_connection_check","input":{"value":"OK"}}]}"#.utf8))
+            }
+            try await httpClient().verify(choice: .init(provider: provider, modelID: provider == .openai ? "gpt-4.1-mini" : "claude-opus-5-5"), key: secret)
+        }
+    }
+    @Test func verificationRejectsModelsThatSkipTheTool() async throws {
+        FixtureURLProtocol.fixture.set { _ in (200, Data(#"{"status":"completed","output":[{"type":"message","content":[{"type":"output_text","text":"OK"}]}]}"#.utf8)) }
+        await #expect(throws: BYOKError.providerCode("tool_test_failed")) { try await httpClient().verify(choice: choice, key: secret) }
+    }
+    @Test func transportBoundsBodiesAndResponsesAndDoesNotFollowRedirects() async throws {
+        FixtureURLProtocol.fixture.set { _ in Issue.record("Oversized input must not request HTTP"); return (500, Data()) }
+        await #expect(throws: BYOKError.providerCode("payload_too_large")) { _ = try await httpClient().complete(choice: choice, key: secret, messagesJSON: Data(repeating: 32, count: 385 * 1024), toolsJSON: Data("[]".utf8)) }
+        FixtureURLProtocol.fixture.set { _ in (200, Data(repeating: 32, count: 1024 * 1024 + 1)) }
+        await #expect(throws: BYOKError.invalidResponse) { _ = try await httpClient().models(provider: .openai, key: secret) }
+        FixtureURLProtocol.fixture.set { _ in (302, Data()) }
+        await #expect(throws: BYOKError.providerCode("provider_unavailable")) { _ = try await httpClient().models(provider: .openai, key: secret) }
+    }
+    @Test func nativeRequestsPreserveToolPairsAndReasoningAcrossBothProviders() throws {
+        let call = AgentToolCall(id: "call", name: "read_file", argumentsJSON: #"{"path":"main.py"}"#)
+        for provider in BYOKProvider.allCases {
+            let selected = BYOKChoice(provider: provider, modelID: provider == .openai ? "gpt-4.1-mini" : "claude-opus-5-5")
+            let items: [[String: Any]] = provider == .openai ? [["type": "reasoning", "encrypted_content": "sealed"], ["type": "function_call", "call_id": "call", "name": "read_file", "arguments": call.argumentsJSON]] : [["type": "thinking", "thinking": "", "signature": "signed"], ["type": "tool_use", "id": "call", "name": "read_file", "input": ["path": "main.py"]]]
+            let saved = String(decoding: try JSONSerialization.data(withJSONObject: ["provider": provider.rawValue, "model": selected.modelID, "items": items]), as: UTF8.self)
+            let messages: [[String: Any]] = [["role": "system", "content": "Rules"], ["role": "user", "content": "Help"], AgentWireHistory.assistant(text: "", calls: [call], continuation: saved), ["role": "tool", "tool_call_id": "call", "content": "source"]]
+            let body = try BYOKNativeCodec.request(choice: selected, messages: messages, tools: readTool)
+            if provider == .openai {
+                #expect(body["store"] as? Bool == false)
+                #expect(body["parallel_tool_calls"] as? Bool == false)
+                let input = try BYOKNativeCodec.objects(body["input"], maximum: 10)
+                #expect(input[1]["encrypted_content"] as? String == "sealed")
+                #expect(input.last?["call_id"] as? String == "call")
+            } else {
+                let turns = try BYOKNativeCodec.objects(body["messages"], maximum: 10)
+                #expect(try BYOKNativeCodec.objects(turns[1]["content"], maximum: 10)[0]["signature"] as? String == "signed")
+                #expect(try BYOKNativeCodec.objects(turns[2]["content"], maximum: 10)[0]["tool_use_id"] as? String == "call")
+                #expect(try BYOKNativeCodec.object(body["tool_choice"])["type"] as? String == "auto")
+            }
+        }
+    }
+    @Test func malformedHistoriesAndNativeOverridesFailBeforeNetwork() throws {
+        let call = AgentToolCall(id: "call", name: "read_file", argumentsJSON: #"{"path":"main.py"}"#)
+        let user: [String: Any] = ["role": "user", "content": "Help"]
+        let assistant = AgentWireHistory.assistant(text: "", calls: [call], continuation: nil)
+        for history in [[user, assistant], [user, ["role": "tool", "tool_call_id": "orphan", "content": "source"]], [user, assistant, user]] {
+            #expect(throws: BYOKError.invalidResponse) { _ = try BYOKNativeCodec.request(choice: choice, messages: history, tools: readTool) }
+        }
+        let saved = #"{"provider":"openai","model":"gpt-4.1-mini","items":[{"type":"function_call","call_id":"call","name":"read_file","arguments":"{\"path\":\"other.py\"}"}]}"#
+        let invalid = AgentWireHistory.assistant(text: "", calls: [call], continuation: saved)
+        #expect(throws: BYOKError.invalidResponse) { _ = try BYOKNativeCodec.request(choice: choice, messages: [user, invalid, ["role": "tool", "tool_call_id": "call", "content": "source"]], tools: readTool) }
+    }
+    @Test func outputRejectsTruncationUnknownToolsAndDuplicateCalls() throws {
+        #expect(throws: BYOKError.providerCode("incomplete_response")) { _ = try BYOKNativeCodec.completion(["status": "incomplete", "output": []], choice: choice, tools: readTool) }
+        let unknown: [String: Any] = ["type": "function_call", "call_id": "one", "name": "unknown", "arguments": "{}"]
+        #expect(throws: BYOKError.invalidResponse) { _ = try BYOKNativeCodec.completion(["status": "completed", "output": [unknown]], choice: choice, tools: readTool) }
+        let call: [String: Any] = ["type": "function_call", "call_id": "one", "name": "read_file", "arguments": "{}"]
+        #expect(throws: BYOKError.invalidResponse) { _ = try BYOKNativeCodec.completion(["status": "completed", "output": [call, call]], choice: choice, tools: readTool) }
+    }
+    @Test func providerBillingErrorsAreSanitizedAndDistinctFromTrafficLimits() throws {
+        let billing = Data(#"{"error":{"code":"credit_balance_exhausted","message":"private"}}"#.utf8)
+        #expect(BYOKNativeCodec.failure(provider: .openai, status: 429, data: billing) == .providerCode("insufficient_credit"))
+        let spend = Data(#"{"error":{"code":"project_spend_limit_exceeded"}}"#.utf8)
+        #expect(BYOKNativeCodec.failure(provider: .openai, status: 429, data: spend) == .providerCode("provider_spend_limit"))
+        let claude = Data(#"{"error":{"message":"Your credit balance is too low to access the API."}}"#.utf8)
+        #expect(BYOKNativeCodec.failure(provider: .anthropic, status: 400, data: claude) == .providerCode("insufficient_credit"))
+        #expect(BYOKNativeCodec.failure(provider: .openai, status: 429, data: Data()) == .providerCode("provider_rate_limit"))
+    }
+    @Test func runtimeGuidesCoverAllFourRuntimesAndRejectUnknownTopics() throws {
+        let runtimes = ["c": "PicoC", "python": "CPython", "javascript": "JavaScriptCore", "lua": "Lua 5.5.1"]
+        for (language, runtime) in runtimes {
+            #expect(AgentRuntimeDocumentation.read(language: language, topic: "overview")?.contains(runtime) == true)
+            for topic in AgentRuntimeDocumentation.topics {
+                #expect((AgentRuntimeDocumentation.read(language: language, topic: topic)?.utf8.count ?? 0) > 0)
+                #expect((AgentRuntimeDocumentation.read(language: language, topic: topic)?.utf8.count ?? 9999) < 3000)
+            }
+        }
+        #expect(AgentRuntimeDocumentation.read(language: "shell", topic: "overview") == nil)
+        #expect(AgentRuntimeDocumentation.read(language: "python", topic: "../../private") == nil)
+        let valid = AgentToolCall(id: "guide", name: "read_runtime_guide", argumentsJSON: #"{"topic":"modules"}"#)
+        #expect(try AgentToolRegistry.validatedArguments(valid)["topic"] as? String == "modules")
+        #expect(throws: BYOKError.invalidResponse) { _ = try AgentToolRegistry.validatedArguments(.init(id: "guide", name: "read_runtime_guide", argumentsJSON: #"{"topic":"unknown"}"#)) }
     }
     @Test func keyInputRejectsControlCharactersAndWhitespace() {
         for secret in ["short", "secret with spaces-123456", "secret-key\nembedded-123456", "secret-key-😄-123456"] {

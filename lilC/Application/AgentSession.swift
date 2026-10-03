@@ -269,6 +269,7 @@ final class AgentSession {
             var reviewedCompletion = false
             var previousCalls = ""
             var repeatedCalls = 0
+            var runtimeGuideTopicsRead = Set<String>()
             var executedCalls: [String: (signature: String, output: String)] = [:]
             while hops < 20 {
                 if Task.isCancelled { throw AgentTransportError.cancelled }
@@ -331,6 +332,8 @@ final class AgentSession {
                     if let previous = executedCalls[call.id] {
                         guard previous.signature == callSignature else { throw BYOKError.invalidResponse }
                         output = previous.output
+                    } else if call.name == "read_runtime_guide", let topic = args["topic"] as? String, !runtimeGuideTopicsRead.insert(topic).inserted {
+                        output = "This runtime-guide topic was already supplied in this task. Use the earlier result; rereading it is unnecessary."
                     } else if mustInspect, let contents = workspace.agentReadFile(path), inspectedFiles[path] != contents {
                         output = "Change not applied. Read the existing file \(path) below before retrying. Re-evaluate your change against these current contents:\n" + contents
                         inspectedFiles[path] = contents
@@ -459,6 +462,7 @@ final class AgentSession {
         Current file (project-relative): \(current)
         Current project: \(project)
         All paths in tool calls are relative to that project folder. Do not access other projects.
+        Detailed Edsger runtime documentation v\(AgentRuntimeDocumentation.version) is available through read_runtime_guide(topic): overview, files, modules, limits. Use it only when a specific API, import or restriction is uncertain, and fetch a topic once per task. Do not read all topics for routine work.
         Conversation tool results describe past operations. The user may have edited or restored files since then; inspect current source before changing it.
         Folders:
         \(folders)
@@ -475,6 +479,8 @@ final class AgentSession {
         guard let args = try? AgentToolRegistry.validatedArguments(call) else { return "Invalid tool arguments. No action was performed." }
         let path = scopedPath(args["path"] as? String ?? "")
         switch call.name {
+        case "read_runtime_guide":
+            return AgentRuntimeDocumentation.read(language: workspace.language.rawValue, topic: args["topic"] as? String ?? "") ?? "Unknown runtime-guide topic."
         case "calculate_math":
             do {
                 let request = try JSONDecoder().decode(MathRequest.self, from: Data(call.argumentsJSON.utf8))

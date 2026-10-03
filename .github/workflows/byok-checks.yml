@@ -25,6 +25,15 @@ jobs:
         working-directory: services/agent-worker
         env:
           WRANGLER_SEND_METRICS: 'false'
+  python-safety:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.14'
+      - name: Execute actual native Python policy regression checks
+        run: python3 scripts/test-python-safety.py
   swift-and-ios:
     runs-on: macos-15
     timeout-minutes: 45
