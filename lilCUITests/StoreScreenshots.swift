@@ -105,6 +105,24 @@ final class StoreScreenshots: XCTestCase {
         capture("directory-python")
     }
 
+    func testFilesSheetOpensSearchesAndCloses() {
+        app = XCUIApplication()
+        app.launchArguments = ["UITEST_STORE_SHOTS"]
+        app.launch()
+        XCTAssertTrue(app.buttons["edsger-add"].waitForExistence(timeout: 5))
+        app.buttons["edsger-add"].tap()
+        app.buttons["Files"].tap()
+        XCTAssertTrue(app.staticTexts["Add files"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["edsger-upload-file"].exists)
+        XCTAssertTrue(app.staticTexts["Recent"].exists)
+        let search = app.textFields["edsger-file-search"]
+        XCTAssertTrue(search.exists)
+        search.tap(); search.typeText("document-search-fixture")
+        app.buttons["Close files"].tap()
+        XCTAssertTrue(app.buttons["edsger-send"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.staticTexts["Add files"].exists)
+    }
+
     func testEdsgerChatAndIDENavigation() {
         app = XCUIApplication()
         app.launchArguments = ["UITEST_STORE_SHOTS", "-lilc.appearance.colorway", "light", "-lilc.selected.language", "c"]

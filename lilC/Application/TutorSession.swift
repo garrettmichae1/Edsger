@@ -26,23 +26,33 @@ final class TutorSession {
     private let storageURL: URL
     private let draftsURL: URL
     private var drafts: [String: String]
+    private var documentDrafts: [String: ChatDocumentReference]
     private var draftStateDirty = false
     private var draftSaveTask: Task<Void, Never>?
 
     private struct DraftState: Codable {
         var selectedID: UUID
         var drafts: [String: String]
+        var documents: [String: ChatDocumentReference]?
     }
 
     func draft(for id: UUID) -> String { drafts[id.uuidString] ?? "" }
 
     var current: TutorConversation { conversations.first { $0.id == selectedID } ?? conversations[0] }
     var messages: [TutorMessage] { current.messages }
+    func documentDraft(for id: UUID) -> ChatDocumentReference? { documentDrafts[id.uuidString] }
+    var pendingDocument: ChatDocumentReference? { documentDraft(for: selectedID) }
+    var activeDocument: ChatDocumentReference? { messages.last(where: { $0.role == .user && $0.document != nil })?.document }
+    func attach(_ document: ChatDocumentReference?) {
+        documentDrafts[selectedID.uuidString] = document
+        draftStateDirty = true
+        flushDrafts()
+    }
 
     init(client: any TutorCompleting = SelectedChatClient.shared, storageURL: URL? = nil) {
         self.client = client
-        let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-        self.storageURL = storageURL ?? support.appendingPathComponent("lilC/edsger-conversations.json")
+        self.storageURL = storageURL ?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("lilC/edsger-conversations.json")
         self.draftsURL = self.storageURL.deletingPathExtension().appendingPathExtension("drafts.json")
         let loaded = (try? Data(contentsOf: self.storageURL)).flatMap { try? JSONDecoder().decode([TutorConversation].self, from: $0) } ?? []
         let savedDrafts = (try? Data(contentsOf: self.draftsURL)).flatMap { try? JSONDecoder().decode(DraftState.self, from: $0) }
@@ -51,13 +61,14 @@ final class TutorSession {
         selectedID = savedDrafts.flatMap { state in initial.contains { $0.id == state.selectedID } ? state.selectedID : nil } ?? initial[0].id
         let validIDs = Set(initial.map { $0.id.uuidString })
         drafts = (savedDrafts?.drafts ?? [:]).filter { validIDs.contains($0.key) && !$0.value.isEmpty }
+        documentDrafts = (savedDrafts?.documents ?? [:]).filter { validIDs.contains($0.key) }
         // Give a newly created empty chat a durable ID before saving its first draft.
         if loaded.isEmpty { save() }
     }
 
     func newConversation() {
         stop()
-        if let empty = conversations.first(where: { !$0.isPinned && $0.messages.isEmpty && draft(for: $0.id).isEmpty }) { selectedID = empty.id }
+        if let empty = conversations.first(where: { !$0.isPinned && $0.messages.isEmpty && draft(for: $0.id).isEmpty && documentDrafts[$0.id.uuidString] == nil }) { selectedID = empty.id }
         else { let chat = TutorConversation(); conversations.insert(chat, at: 0); selectedID = chat.id }
         draftStateDirty = true
         errorMessage = nil; notice = nil
@@ -73,6 +84,7 @@ final class TutorSession {
         if selectedID == id { stop() }
         conversations.removeAll { $0.id == id }
         drafts.removeValue(forKey: id.uuidString)
+        documentDrafts.removeValue(forKey: id.uuidString)
         draftStateDirty = true
         if conversations.isEmpty { conversations = [TutorConversation()] }
         if !conversations.contains(where: { $0.id == selectedID }) { selectedID = conversations[0].id }
@@ -84,11 +96,16 @@ final class TutorSession {
         save()
     }
     func send() {
-        let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+        let typed = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+        let text = typed.isEmpty && pendingDocument != nil ? "Give me an overview of this document." : typed
         guard !isResponding, !text.isEmpty else { return }
+        guard (pendingDocument ?? activeDocument) == nil || text.utf8.count <= DocumentLimits.questionBytes else {
+            errorMessage = "For file questions, use a focused question under 2,000 bytes."; return
+        }
         guard text.utf8.count <= 16000 else { errorMessage = "Please send a shorter question (under 16,000 bytes)."; return }
         draft = ""; errorMessage = nil; notice = nil
-        let user = TutorMessage(role: .user, text: text)
+        let user = TutorMessage(role: .user, text: text, document: pendingDocument)
+        attach(nil)
         editCurrent { $0.messages.append(user) }
         save()
         generate()
@@ -107,16 +124,30 @@ final class TutorSession {
         task = Task { [weak self] in
             guard let self else { return }
             do {
-                let response = try await client.reply(messages: prompt, onStatus: { [weak self] status in
+                let onStatus: GenerationStatusHandler = { [weak self] status in
                     Task { @MainActor in
                         guard let self, self.runID == id, self.isResponding else { return }
                         self.generationStatus = status
                     }
-                }) { [weak self] text in
+                }
+                let onUpdate: @Sendable (String) -> Void = { [weak self] text in
                     Task { @MainActor in
                         guard let self, self.runID == id, self.isResponding else { return }
                         self.updateMessage(assistant.id, text: text)
                     }
+                }
+                let response: String
+                if let documentClient = client as? any DocumentTutorCompleting {
+                    response = try await documentClient.replyWithDocuments(messages: prompt, onStatus: onStatus, onSources: { [weak self] sources in
+                        await MainActor.run {
+                            guard let self, self.runID == id, self.isResponding else { return }
+                            self.editCurrent { chat in
+                                if let index = chat.messages.firstIndex(where: { $0.id == assistant.id }) { chat.messages[index].sources = sources }
+                            }
+                        }
+                    }, onUpdate: onUpdate)
+                } else {
+                    response = try await client.reply(messages: prompt, onStatus: onStatus, onUpdate: onUpdate)
                 }
                 guard runID == id else { return }
                 updateMessage(assistant.id, text: response)
@@ -162,7 +193,7 @@ final class TutorSession {
         guard draftStateDirty else { return }
         do {
             try FileManager.default.createDirectory(at: draftsURL.deletingLastPathComponent(), withIntermediateDirectories: true)
-            let data = try JSONEncoder().encode(DraftState(selectedID: selectedID, drafts: drafts))
+            let data = try JSONEncoder().encode(DraftState(selectedID: selectedID, drafts: drafts, documents: documentDrafts))
             try data.write(to: draftsURL, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
             draftStateDirty = false
         } catch {
@@ -174,7 +205,7 @@ final class TutorSession {
         conversations.sort(by: TutorConversation.historyOrder)
         // Retain pinned, active, and unfinished chats when pruning old completed history.
         if conversations.count > 100 {
-            let protected = conversations.filter { $0.isPinned || $0.id == selectedID || !draft(for: $0.id).isEmpty }
+            let protected = conversations.filter { $0.isPinned || $0.id == selectedID || !draft(for: $0.id).isEmpty || documentDrafts[$0.id.uuidString] != nil }
             let protectedIDs = Set(protected.map(\.id))
             let remaining = conversations.filter { !protectedIDs.contains($0.id) }
             conversations = (protected + remaining.prefix(max(0, 100 - protected.count))).sorted(by: TutorConversation.historyOrder)

@@ -5,6 +5,35 @@ struct TutorMessage: Identifiable, Codable, Equatable, Sendable {
     var id = UUID()
     let role: Role
     var text: String
+    var document: ChatDocumentReference?
+    var sources: [ChatDocumentSource]?
+}
+
+struct ChatDocumentReference: Identifiable, Codable, Equatable, Sendable {
+    let id: UUID
+    let name: String
+    let kind: String
+    let byteCount: Int
+    let characterCount: Int
+    let pageCount: Int?
+    let preview: String
+    let importedAt: Date
+    let note: String
+}
+
+struct ChatDocumentSource: Identifiable, Codable, Equatable, Sendable {
+    let id: Int
+    let documentID: UUID
+    let name: String
+    let location: String
+    let text: String
+}
+
+/// Optional capability: existing clients and test doubles retain their original path.
+protocol DocumentTutorCompleting: TutorCompleting {
+    func replyWithDocuments(messages: [TutorMessage], onStatus: @escaping GenerationStatusHandler,
+                            onSources: @escaping @Sendable ([ChatDocumentSource]) async -> Void,
+                            onUpdate: @escaping @Sendable (String) -> Void) async throws -> String
 }
 
 struct TutorConversation: Identifiable, Codable, Equatable, Sendable {
@@ -45,7 +74,7 @@ extension TutorCompleting {
 typealias GenerationStatusHandler = @Sendable (GenerationStatus) -> Void
 
 enum GenerationStatus: Sendable, Equatable {
-    case waiting, loadingModel, preparingPrompt, generatingResponse, planningCalculation, calculating
+    case waiting, loadingModel, preparingPrompt, generatingResponse, planningCalculation, calculating, readingDocument
 
     var label: String {
         switch self {
@@ -55,6 +84,7 @@ enum GenerationStatus: Sendable, Equatable {
         case .generatingResponse: "Generating a response…"
         case .planningCalculation: "Interpreting your calculation…"
         case .calculating: "Calculating on your device…"
+        case .readingDocument: "Finding passages in your file…"
         }
     }
 }

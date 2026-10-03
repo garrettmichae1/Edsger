@@ -1,6 +1,10 @@
 # EDSGER offline teaching chat
 
-EDSGER's Chat / Courses interface opens when the app launches. Chat is free, text-only, and works offline with the already-bundled Qwen3.5-4B model. The IDE button with the home icon opens the existing project home screen. Courses retains the existing lessons, quizzes, and Linux-course ownership flow. Existing course purchases are unchanged; no purchase, agent toggle, account, or cloud service is required for Chat.
+EDSGER opens directly to chat. It works offline with the bundled Edsger 1.0 and
+Edsger Mini 1.0 choices. The IDE button opens the existing project home screen.
+Courses is no longer part of the chat navigation. No purchase, account or cloud
+service is required for the current chat or document feature; Pro gating is deferred.
+See [local document chat](DOCUMENT_CHAT.md) for supported formats, limits and tests.
 
 ## Separation from the coding agent
 
@@ -8,13 +12,23 @@ EDSGER's Chat / Courses interface opens when the app launches. Chat is free, tex
 
 `LocalAgentClient.reply` produces plain text with streamed updates rather than the agent's JSON/tool grammar. Both paths use the same actor-owned model and context: there is no second model allocation, and inference cannot overlap on the shared handles. The tutor has a 2,048-token response limit; complete older turns are dropped from inference context when needed, while the saved conversation remains on device. Stop checks between prompt batches and generated tokens. Model loading is synchronous inside the background actor and cannot be interrupted partway through loading.
 
-Opening Learn stops an active coding-agent turn. Leaving EDSGER stops generation and preserves the partial answer. Cancelled or old responses cannot update a newly selected conversation. Courses is a separate tab, leaving room for explicit lesson context and guided course conversations later; this version does not automatically send course or workspace files to the tutor.
+Opening Learn stops an active coding-agent turn. Leaving EDSGER stops generation and preserves the partial answer. Cancelled or old responses cannot update a newly selected conversation. Document chat receives only the passages from the selected imported file; workspace files are not automatically sent to the tutor.
 
 ## Interface and history
 
-The screenshot-inspired interface uses floating circular actions, a Chat / Courses capsule, a spacious transcript, and a rounded Ask EDSGER composer. The plus button offers academic topic starters, the magnifier searches saved chats, and the blue button sends or stops the response. There are no inactive microphone/voice buttons. Light and dark appearance follow the app setting. IDE remains available in the footer and history sheet; files are accessed through the IDE. The footer Info button opens a matching offline explainer with Chat / Agent tabs, a three-step interactive example for each mode, and expandable offline-use details. Opening Info does not stop generation or change the conversation.
+The interface uses floating circular actions, a spacious transcript and a rounded
+Ask EDSGER composer. The plus button offers Files and academic topic starters; the
+magnifier searches saved chats, and the blue button sends or stops a response.
+Light and dark appearance follow the app setting. IDE remains available in the
+footer and history sheet. Info explains the offline chat and agent modes.
 
-History is local at Application Support/lilC/edsger-conversations.json, separate from coding-agent histories and source files. Conversations are automatically titled from their first question. The history sheet supports search, selection, and swipe-to-delete. Start a new chat from the main Chat header. Up to 100 conversations are retained. Deleting a chat removes its local saved content; app backups follow ordinary iOS behavior. There is no network inference or additional model download.
+History is local at Application Support/lilC/edsger-conversations.json, separate
+from coding-agent histories and source files. It supports search, pinning, selection
+and deletion. Drafts and attachments survive switching/relaunch. Up to 100 ordinary
+conversations are retained; pinned, active and unfinished chats are protected.
+See [chat experience](CHAT_EXPERIENCE.md). Imported files have their own bounded
+Recent library; deleting a conversation does not delete shared imported files.
+App backups follow ordinary iOS behavior. There is no network inference.
 
 ## Math notation
 
@@ -39,3 +53,11 @@ Tests exercise mixed Markdown/math, table and list structure, code isolation, re
 Unit coverage checks prompt separation/template escaping, streaming completion, local save/reload, independent conversations, deletion, stale updates after cancellation, and failure/retry behavior. UI checks cover Chat / Courses navigation, course-to-editor return, the keyboard layout, and a real response from the bundled model. Physical-iPhone memory/latency and longer educational answers should still be exercised before publishing.
 
 The implementation passed the app unit suite and both EDSGER UI checks, including an actual bundled-model reply in the simulator. A Release build for iOS also succeeded. `scripts/test-local-tutor.sh` exercises the actual bundled model on macOS with physics, history, and four-language questions; these are basic wiring/content smoke checks, not a comprehensive assessment of teaching accuracy. Simulator and Mac timings do not establish iPhone performance.
+
+
+## Document feature validation (2026-10-03)
+
+The validation above describes earlier rendering work. For the new document feature,
+portable parser/routing/session regressions and real-model prompt smoke checks passed
+on the host. Native PDF/UI tests were added but not run here; Xcode and device
+validation remain required. Details are in [DOCUMENT_CHAT.md](DOCUMENT_CHAT.md).

@@ -7,6 +7,13 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+        FB1000000000000000000007 = {isa = PBXBuildFile; fileRef = FB2000000000000000000007; };
+        FB1000000000000000000006 = {isa = PBXBuildFile; productRef = FB3000000000000000000001; };
+        FB1000000000000000000005 = {isa = PBXBuildFile; fileRef = FB2000000000000000000005; };
+        FB1000000000000000000004 = {isa = PBXBuildFile; fileRef = FB2000000000000000000004; };
+        FB1000000000000000000003 = {isa = PBXBuildFile; fileRef = FB2000000000000000000003; };
+        FB1000000000000000000002 = {isa = PBXBuildFile; fileRef = FB2000000000000000000002; };
+        FB1000000000000000000001 = {isa = PBXBuildFile; fileRef = FB2000000000000000000001; };
         FAF000000000000000000001 = {isa = PBXBuildFile; fileRef = FAF000000000000000000002; };
         FAF000000000000000000003 = {isa = PBXBuildFile; fileRef = FAF000000000000000000004; };
         FAE000000000000000000001 /* Mini model in Resources */ = {isa = PBXBuildFile; fileRef = FAE000000000000000000002 /* Mini model */; };
@@ -163,6 +170,12 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+        FB2000000000000000000007 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatDocumentPDFTests.swift; sourceTree = "<group>"; };
+        FB2000000000000000000005 = {isa = PBXFileReference; lastKnownFileType = text; path = "Resources/ZIPFoundation-LICENSE.txt"; sourceTree = "<group>"; };
+        FB2000000000000000000004 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Presentation/ChatFilesSheet.swift"; sourceTree = "<group>"; };
+        FB2000000000000000000003 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Infrastructure/ChatDocumentStore.swift"; sourceTree = "<group>"; };
+        FB2000000000000000000002 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Domain/DocumentTutorClient.swift"; sourceTree = "<group>"; };
+        FB2000000000000000000001 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Domain/DocumentText.swift"; sourceTree = "<group>"; };
         FAF000000000000000000002 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Domain/IDEHomeLayout.swift"; sourceTree = "<group>"; };
         FAF000000000000000000004 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Presentation/IDEHomeGrid.swift"; sourceTree = "<group>"; };
         FAE000000000000000000002 /* Mini model */ = {isa = PBXFileReference; lastKnownFileType = file; path = lilC/Resources/Models/LFM2.5-1.2B-Instruct-Q4_K_M.gguf; sourceTree = SOURCE_ROOT; };
@@ -318,6 +331,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+                FB1000000000000000000006,
                 F8B000000000000000000005,
                 F8B000000000000000000004,
                 F8B000000000000000000003,
@@ -362,6 +376,11 @@
 		100000000000000000000702 /* lilC */ = {
 			isa = PBXGroup;
 			children = (
+                FB2000000000000000000005,
+                FB2000000000000000000004,
+                FB2000000000000000000003,
+                FB2000000000000000000002,
+                FB2000000000000000000001,
                 FAD000000000000000000006,
                 FAD000000000000000000005,
                 FAD000000000000000000004,
@@ -493,6 +512,7 @@
 		100000000000000000000703 /* lilCTests */ = {
 			isa = PBXGroup;
 			children = (
+                FB2000000000000000000007,
 				10000000000000000000000D /* lilCTests.swift */,
                 F7C000000000000000000004,
 			);
@@ -536,6 +556,7 @@
 			);
 			name = lilC;
 			packageProductDependencies = (
+                FB3000000000000000000001,
                 F8D000000000000000000005,
                 F8D000000000000000000004,
                 F8D000000000000000000003,
@@ -617,6 +638,7 @@
 			);
 			mainGroup = 100000000000000000000701;
 			packageReferences = (
+                FB4000000000000000000001,
                 F8E000000000000000000001,
                 F8E000000000000000000002,
                 F6E000000000000000000001,
@@ -638,6 +660,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+                FB1000000000000000000005,
                 FAC000000000000000000006,
                 F8B000000000000000000011,
                 A1C000000000000000000002 /* Qwen model in Resources */,
@@ -686,12 +709,14 @@
 /* End PBXShellScriptBuildPhase section */
 
 /* Begin XCRemoteSwiftPackageReference section */
+        FB4000000000000000000001 = {isa = XCRemoteSwiftPackageReference; repositoryURL = "https://github.com/weichsel/ZIPFoundation.git"; requirement = {kind = exactVersion; version = 0.9.20; }; };
         F8E000000000000000000001 = {isa = XCRemoteSwiftPackageReference; repositoryURL = "https://github.com/simonbs/Runestone"; requirement = {kind = exactVersion; version = 0.5.2; }; };
         F8E000000000000000000002 = {isa = XCRemoteSwiftPackageReference; repositoryURL = "https://github.com/simonbs/TreeSitterLanguages"; requirement = {kind = exactVersion; version = 0.1.10; }; };
         F6E000000000000000000001 = {isa = XCRemoteSwiftPackageReference; repositoryURL = "https://github.com/gonzalezreal/textual.git"; requirement = {kind = exactVersion; version = 0.5.0; }; };
         F5E000000000000000000001 = {isa = XCRemoteSwiftPackageReference; repositoryURL = "https://github.com/mgriebling/SwiftMath.git"; requirement = {kind = exactVersion; version = 1.7.3; }; };
 /* End XCRemoteSwiftPackageReference section */
 /* Begin XCSwiftPackageProductDependency section */
+        FB3000000000000000000001 = {isa = XCSwiftPackageProductDependency; package = FB4000000000000000000001; productName = ZIPFoundation; };
         F8D000000000000000000001 /* Runestone */ = {isa = XCSwiftPackageProductDependency; package = F8E000000000000000000001; productName = Runestone; };
         F8D000000000000000000002 /* TreeSitterCRunestone */ = {isa = XCSwiftPackageProductDependency; package = F8E000000000000000000002; productName = TreeSitterCRunestone; };
         F8D000000000000000000003 /* TreeSitterPythonRunestone */ = {isa = XCSwiftPackageProductDependency; package = F8E000000000000000000002; productName = TreeSitterPythonRunestone; };
@@ -706,6 +731,10 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+                FB1000000000000000000004,
+                FB1000000000000000000003,
+                FB1000000000000000000002,
+                FB1000000000000000000001,
                 FAC000000000000000000005,
                 FAC000000000000000000004,
                 FAC000000000000000000003,
@@ -821,6 +850,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+                FB1000000000000000000007,
 				10000000000000000000010D /* lilCTests.swift in Sources */,
                 F7B000000000000000000004,
 			);

@@ -56,11 +56,16 @@ for key, obj in objects.items():
 
 app = objects['100000000000000000000401']
 products = {objects[ref]['productName']: ref for ref in app['packageProductDependencies']}
-expected = {'Runestone', 'TreeSitterCRunestone', 'TreeSitterPythonRunestone', 'TreeSitterJavaScriptRunestone', 'TreeSitterLuaRunestone'}
+expected = {'ZIPFoundation', 'Runestone', 'TreeSitterCRunestone', 'TreeSitterPythonRunestone', 'TreeSitterJavaScriptRunestone', 'TreeSitterLuaRunestone'}
 assert expected <= products.keys()
 linked = {objects[ref].get('productRef') for ref in objects['100000000000000000000601']['files']}
 assert {products[p] for p in expected} <= linked
-for name, phase in [('Domain/IDEHomeLayout.swift', '100000000000000000000901'),
+for name, phase in [('Domain/DocumentText.swift', '100000000000000000000901'),
+                    ('Domain/DocumentTutorClient.swift', '100000000000000000000901'),
+                    ('Infrastructure/ChatDocumentStore.swift', '100000000000000000000901'),
+                    ('Presentation/ChatFilesSheet.swift', '100000000000000000000901'),
+                    ('Resources/ZIPFoundation-LICENSE.txt', '100000000000000000000A01'),
+                    ('Domain/IDEHomeLayout.swift', '100000000000000000000901'),
                     ('Presentation/IDEHomeGrid.swift', '100000000000000000000901'),
                     ('Domain/EditorSupport.swift', '100000000000000000000901'),
                     ('Domain/AgentProjectHistory.swift', '100000000000000000000901'),
@@ -86,7 +91,8 @@ assert 'fetch-mini-assets.sh' in (root / 'scripts/fetch-agent-assets.sh').read_t
 
 pins = json.loads((root / 'lilC.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved').read_text())['pins']
 pins = {p['identity']: p['state'] for p in pins}
-for identity, version, revision in [('runestone', '0.5.2', '592434a103a4d1ab83e14f87ac6eef569dd7a99d'),
+for identity, version, revision in [('zipfoundation', '0.9.20', '22787ffb59de99e5dc1fbfe80b19c97a904ad48d'),
+                                   ('runestone', '0.5.2', '592434a103a4d1ab83e14f87ac6eef569dd7a99d'),
                                    ('treesitterlanguages', '0.1.10', '15cf3a9ec3ab95e0d058b7df9f35619123c9e02d'),
                                    ('tree-sitter', '0.20.9', '98be227227af10cc7a269cb3ffb23686c0610b17')]:
     assert pins[identity] == dict(version=version, revision=revision)

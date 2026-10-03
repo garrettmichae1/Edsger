@@ -379,7 +379,7 @@ private enum LegalDocument: String, Identifiable {
         THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
 
         lilC source (except third-party components) is licensed under the Apache License 2.0. See LICENSE, NOTICE, and TRADEMARKS.md in the project repository.
-        """ + modelLicenses + editorLicenses + pythonLicenses
+        """ + modelLicenses + editorLicenses + documentLicenses + pythonLicenses
     }
 
     private var modelLicenses: String {
@@ -392,6 +392,12 @@ private enum LegalDocument: String, Identifiable {
         guard let url = Bundle.main.url(forResource: "Runestone-LICENSES", withExtension: "txt"),
               let text = try? String(contentsOf: url, encoding: .utf8) else { return "" }
         return "\n\nCode editor dependencies\n" + text
+    }
+
+    private var documentLicenses: String {
+        guard let url = Bundle.main.url(forResource: "ZIPFoundation-LICENSE", withExtension: "txt"),
+              let text = try? String(contentsOf: url, encoding: .utf8) else { return "" }
+        return "\n\nDocument import · ZIPFoundation\n" + text
     }
 
     private var pythonLicenses: String {

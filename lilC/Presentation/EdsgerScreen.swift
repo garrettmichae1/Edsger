@@ -92,6 +92,7 @@ struct EdsgerScreen: View {
     @FocusState private var composerFocused: Bool
     @State private var showsHistory = false
     @State private var showsInfo = false
+    @State private var showsChatFiles = false
     @State private var models = ChatModelStore.shared
     @State private var historySearch = ""
     @State private var pendingDelete: TutorConversation?
@@ -111,6 +112,9 @@ struct EdsgerScreen: View {
             if !composerFocused { navigation }
         }
         .sheet(isPresented: $showsHistory) { history }
+        .sheet(isPresented: $showsChatFiles) {
+            ChatFilesSheet(selectedID: session.pendingDocument?.id) { session.attach($0) }
+        }
         .task { await models.refresh() }
         .sheet(isPresented: $showsInfo) {
             EdsgerInfoSheet(background: background, surface: surface, selection: selection)
@@ -164,8 +168,11 @@ struct EdsgerScreen: View {
                     if message.role == .user {
                         HStack {
                             Spacer(minLength: 38)
-                            Text(message.text)
+                            VStack(alignment: .leading, spacing: 10) {
+                                if let document = message.document { ChatDocumentChip(document: document) }
+                                Text(message.text)
                                 .textSelection(.enabled)
+                            }
                                 .padding(.horizontal, 17).padding(.vertical, 12)
                                 .background(selection, in: RoundedRectangle(cornerRadius: 24))
                         }
@@ -180,6 +187,7 @@ struct EdsgerScreen: View {
                             } else {
                                 MathAnswerView(text: message.text)
                                     .textSelection(.enabled)
+                                if let sources = message.sources, !sources.isEmpty { ChatDocumentSources(sources: sources) }
                                 if !session.isResponding {
                                     Button { UIPasteboard.general.string = message.text } label: {
                                         Image(systemName: "doc.on.doc").font(.system(size: 15))
@@ -245,6 +253,14 @@ struct EdsgerScreen: View {
                 .accessibilityLabel("Ask EDSGER about coding or any academic subject")
             }
             VStack(alignment: .leading, spacing: 16) {
+                if let document = session.pendingDocument {
+                    ChatDocumentChip(document: document, remove: { session.attach(nil) })
+                } else if let document = session.activeDocument {
+                    HStack(spacing: 6) {
+                        Image(systemName: "doc.text")
+                        Text("Discussing \(document.name)").lineLimit(1)
+                    }.font(.caption).foregroundStyle(.secondary)
+                }
                 TextField("Ask EDSGER", text: $session.draft, prompt: Text("Ask EDSGER").fontWeight(.semibold).foregroundStyle(.secondary), axis: .vertical)
                     .font(.system(size: 21))
                     .lineLimit(1...6)
@@ -253,7 +269,9 @@ struct EdsgerScreen: View {
                     .padding(.horizontal, 4)
                 HStack {
                     Menu {
-                        ForEach(["C", "Python", "JavaScript", "Lua", "History", "Physics", "Mathematics"], id: \.self) { topic in
+                        Button("Files", systemImage: "paperclip") { composerFocused = false; showsChatFiles = true }
+                        Divider()
+                        ForEach(["C", "Python", "JavaScript", "Lua", "Physics", "Mathematics"], id: \.self) { topic in
                             Button("Study " + topic) {
                                 session.draft = "Help me learn \(topic). Start by asking what I already know."
                                 composerFocused = true
@@ -262,7 +280,8 @@ struct EdsgerScreen: View {
                     } label: {
                         Image(systemName: "plus").font(.system(size: 28, weight: .regular)).frame(width: 36, height: 40)
                     }
-                    .accessibilityLabel("Choose a study topic")
+                    .accessibilityLabel("Add files or choose a study topic")
+                    .accessibilityIdentifier("edsger-add")
                     Spacer()
                     Button { composerFocused = false; showsHistory = true } label: {
                         ZStack {
@@ -279,9 +298,9 @@ struct EdsgerScreen: View {
                             .font(.system(size: session.isResponding ? 18 : 24, weight: .semibold))
                             .foregroundStyle(.white)
                             .frame(width: 44, height: 44)
-                            .background(Color.blue.opacity(session.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !session.isResponding ? 0.45 : 1), in: Circle())
+                            .background(Color.blue.opacity(session.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && session.pendingDocument == nil && !session.isResponding ? 0.45 : 1), in: Circle())
                     }
-                    .disabled(!session.isResponding && (models.isChanging || session.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty))
+                    .disabled(!session.isResponding && (models.isChanging || (session.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && session.pendingDocument == nil)))
                     .accessibilityLabel(session.isResponding ? "Stop EDSGER" : "Send to EDSGER")
                     .accessibilityIdentifier("edsger-send")
                 }
@@ -313,6 +332,25 @@ struct EdsgerScreen: View {
         .background(background)
     }
 
+    private var filteredConversations: [TutorConversation] {
+        guard !historySearch.isEmpty else { return session.conversations }
+        return session.conversations.filter { chat in
+            if chat.title.localizedCaseInsensitiveContains(historySearch) { return true }
+            if session.draft(for: chat.id).localizedCaseInsensitiveContains(historySearch) { return true }
+            if session.documentDraft(for: chat.id)?.name.localizedCaseInsensitiveContains(historySearch) == true { return true }
+            return chat.messages.contains { message in
+                message.text.localizedCaseInsensitiveContains(historySearch) ||
+                    message.document?.name.localizedCaseInsensitiveContains(historySearch) == true
+            }
+        }
+    }
+
+    private func historyTitle(_ chat: TutorConversation) -> String {
+        guard chat.messages.isEmpty else { return chat.title }
+        let draft = session.draft(for: chat.id)
+        return draft.isEmpty ? session.documentDraft(for: chat.id)?.name ?? chat.title : String(draft.prefix(70))
+    }
+
     private var history: some View {
         NavigationStack {
             List {
@@ -335,7 +373,7 @@ struct EdsgerScreen: View {
                 .listRowBackground(Color.clear)
                 .listRowSeparator(.hidden)
 
-                ForEach(session.conversations.filter { historySearch.isEmpty || $0.title.localizedCaseInsensitiveContains(historySearch) || session.draft(for: $0.id).localizedCaseInsensitiveContains(historySearch) || $0.messages.contains { $0.text.localizedCaseInsensitiveContains(historySearch) } }) { chat in
+                ForEach(filteredConversations) { chat in
                     HStack(spacing: 0) {
                         Button {
                             session.select(chat.id); showsHistory = false
@@ -347,12 +385,11 @@ struct EdsgerScreen: View {
                                     .frame(width: 44, height: 44)
                                     .background(chat.isPinned ? Color.blue.opacity(0.10) : selection, in: Circle())
                                 VStack(alignment: .leading, spacing: 7) {
-                                    if !session.draft(for: chat.id).isEmpty {
+                                    if !session.draft(for: chat.id).isEmpty || session.documentDraft(for: chat.id) != nil {
                                         Label("Draft", systemImage: "pencil")
                                             .font(.caption).foregroundStyle(Color.blue)
                                     }
-                                    Text(chat.messages.isEmpty && !session.draft(for: chat.id).isEmpty
-                                         ? String(session.draft(for: chat.id).prefix(70)) : chat.title)
+                                    Text(historyTitle(chat))
                                         .font(.system(size: 17, weight: .semibold))
                                         .lineLimit(2)
                                         .foregroundStyle(.primary)

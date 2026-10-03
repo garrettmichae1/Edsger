@@ -7,6 +7,7 @@ trap 'rm -rf "$TEST_DIR"' EXIT
 swiftc -swift-version 6 -strict-concurrency=complete -parse-as-library -O \
   "$ROOT_DIR/lilC/Domain/AgentModels.swift" \
   "$ROOT_DIR/lilC/Domain/TutorModels.swift" \
+  "$ROOT_DIR/lilC/Domain/DocumentText.swift" \
   "$ROOT_DIR/lilC/Domain/MathCalculation.swift" \
   "$ROOT_DIR/lilC/Domain/MathPlanning.swift" \
   "$ROOT_DIR/lilC/Application/TutorSession.swift" \
