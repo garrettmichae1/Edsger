@@ -1,0 +1,94 @@
+{
+  "identical_cases": 15,
+  "chat_repetitions": 5,
+  "chat": {
+    "prompt_s": {
+      "baseline_median": 10.236190926,
+      "cached_median": 2.773604645,
+      "baseline_range": [
+        10.174524145,
+        11.238674134
+      ],
+      "cached_range": [
+        2.720812902,
+        2.8105685830000002
+      ],
+      "median_reduction_percent": 72.90393794868535
+    },
+    "first_token_s": {
+      "baseline_median": 10.239412565,
+      "cached_median": 2.776810514,
+      "baseline_range": [
+        10.177736536,
+        11.241970301
+      ],
+      "cached_range": [
+        2.723938858,
+        2.8139647759999997
+      ],
+      "median_reduction_percent": 72.88115410554316
+    },
+    "first_update_s": {
+      "baseline_median": 10.316944434,
+      "cached_median": 2.848280417,
+      "baseline_range": [
+        10.261665832,
+        11.323801754
+      ],
+      "cached_range": [
+        2.792382402,
+        2.8879533139999998
+      ],
+      "median_reduction_percent": 72.39220938698331
+    },
+    "generation_s": {
+      "baseline_median": 1.299597791,
+      "cached_median": 1.316722903,
+      "baseline_range": [
+        1.248194312,
+        1.593180686
+      ],
+      "cached_range": [
+        1.267897609,
+        1.361597174
+      ],
+      "median_reduction_percent": -1.3177240003480417
+    },
+    "total_s": {
+      "baseline_median": 11.697703928,
+      "cached_median": 4.092657227,
+      "baseline_range": [
+        11.468388453,
+        12.541123643
+      ],
+      "cached_range": [
+        4.018829968,
+        4.158103399
+      ],
+      "median_reduction_percent": 65.01315769153906
+    }
+  },
+  "individual_completions": {
+    "agent-review": {
+      "before_prompt_s": 8.246622501,
+      "after_prompt_s": 4.249818378,
+      "before_total_s": 10.030435208,
+      "after_total_s": 5.888513941,
+      "reused_tokens": 256
+    },
+    "agent-repair": {
+      "before_prompt_s": 9.101810474,
+      "after_prompt_s": 1.430535378,
+      "before_total_s": 13.258628766,
+      "after_total_s": 5.714662488,
+      "reused_tokens": 512
+    },
+    "math-next": {
+      "before_prompt_s": 17.562633168,
+      "after_prompt_s": 2.254881345,
+      "before_total_s": 20.177889197,
+      "after_total_s": 5.226866518,
+      "reused_tokens": 1024
+    }
+  }
+}

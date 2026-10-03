@@ -1,0 +1,24 @@
+◇ Test run started.
+◇ Suite MathEngineTests started.
+◇ Test routingAndFollowups() started.
+◇ Test arithmeticBypassesTheModel() started.
+◇ Test explanationFailurePreservesCalculatedResult() started.
+◇ Test ordinaryChatAndConceptsKeepNormalTutorPath() started.
+◇ Test cancellationPropagatesAcrossAllStages() started.
+◇ Test strictPlansAndBounds() started.
+◇ Test clarificationDoesNotCalculateOrInventAnAnswer() started.
+◇ Test resultPrecedesClearlySeparatedExplanation() started.
+◇ Test promptEscapesControlTokensAndKeepsRecentContext() started.
+◇ Test failuresNeverBecomeCalculatedResults() started.
+✔ Test promptEscapesControlTokensAndKeepsRecentContext() passed after 0.002 seconds.
+✔ Test resultPrecedesClearlySeparatedExplanation() passed after 0.003 seconds.
+✔ Test explanationFailurePreservesCalculatedResult() passed after 0.003 seconds.
+✔ Test ordinaryChatAndConceptsKeepNormalTutorPath() passed after 0.003 seconds.
+✔ Test failuresNeverBecomeCalculatedResults() passed after 0.002 seconds.
+✔ Test clarificationDoesNotCalculateOrInventAnAnswer() passed after 0.003 seconds.
+✔ Test arithmeticBypassesTheModel() passed after 0.003 seconds.
+✔ Test strictPlansAndBounds() passed after 0.003 seconds.
+✔ Test cancellationPropagatesAcrossAllStages() passed after 0.003 seconds.
+✔ Test routingAndFollowups() passed after 0.003 seconds.
+✔ Suite MathEngineTests passed after 0.003 seconds.
+✔ Test run with 10 tests passed after 0.004 seconds.

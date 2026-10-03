@@ -1,5 +1,6 @@
 // Standalone real-model regression test; no network or provider tokens.
 import Foundation
+import llama
 
 struct AgentCompletion: Sendable {
     var assistantText: String
@@ -15,8 +16,8 @@ private func verifyC(_ source: String, in root: URL) throws {
     try source.write(to: input, atomically: true, encoding: .utf8)
     defer { try? FileManager.default.removeItem(at: input); try? FileManager.default.removeItem(at: binary) }
     let compiler = Process()
-    compiler.executableURL = URL(fileURLWithPath: "/usr/bin/clang")
-    compiler.arguments = [input.path, "-o", binary.path]
+    compiler.executableURL = URL(fileURLWithPath: FileManager.default.isExecutableFile(atPath: "/usr/bin/clang") ? "/usr/bin/clang" : "/usr/bin/cc")
+    compiler.arguments = ["-std=c99", "-Wall", "-Wextra", "-Werror", input.path, "-o", binary.path]
     try compiler.run(); compiler.waitUntilExit()
     precondition(compiler.terminationStatus == 0, "Generated C must compile")
     let program = Process()
@@ -31,7 +32,11 @@ private func report(_ text: String) {
 
 @main struct AgentSmoke {
     static func main() async throws {
-        let client = LocalAgentClient(modelURL: URL(fileURLWithPath: CommandLine.arguments[1]))
+        if let backendPath = ProcessInfo.processInfo.environment["LLAMA_BACKEND_DIR"] {
+            ggml_backend_load_all_from_path(backendPath)
+        }
+        let client = LocalAgentClient(modelURL: URL(fileURLWithPath: CommandLine.arguments[1]),
+                                      cacheByteLimit: CommandLine.arguments.contains("--no-prompt-cache") ? 0 : PromptReuseCache.defaultByteLimit)
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: root) }
@@ -42,6 +47,9 @@ private func report(_ text: String) {
             "Create math.h with a function int square(int n) that returns n * n.",
             "Delete math.h."
         ]
+        if CommandLine.arguments.contains("--guarded-header") {
+            requests[1] = "Create only math.h with a complete function int square(int n) that returns n*n. Make the header self-contained using include guards, with the entire function definition inside the guard. Do not create other implementation or test files. Do not run it."
+        }
         if CommandLine.arguments.contains("--binary-search") {
             requests.append("In hello.c implement int binary_search(int *arr, int n, int target). Return the index when found and -1 when absent. Add tests for found, absent, and empty input in main, and run hello.c.")
         }
@@ -70,6 +78,7 @@ private func report(_ text: String) {
                 let result = try await client.complete(messagesJSON: JSONSerialization.data(withJSONObject: wire), toolsJSON: Data("[]".utf8))
                 let timing = await client.lastTiming
                 report(String(format: "TIMING load=%.3f prompt=%.3f generation=%.3f total=%.3f input=%d output=%d", timing.loadSeconds, timing.promptSeconds, timing.generationSeconds, timing.totalSeconds, timing.promptTokens, timing.generatedTokens))
+                report("CACHE status=\(timing.cache.outcome) reused=\(timing.cache.reusedTokens) decoded=\(timing.cache.decodedTokens) bytes=\(timing.cache.retainedBytes)")
                 report("Scenario \(index + 1), hop \(hop), \(Int(Date().timeIntervalSince(start)))s: \(result.assistantText) \(result.toolCalls.map(\.name))")
                 if result.toolCalls.isEmpty {
                     finished = true; break
@@ -103,10 +112,10 @@ private func report(_ text: String) {
                         case "run_file":
                             let binary = root.appendingPathComponent("agent-program")
                             let log = root.appendingPathComponent("run.log")
-                            FileManager.default.createFile(atPath: log.path, contents: nil)
+                            _ = FileManager.default.createFile(atPath: log.path, contents: nil)
                             let handle = try FileHandle(forWritingTo: log)
                             let compiler = Process()
-                            compiler.executableURL = URL(fileURLWithPath: "/usr/bin/clang")
+                            compiler.executableURL = URL(fileURLWithPath: FileManager.default.isExecutableFile(atPath: "/usr/bin/clang") ? "/usr/bin/clang" : "/usr/bin/cc")
                             compiler.arguments = [url.path, "-o", binary.path]
                             compiler.standardOutput = handle; compiler.standardError = handle
                             try compiler.run(); compiler.waitUntilExit()
@@ -146,7 +155,7 @@ private func report(_ text: String) {
                 let contents = try String(contentsOf: root.appendingPathComponent("math.h"), encoding: .utf8)
                 report("Generated math.h:\n" + contents)
                 precondition(contents.contains("square"), "Missing square function: \(contents)")
-                try verifyC("#include \"math.h\"\nint main(void) { return square(7) == 49 ? 0 : 1; }\n", in: root)
+                try verifyC("#include \"math.h\"\n#include \"math.h\"\nint main(void) { return !(square(0) == 0 && square(7) == 49 && square(-3) == 9); }\n", in: root)
             case 2: precondition(!FileManager.default.fileExists(atPath: root.appendingPathComponent("math.h").path))
             default:
                 try verifyC("#define main agent_main\n#include \"hello.c\"\n#undef main\nint main(void) { int a[] = {1,3,5,7,9}; return !(binary_search(a,5,7)==3 && binary_search(a,5,6)==-1 && binary_search(a,0,7)==-1 && binary_search(a,5,1)==0 && binary_search(a,5,9)==4); }\n", in: root)

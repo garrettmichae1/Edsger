@@ -96,3 +96,7 @@ The header-only smoke command independently compiles and checks the generated fu
 ## October 3 follow-up: prompt reuse and generation experiments
 
 See [the further latency investigation](PROMPT_REUSE_INVESTIGATION.md) for four exact-output native state-reuse comparisons, CPU runtime measurements, and a speculative-decoding probe. Prompt processing fell 47–87% on cache hits in these host-only samples. The speculative code response failed output equivalence and is not counted as a speedup. These are investigation artifacts; app inference behavior remains at the October 2 implementation pending cache integration and iPhone validation.
+
+## October 3 implementation: automatic bounded prompt reuse
+
+[The implementation report](PROMPT_REUSE_IMPLEMENTATION.md) records the shared IDE/chat/math cache, memory admission and warning handling, complete inference telemetry, regression gates, raw measurements, and remaining device-validation work. Fifteen paired production cases matched outputs and token counts. Five warm chat follow-ups had a median complete-response time of 11.70 seconds without caching versus 4.09 seconds with caching on the CPU host. A complete guarded-header task retained the same four calls, 155 output tokens, and identical valid code while inference fell from 52.96 to 33.77 seconds. The stricter header test also exposed a pre-existing generic-request include-guard defect, preserved separately as a failed case rather than a speedup.

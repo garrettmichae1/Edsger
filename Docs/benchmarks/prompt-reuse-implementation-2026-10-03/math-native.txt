@@ -1,0 +1,5 @@
+context.c:56: warning: mpd_setminalloc: ignoring request to set MPD_MINALLOC a second time
+
+context.c:56: warning: mpd_setminalloc: ignoring request to set MPD_MINALLOC a second time
+
+Native bridge checks passed: cold/warm, cross-thread, deadline, cancellation, IDE isolation/busy, recovery.

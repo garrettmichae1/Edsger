@@ -1,6 +1,8 @@
 # Further latency investigation — October 3, 2026
 
-Status: measured prototype and engineering recommendation. App baseline is `e97ae53ea75483466a2c4bc32ab72736487bf8fa`. This investigation adds documentation, synthetic fixtures, measurements, and a standalone probe; it does not enable caching or change runtime settings in the iOS app.
+Follow-up: [automatic prompt reuse implementation](PROMPT_REUSE_IMPLEMENTATION.md) records the subsequent integration and regression results.
+
+Status at the time of this investigation: measured prototype and engineering recommendation. App baseline is `e97ae53ea75483466a2c4bc32ab72736487bf8fa`. This investigation adds documentation, synthetic fixtures, measurements, and a standalone probe; it does not enable caching or change runtime settings in the iOS app.
 
 ## Decision
 

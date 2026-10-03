@@ -1,0 +1,35 @@
+{
+  "baseline": {
+    "calls": 4,
+    "input_tokens": 2633.0,
+    "output_tokens": 155.0,
+    "load_s": 1.814,
+    "prompt_s": 39.784,
+    "generation_s": 11.357,
+    "inference_total_s": 52.964,
+    "header": "/* math.h */\n#ifndef MATH_H\n#define MATH_H\n\nint square(int n) { return n * n; }\n\n#endif /* MATH_H */\n",
+    "steps": [
+      "1: Creating math.h with self-contained square function [\"write_file\"]",
+      "2: Verifying math.h implementation [\"read_file\"]",
+      "3: math.h missing function body [\"replace_text\"]",
+      "4: math.h now has complete function body []"
+    ]
+  },
+  "cached": {
+    "calls": 4,
+    "input_tokens": 2633.0,
+    "output_tokens": 155.0,
+    "load_s": 1.929,
+    "prompt_s": 20.954,
+    "generation_s": 10.88,
+    "inference_total_s": 33.772,
+    "header": "/* math.h */\n#ifndef MATH_H\n#define MATH_H\n\nint square(int n) { return n * n; }\n\n#endif /* MATH_H */\n",
+    "steps": [
+      "1: Creating math.h with self-contained square function [\"write_file\"]",
+      "2: Verifying math.h implementation [\"read_file\"]",
+      "3: math.h missing function body [\"replace_text\"]",
+      "4: math.h now has complete function body []"
+    ]
+  },
+  "reduction_percent": 36.23593384185485
+}

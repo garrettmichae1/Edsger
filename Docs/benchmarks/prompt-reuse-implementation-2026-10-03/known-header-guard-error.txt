@@ -1,0 +1,2 @@
+/tmp/B552E6C4-7EC6-4D3D-80A4-1353D044CFBA/math.h:8:5: error: redefinition of ‘square’
+/tmp/B552E6C4-7EC6-4D3D-80A4-1353D044CFBA/math.h:8:5: note: previous definition of ‘square’ with type ‘int(int)’

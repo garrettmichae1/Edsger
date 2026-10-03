@@ -1,0 +1,22 @@
+TIMING load=1.929 prompt=7.503 generation=4.668 total=14.103 input=495 output=65
+CACHE status=empty reused=0 decoded=495 bytes=61087532
+Scenario 2, hop 1, 14s: Creating math.h with self-contained square function ["write_file"]
+TIMING load=0.000 prompt=6.128 generation=1.680 total=7.810 input=646 output=25
+CACHE status=hit reused=256 decoded=390 bytes=69483308
+Scenario 2, hop 2, 21s: Verifying math.h implementation ["read_file"]
+TIMING load=0.000 prompt=3.141 generation=3.560 total=6.703 input=712 output=50
+CACHE status=hit reused=512 decoded=200 bytes=69483308
+Scenario 2, hop 3, 28s: math.h missing function body ["replace_text"]
+TIMING load=0.000 prompt=4.182 generation=0.972 total=5.156 input=780 output=15
+CACHE status=hit reused=512 decoded=268 bytes=77879084
+Scenario 2, hop 4, 33s: math.h now has complete function body []
+Generated math.h:
+/* math.h */
+#ifndef MATH_H
+#define MATH_H
+
+int square(int n) { return n * n; }
+
+#endif /* MATH_H */
+
+PASS scenario 2 in 33s

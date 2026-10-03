@@ -1,0 +1,18 @@
+PASS exact prefix survives generation; fresh suffix; no redundant capture
+PASS changed contents after checkpoint are decoded freshly
+PASS changed file/project prefix falls back
+PASS truncated history falls back
+PASS model/context replacement invalidates checkpoint
+PASS partial restore failure clears live state and decodes everything
+PASS failed capture is never published
+PASS oversized native state rejected before allocation
+PASS low headroom evicts and skips allocation; recovery can capture again
+PASS disabled baseline uses unchanged full batches
+PASS memory warning evicts and prevents recapture
+PASS warning during capture does not publish state
+PASS cancellation during capture clears state
+PASS cancellation during prefill clears state
+PASS decode failure after capture clears state; next request recovers
+PASS boundary detection requires a complete message and obeys cap
+PASS mode switch safely evicts the single entry
+17 cache regression cases passed

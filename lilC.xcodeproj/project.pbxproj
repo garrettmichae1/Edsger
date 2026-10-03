@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+        A1D000000000000000000001 /* PromptReuseCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1D000000000000000000011 /* PromptReuseCache.swift */; };
         F7B000000000000000000004 = {isa = PBXBuildFile; fileRef = F7C000000000000000000004; };
         F7B000000000000000000003 = {isa = PBXBuildFile; fileRef = F7C000000000000000000003; };
         F7B000000000000000000002 = {isa = PBXBuildFile; fileRef = F7C000000000000000000002; };
@@ -145,6 +146,7 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+        A1D000000000000000000011 /* PromptReuseCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Infrastructure/PromptReuseCache.swift; sourceTree = "<group>"; };
         F7C000000000000000000004 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MathEngineTests.swift; sourceTree = "<group>"; };
         F7C000000000000000000003 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Infrastructure/LocalMathCalculator.swift; sourceTree = "<group>"; };
         F7C000000000000000000002 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Domain/MathPlanning.swift; sourceTree = "<group>"; };
@@ -371,6 +373,7 @@
                 D3C000000000000000000001,
                 D3C000000000000000000000,
                 A1C000000000000000000011 /* LocalAgentClient.swift */,
+                A1D000000000000000000011 /* PromptReuseCache.swift */,
                 B2C000000000000000000103,
                 B2C000000000000000000102,
                 B2C000000000000000000101,
@@ -682,6 +685,7 @@
                 D3B000000000000000000001,
                 D3B000000000000000000000,
                 A1C000000000000000000001 /* LocalAgentClient.swift in Sources */,
+                A1D000000000000000000001 /* PromptReuseCache.swift in Sources */,
                 B2C000000000000000000203,
                 B2C000000000000000000202,
                 B2C000000000000000000201,

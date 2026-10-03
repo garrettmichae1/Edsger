@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 @main
 struct lilCApp: App {
@@ -16,6 +17,9 @@ struct lilCApp: App {
             }
             .lilCPreferredScheme(appearance.colorWay)
             .animation(.easeInOut(duration: 0.28), value: onboarding.hasCompleted)
+            .onReceive(NotificationCenter.default.publisher(for: UIApplication.didReceiveMemoryWarningNotification)) { _ in
+                LocalAgentClient.shared.handleMemoryPressure()
+            }
             .onAppear {
                 _ = SoftwareKeyboard.shared
                 AppHaptics.prepare()

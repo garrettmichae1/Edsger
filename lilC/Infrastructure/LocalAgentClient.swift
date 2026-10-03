@@ -33,6 +33,7 @@ actor LocalAgentClient: AgentCompleting, TutorCompleting, MathPlanning {
     private final class Resources: @unchecked Sendable {
         let model: OpaquePointer
         let context: OpaquePointer
+        let contextID = UUID()
         init(model: OpaquePointer, context: OpaquePointer) {
             self.model = model
             self.context = context
@@ -40,6 +41,12 @@ actor LocalAgentClient: AgentCompleting, TutorCompleting, MathPlanning {
         deinit { llama_free(context); llama_model_free(model) }
     }
     struct Timing: Sendable {
+        var mode = "agent"
+        var outcome = "failed"
+        var tokenizationSeconds = 0.0
+        var firstTokenSeconds: Double?
+        var firstUpdateSeconds: Double?
+        var cache = PromptReuseCache.Metrics()
         var loadSeconds = 0.0
         var promptSeconds = 0.0
         var generationSeconds = 0.0
@@ -54,23 +61,60 @@ actor LocalAgentClient: AgentCompleting, TutorCompleting, MathPlanning {
     private var context: OpaquePointer? { resources?.context }
     private let contextSize: Int32 = 8192
     private let modelURL: URL?
+    private var promptCache: PromptReuseCache
+    private let cachePressure = PromptCachePressure()
+    private var messageEndToken: Int32?
 
-    init(modelURL: URL? = nil) { self.modelURL = modelURL }
+    init(modelURL: URL? = nil, cacheByteLimit: Int = PromptReuseCache.defaultByteLimit) {
+        self.modelURL = modelURL
+        self.promptCache = PromptReuseCache(byteLimit: cacheByteLimit)
+    }
+
+    /// Nonisolated so a UI memory warning does not wait behind synchronous decoding.
+    nonisolated func handleMemoryPressure() {
+        cachePressure.disable()
+        Task { await clearPromptCache() }
+    }
+
+    func clearPromptCache() { promptCache.removeAll() }
+
+    private func checkInferenceCancellation() throws {
+        if cachePressure.isDisabled { promptCache.removeAll() }
+        try Task.checkCancellation()
+    }
+
+    private func finishTiming(_ timing: inout Timing, since start: ContinuousClock.Instant) {
+        if timing.outcome != "success" || Task.isCancelled {
+            promptCache.removeAll()
+            if let context { llama_memory_clear(llama_get_memory(context), false) }
+        }
+        if Task.isCancelled { timing.outcome = "cancelled" }
+        if cachePressure.isDisabled { promptCache.removeAll() }
+        timing.cache.retainedBytes = promptCache.retainedBytes
+        timing.totalSeconds = InferenceClock.seconds(since: start)
+        lastTiming = timing
+        Self.logger.info("inference mode=\(timing.mode, privacy: .public) outcome=\(timing.outcome, privacy: .public) total=\(timing.totalSeconds) load=\(timing.loadSeconds) tokenize=\(timing.tokenizationSeconds) prompt=\(timing.promptSeconds) decode=\(timing.cache.decodeSeconds) restore=\(timing.cache.restoreSeconds) capture=\(timing.cache.captureSeconds) generation=\(timing.generationSeconds) firstToken=\(timing.firstTokenSeconds ?? -1) firstUpdate=\(timing.firstUpdateSeconds ?? -1) inputTokens=\(timing.promptTokens) reusedTokens=\(timing.cache.reusedTokens) decodedTokens=\(timing.cache.decodedTokens) outputTokens=\(timing.generatedTokens) cache=\(timing.cache.outcome, privacy: .public) captureStatus=\(timing.cache.capture, privacy: .public) cacheBytes=\(timing.cache.retainedBytes)")
+    }
+
+    private func preparePrompt(_ tokens: [Int32], timing: inout Timing) throws {
+        guard let resources else { throw LocalAgentError.modelLoadFailed }
+        let start = ContinuousClock().now
+        defer { timing.promptSeconds = InferenceClock.seconds(since: start) }
+        timing.promptTokens = tokens.count
+        let backend = LlamaPromptStateBackend(context: resources.context, contextID: resources.contextID)
+        try promptCache.prepare(tokens: tokens, messageEndToken: messageEndToken,
+                                backend: backend, pressure: cachePressure, metrics: &timing.cache)
+    }
 
     func complete(messagesJSON: Data, toolsJSON: Data) async throws -> AgentCompletion {
         let clock = ContinuousClock()
         let start = clock.now
         var timing = Timing()
-        func seconds(_ duration: Duration) -> Double {
-            Double(duration.components.seconds) + Double(duration.components.attoseconds) / 1e18
-        }
-        defer {
-            timing.totalSeconds = seconds(start.duration(to: clock.now))
-            lastTiming = timing
-            Self.logger.info("completion total=\(timing.totalSeconds) load=\(timing.loadSeconds) prompt=\(timing.promptSeconds) generation=\(timing.generationSeconds) inputTokens=\(timing.promptTokens) outputTokens=\(timing.generatedTokens)")
-        }
+        defer { finishTiming(&timing, since: start) }
+        try checkInferenceCancellation()
         try loadIfNeeded()
-        timing.loadSeconds = seconds(start.duration(to: clock.now))
+        timing.loadSeconds = InferenceClock.seconds(since: start)
+        let tokenizationStart = clock.now
         guard let model, let context else { throw LocalAgentError.modelLoadFailed }
         var messages = (try JSONSerialization.jsonObject(with: messagesJSON)) as? [[String: Any]] ?? []
         let vocab = llama_model_get_vocab(model)
@@ -89,21 +133,10 @@ actor LocalAgentClient: AgentCompleting, TutorCompleting, MathPlanning {
             messages.removeSubrange(userIndices[0]..<userIndices[1])
         }
 
-        timing.promptTokens = Int(count)
-        let promptStart = clock.now
-        llama_memory_clear(llama_get_memory(context), false)
-        for offset in stride(from: 0, to: Int(count), by: 256) {
-            if Task.isCancelled { throw AgentTransportError.cancelled }
-            let end = min(offset + 256, Int(count))
-            let result = tokens.withUnsafeMutableBufferPointer { pointer in
-                llama_decode(context, llama_batch_get_one(pointer.baseAddress! + offset, Int32(end - offset)))
-            }
-            guard result == 0 else { throw LocalAgentError.inferenceFailed }
-        }
-
-        timing.promptSeconds = seconds(promptStart.duration(to: clock.now))
+        timing.tokenizationSeconds = InferenceClock.seconds(since: tokenizationStart)
+        try preparePrompt(Array(tokens.prefix(Int(count))), timing: &timing)
         let generationStart = clock.now
-        defer { timing.generationSeconds = seconds(generationStart.duration(to: clock.now)) }
+        defer { timing.generationSeconds = InferenceClock.seconds(since: generationStart) }
 
         let sampler = try GreedyGrammarSampler(vocab: vocab, grammar: Self.responseGrammar)
 
@@ -111,10 +144,11 @@ actor LocalAgentClient: AgentCompleting, TutorCompleting, MathPlanning {
         var complete = false
         var bytes = [CChar](repeating: 0, count: 4096)
         for _ in 0..<3072 {
-            if Task.isCancelled { throw AgentTransportError.cancelled }
+            try checkInferenceCancellation()
             let token = sampler.sample(context: context)
             if llama_vocab_is_eog(vocab, token) { break }
             timing.generatedTokens += 1
+            if timing.firstTokenSeconds == nil { timing.firstTokenSeconds = InferenceClock.seconds(since: start) }
             let length = llama_token_to_piece(vocab, token, &bytes, Int32(bytes.count), 0, false)
             if length > 0 {
                 generated.append(contentsOf: bytes.prefix(Int(length)).map { UInt8(bitPattern: $0) })
@@ -132,13 +166,24 @@ actor LocalAgentClient: AgentCompleting, TutorCompleting, MathPlanning {
 
         guard complete else { throw LocalAgentError.responseTooLong }
         let response = String(decoding: generated, as: UTF8.self)
-        return try Self.parseResponse(response)
+        let result = try Self.parseResponse(response)
+        try checkInferenceCancellation()
+        timing.outcome = "success"
+        timing.firstUpdateSeconds = InferenceClock.seconds(since: start)
+        return result
     }
 
     /// Plain-text tutoring shares this actor's one model/context, without agent grammar or tools.
     func reply(messages: [TutorMessage], onUpdate: @escaping @Sendable (String) -> Void) async throws -> String {
-        try Task.checkCancellation()
+        let clock = ContinuousClock()
+        let start = clock.now
+        var timing = Timing()
+        timing.mode = "chat"
+        defer { finishTiming(&timing, since: start) }
+        try checkInferenceCancellation()
         try loadIfNeeded()
+        timing.loadSeconds = InferenceClock.seconds(since: start)
+        let tokenizationStart = clock.now
         guard let model, let context else { throw LocalAgentError.modelLoadFailed }
         let vocab = llama_model_get_vocab(model)
         let tokenCapacity = contextSize
@@ -153,29 +198,28 @@ actor LocalAgentClient: AgentCompleting, TutorCompleting, MathPlanning {
             guard users.count > 1 else { throw LocalAgentError.promptTooLong }
             history.removeSubrange(history.startIndex..<users[1])
         }
-        llama_memory_clear(llama_get_memory(context), false)
-        for offset in stride(from: 0, to: Int(count), by: 256) {
-            try Task.checkCancellation()
-            let end = min(offset + 256, Int(count))
-            let result = tokens.withUnsafeMutableBufferPointer { llama_decode(context, llama_batch_get_one($0.baseAddress! + offset, Int32(end - offset))) }
-            guard result == 0 else { throw LocalAgentError.inferenceFailed }
-        }
+        timing.tokenizationSeconds = InferenceClock.seconds(since: tokenizationStart)
+        try preparePrompt(Array(tokens.prefix(Int(count))), timing: &timing)
+        let generationStart = clock.now
+        defer { timing.generationSeconds = InferenceClock.seconds(since: generationStart) }
         let sampler = llama_sampler_chain_init(llama_sampler_chain_default_params())
         defer { llama_sampler_free(sampler) }
         llama_sampler_chain_add(sampler, llama_sampler_init_greedy())
         var generated = Data()
         var piece = [CChar](repeating: 0, count: 4096)
-        let clock = ContinuousClock()
         var lastUpdate = clock.now
         var ended = false
         for _ in 0..<2048 {
-            try Task.checkCancellation()
+            try checkInferenceCancellation()
             let token = llama_sampler_sample(sampler, context, -1)
             if llama_vocab_is_eog(vocab, token) { ended = true; break }
+            timing.generatedTokens += 1
+            if timing.firstTokenSeconds == nil { timing.firstTokenSeconds = InferenceClock.seconds(since: start) }
             let length = llama_token_to_piece(vocab, token, &piece, Int32(piece.count), 0, false)
             if length > 0 { generated.append(contentsOf: piece.prefix(Int(length)).map { UInt8(bitPattern: $0) }) }
             // A token may end partway through a UTF-8 character. Publish only valid text.
             if lastUpdate.duration(to: clock.now) >= .milliseconds(60), let text = String(data: generated, encoding: .utf8) {
+                if timing.firstUpdateSeconds == nil { timing.firstUpdateSeconds = InferenceClock.seconds(since: start) }
                 onUpdate(text); lastUpdate = clock.now
             }
             var next = token
@@ -184,18 +228,30 @@ actor LocalAgentClient: AgentCompleting, TutorCompleting, MathPlanning {
         var text = String(decoding: generated, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { throw LocalAgentError.invalidResponse }
         if !ended { text += "\n\n*Response length reached. Ask me to continue.*" }
+        try checkInferenceCancellation()
+        if timing.firstUpdateSeconds == nil { timing.firstUpdateSeconds = InferenceClock.seconds(since: start) }
         onUpdate(text)
+        try checkInferenceCancellation()
+        timing.outcome = "success"
         return text
     }
 
     /// Short grammar-constrained planning pass on the same actor-owned model/context.
     func mathPlan(messages: [TutorMessage]) async throws -> MathPlan {
-        try Task.checkCancellation()
+        let clock = ContinuousClock()
+        let start = clock.now
+        var timing = Timing()
+        timing.mode = "math"
+        defer { finishTiming(&timing, since: start) }
+        try checkInferenceCancellation()
         guard let latest = messages.last, latest.text.utf8.count <= 8000 else {
+            timing.outcome = "success"
             return .clarify("Please send a shorter question with one expression or equation to calculate.")
         }
         try loadIfNeeded()
-        try Task.checkCancellation()
+        timing.loadSeconds = InferenceClock.seconds(since: start)
+        let tokenizationStart = clock.now
+        try checkInferenceCancellation()
         guard let model, let context else { throw LocalAgentError.modelLoadFailed }
         let vocab = llama_model_get_vocab(model)
         let tokenCapacity = contextSize
@@ -205,28 +261,28 @@ actor LocalAgentClient: AgentCompleting, TutorCompleting, MathPlanning {
             llama_tokenize(vocab, $0, Int32(strlen($0)), &tokens, tokenCapacity, true, true)
         }
         guard count > 0, count < contextSize - 512 else { throw LocalAgentError.promptTooLong }
-        llama_memory_clear(llama_get_memory(context), false)
-        for offset in stride(from: 0, to: Int(count), by: 256) {
-            try Task.checkCancellation()
-            let end = min(offset + 256, Int(count))
-            let status = tokens.withUnsafeMutableBufferPointer {
-                llama_decode(context, llama_batch_get_one($0.baseAddress! + offset, Int32(end - offset)))
-            }
-            guard status == 0 else { throw LocalAgentError.inferenceFailed }
-        }
+        timing.tokenizationSeconds = InferenceClock.seconds(since: tokenizationStart)
+        try preparePrompt(Array(tokens.prefix(Int(count))), timing: &timing)
+        let generationStart = clock.now
+        defer { timing.generationSeconds = InferenceClock.seconds(since: generationStart) }
         let sampler = try GreedyGrammarSampler(vocab: vocab, grammar: MathPlannerPrompt.grammar)
         var data = Data()
         var bytes = [CChar](repeating: 0, count: 4096)
         for _ in 0..<512 {
-            try Task.checkCancellation()
+            try checkInferenceCancellation()
             let token = sampler.sample(context: context)
             if llama_vocab_is_eog(vocab, token) { break }
+            timing.generatedTokens += 1
+            if timing.firstTokenSeconds == nil { timing.firstTokenSeconds = InferenceClock.seconds(since: start) }
             let length = llama_token_to_piece(vocab, token, &bytes, Int32(bytes.count), 0, false)
             guard length >= 0, Int(length) <= bytes.count else { throw LocalAgentError.invalidResponse }
             data.append(contentsOf: bytes.prefix(Int(length)).map { UInt8(bitPattern: $0) })
             guard data.count <= 6144 else { throw LocalAgentError.responseTooLong }
             if data.last == 125, (try? JSONSerialization.jsonObject(with: data)) != nil {
-                return try MathPlan.parse(data)
+                let plan = try MathPlan.parse(data)
+                try checkInferenceCancellation()
+                timing.outcome = "success"
+                return plan
             }
             var next = token
             guard llama_decode(context, llama_batch_get_one(&next, 1)) == 0 else { throw LocalAgentError.inferenceFailed }
@@ -257,7 +313,14 @@ actor LocalAgentClient: AgentCompleting, TutorCompleting, MathPlanning {
             llama_model_free(loaded)
             throw LocalAgentError.contextFailed
         }
+        promptCache.removeAll()
         resources = Resources(model: loaded, context: loadedContext)
+        var endToken = [Int32](repeating: 0, count: 8)
+        let marker = "<|im_end|>"
+        let endCount = marker.withCString {
+            llama_tokenize(llama_model_get_vocab(loaded), $0, Int32(marker.utf8.count), &endToken, 8, false, true)
+        }
+        messageEndToken = endCount == 1 ? endToken[0] : nil
     }
 
     static func prompt(messages: [[String: Any]]) -> String {
@@ -408,5 +471,37 @@ final class GreedyGrammarSampler {
         // Rejected candidate: retain the original grammar-first selection over ALL tokens.
         // sample() accepts exactly once; do not accept again in this branch.
         return llama_sampler_sample(constrained, context, -1)
+    }
+}
+
+/// Native state stays bound to a single actor-owned model/context lifetime.
+private struct LlamaPromptStateBackend: PromptStateBackend {
+    let context: OpaquePointer
+    let contextID: UUID
+    func clear() { llama_memory_clear(llama_get_memory(context), false) }
+    func decode(_ tokens: ArraySlice<Int32>) throws {
+        var batch = Array(tokens)
+        let result = batch.withUnsafeMutableBufferPointer {
+            llama_decode(context, llama_batch_get_one($0.baseAddress!, Int32($0.count)))
+        }
+        guard result == 0 else { throw LocalAgentError.inferenceFailed }
+    }
+    func synchronize() { llama_synchronize(context) }
+    func canCapture(bytes: Int) -> Bool {
+        #if os(iOS)
+        // Advisory app-limit headroom, queried afresh; never consume the margin.
+        // Imported from os/proc.h through the app's bridging header.
+        let reserve = 256 * 1024 * 1024
+        return os_proc_available_memory() > bytes + reserve
+        #else
+        return true // Host benchmarks use the explicit byte budget.
+        #endif
+    }
+    func stateSize() -> Int { llama_state_seq_get_size(context, 0) }
+    func save(into buffer: UnsafeMutableRawBufferPointer) -> Int {
+        llama_state_seq_get_data(context, buffer.bindMemory(to: UInt8.self).baseAddress!, buffer.count, 0)
+    }
+    func restore(from buffer: UnsafeRawBufferPointer) -> Int {
+        llama_state_seq_set_data(context, buffer.bindMemory(to: UInt8.self).baseAddress!, buffer.count, 0)
     }
 }
