@@ -143,6 +143,7 @@ final class LocalCWorkspace {
         didSet { invalidateStaleEditorDiagnostic() }
     }
     private var editorDiagnosticSnapshot: EditorDiagnosticSnapshot?
+    private(set) var agentRecoveryError: String?
     var folders: [LocalCFolder]
     var selectedFileID: String
     var browsePath = ""
@@ -170,6 +171,8 @@ final class LocalCWorkspace {
         self.directoryURL = directoryURL ?? Self.defaultDirectoryURL(fileManager: fileManager, language: language)
         self.lessonProgress = LessonProgressStore(defaults: defaults)
         self.quizProgress = QuizProgressStore(defaults: defaults)
+        do { try AgentProjectHistoryStore(workspaceURL: self.directoryURL, fileManager: fileManager).recoverPendingRestore() }
+        catch { agentRecoveryError = error.localizedDescription }
         Self.prepareDirectory(self.directoryURL, fileManager: fileManager)
         let loadedFiles = Self.loadFiles(
             directoryURL: self.directoryURL,
@@ -555,6 +558,50 @@ final class LocalCWorkspace {
         let parts = path.split(separator: "/").map(String.init)
         guard parts.allSatisfy({ !$0.isEmpty && $0 != "." && $0 != ".." }) else { return nil }
         return parts.joined(separator: "/")
+    }
+
+    var agentHistoryStore: AgentProjectHistoryStore {
+        AgentProjectHistoryStore(workspaceURL: directoryURL, fileManager: fileManager)
+    }
+
+    func makeAgentCheckpoint(project: String, request: String) throws -> AgentCheckpointInfo {
+        guard !isRunning else { throw AgentWorkspaceRecoveryError.running }
+        if let agentRecoveryError { throw AgentWorkspaceRecoveryError.storage(agentRecoveryError) }
+        try verifyAgentSavedSources(project: project)
+        return try agentHistoryStore.capture(project: project, request: request, selectedFile: selectedFileID).info
+    }
+
+    private func verifyAgentSavedSources(project: String) throws {
+        // A failed editor save must not produce a backup of different contents
+        // than the source the user is looking at.
+        for file in files where project.isEmpty || file.relativePath.hasPrefix(project + "/") {
+            guard try Data(contentsOf: fileURL(for: file.relativePath)) == Data(file.code.utf8) else {
+                throw AgentWorkspaceRecoveryError.unsaved
+            }
+        }
+    }
+
+    func restoreAgentCheckpoint(_ info: AgentCheckpointInfo) throws -> AgentCheckpointInfo {
+        guard !isRunning else { throw AgentWorkspaceRecoveryError.running }
+        if let agentRecoveryError { throw AgentWorkspaceRecoveryError.storage(agentRecoveryError) }
+        try verifyAgentSavedSources(project: info.project)
+        let checkpoint = try agentHistoryStore.checkpoint(id: info.id)
+        guard checkpoint.project == info.project else { throw AgentProjectHistoryError.invalidCheckpoint }
+        let recovery = try agentHistoryStore.restore(checkpoint, currentSelection: selectedFileID)
+        files = Self.loadFilesFromDisk(directoryURL: directoryURL, fileManager: fileManager, language: language)
+        ensureNotEmpty()
+        refreshFolders()
+        selectedFileID = files.first(where: { $0.id == checkpoint.selectedFile })?.id
+            ?? files.first(where: { checkpoint.project.isEmpty || $0.relativePath.hasPrefix(checkpoint.project + "/") })?.id ?? files[0].id
+        defaults.set(selectedFileID, forKey: selectedFileNameKey)
+        browsePath = checkpoint.project
+        editorDiagnosticSnapshot = nil
+        lastErrorJump = nil
+        lastRunFailed = false
+        lastRunNeedsFillIn = false
+        isWaitingForInput = false
+        output = "Project restored. Run your code again to see updated output."
+        return recovery.info
     }
 
     func agentListFilesSummary() -> String {

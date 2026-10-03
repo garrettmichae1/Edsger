@@ -22,6 +22,24 @@ final class AgentSession {
     private(set) var isThinking = false
     var draft = ""
     var statusLine = "Ready"
+    private(set) var conversationID = UUID()
+    private(set) var savedConversations: [AgentSavedConversation] = []
+    private(set) var restorePoints: [AgentCheckpointInfo] = []
+    private(set) var notice: String?
+    private var historyWritable = true
+    private var taskCheckpointID: UUID?
+    private var ownsProgramRun = false
+
+    var conversationHistory: [AgentSavedConversation] {
+        savedConversations.filter { $0.project == projectRoot }.sorted { $0.updatedAt > $1.updatedAt }
+    }
+    var canRestore: Bool { !isThinking && !workspace.isRunning && !restorePoints.isEmpty }
+    var canManageConversations: Bool { !isThinking && historyWritable }
+    var projectTitle: String { projectRoot.isEmpty ? workspace.language.name + " workspace" : (projectRoot as NSString).lastPathComponent }
+    var restoreScopeDescription: String {
+        projectRoot.isEmpty ? "the entire " + workspace.language.name + " workspace, including its project folders" : projectTitle + " and its nested folders"
+    }
+    var workspaceProjectPath: String { workspace.currentProjectPath }
 
     private let settings: AgentSettingsStore
     private let workspace: LocalCWorkspace
@@ -40,37 +58,126 @@ final class AgentSession {
         self.client = client
         self.savesHistory = savesHistory
         projectRoot = workspace.currentProjectPath
-        messages = savesHistory ? Self.loadMessages(project: projectRoot, language: workspace.language) : []
+        if savesHistory {
+            do { savedConversations = try workspace.agentHistoryStore.loadConversations() }
+            catch { historyWritable = false; notice = "Conversation history could not be read. It has not been overwritten." }
+        }
+        var selectedConversation: UUID?
+        if savesHistory && historyWritable {
+            do { selectedConversation = try workspace.agentHistoryStore.selectedConversation(project: projectRoot) }
+            catch { historyWritable = false; notice = "The active conversation could not be read. History has not been overwritten." }
+        }
+        if let selectedConversation {
+            conversationID = selectedConversation
+            messages = conversationHistory.first(where: { $0.id == selectedConversation })?.messages ?? []
+        } else if let recent = conversationHistory.first {
+            conversationID = recent.id
+            messages = recent.messages
+        } else {
+            messages = savesHistory ? Self.loadMessages(project: projectRoot, language: workspace.language) : []
+        }
         if messages.isEmpty { messages = [
             AgentChatMessage(
                 role: .assistant,
                 text: "I can read and edit your \(workspace.language.name) project, create files, run code, and help fix errors. Everything runs on this iPhone."
             )
         ] }
+        reloadRestorePoints()
+        persistMessages()
     }
 
     func newConversation() {
+        guard canManageConversations else { return }
+        activateCurrentProject()
+        persistMessages()
         stop()
+        conversationID = UUID()
         messages = []
+        draft = ""
+        notice = nil
         statusLine = "Ready"
+    }
+
+    func activateCurrentProject() {
+        guard !isThinking, projectRoot != workspace.currentProjectPath else { return }
+        persistMessages()
+        projectRoot = workspace.currentProjectPath
+        var selected: UUID?
+        if savesHistory && historyWritable {
+            do { selected = try workspace.agentHistoryStore.selectedConversation(project: projectRoot) }
+            catch { historyWritable = false; notice = "The active conversation could not be read. History has not been overwritten." }
+        }
+        let recent = selected.flatMap { id in conversationHistory.first(where: { $0.id == id }) } ?? (selected == nil ? conversationHistory.first : nil)
+        conversationID = selected ?? recent?.id ?? UUID()
+        messages = recent?.messages ?? (selected == nil && savesHistory ? Self.loadMessages(project: projectRoot, language: workspace.language) : [])
+        draft = ""
+        if historyWritable { notice = nil }
+        statusLine = "Ready"
+        reloadRestorePoints()
+        persistMessages()
+    }
+
+    func openConversation(_ conversation: AgentSavedConversation) {
+        guard canManageConversations, conversation.project == projectRoot else { return }
+        persistMessages()
+        conversationID = conversation.id
+        messages = conversation.messages
+        draft = ""
+        notice = nil
+        statusLine = "Ready"
+    }
+
+    func restore(_ point: AgentCheckpointInfo) {
+        guard canRestore, point.project == projectRoot else { return }
+        do {
+            _ = try workspace.restoreAgentCheckpoint(point)
+            // A restored project invalidates the model's previous tool context.
+            // Archive it, then start a clean turn rather than suggesting edits
+            // that remain applied after they were rolled back.
+            persistMessages()
+            conversationID = UUID()
+            messages = []
+            draft = ""
+            statusLine = "Ready"
+            notice = point.isRecovery ? "Rollback undone. Your previous files are back." : "Project restored. A fresh chat is ready for the restored code."
+            reloadRestorePoints()
+        } catch { notice = "Couldn’t restore the project: " + error.localizedDescription }
+    }
+
+    private func reloadRestorePoints() {
+        do { restorePoints = try workspace.agentHistoryStore.checkpoints(project: projectRoot) }
+        catch { restorePoints = []; notice = "Restore points could not be read: " + error.localizedDescription }
+    }
+
+    private func finishCheckpoint() {
+        if let id = taskCheckpointID {
+            do {
+                if !workspace.isRunning, try !workspace.agentHistoryStore.hasChanges(since: id) { try workspace.agentHistoryStore.discard(id: id) }
+            } catch { notice = "The restore point was kept, but project changes could not be compared." }
+            workspace.agentHistoryStore.prune(project: projectRoot)
+        }
+        taskCheckpointID = nil
+        ownsProgramRun = false
+        reloadRestorePoints()
     }
 
     func stop() {
         runID = UUID()
         inferenceStatusID = nil
         runTask?.cancel()
+        if ownsProgramRun && workspace.isRunning { workspace.stopLiveRun() }
         isThinking = false
         statusLine = "Stopped"
+        finishCheckpoint()
     }
 
     func send() {
         let prompt = draft.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !prompt.isEmpty, !isThinking else { return }
         guard settings.canRunAgents else { return }
-        if projectRoot != workspace.currentProjectPath {
-            projectRoot = workspace.currentProjectPath
-            messages = []
-        }
+        guard !workspace.isRunning else { notice = "Stop the running program before starting another agent request."; return }
+        activateCurrentProject()
+        notice = historyWritable ? nil : "History is unavailable. This request won’t be saved."
         draft = ""
         messages.append(AgentChatMessage(role: .user, text: prompt))
         if let clarification = AgentRequestPolicy.clarification(for: prompt, currentFile: workspace.currentFile.name) {
@@ -86,7 +193,11 @@ final class AgentSession {
     }
 
     private func loop(id: UUID) async {
-        defer { if runID == id { isThinking = false; inferenceStatusID = nil } }
+        defer {
+            // A cancelled task must finish its checkpoint bookkeeping before
+            // a later task gets a new checkpoint ID.
+            if runID == id { isThinking = false; inferenceStatusID = nil; finishCheckpoint() }
+        }
 
         do {
             var wire = wireMessages()
@@ -184,6 +295,16 @@ final class AgentSession {
                         output = "Change not applied. Read the existing file \(path) below before retrying. Re-evaluate your change against these current contents:\n" + contents
                         inspectedFiles[path] = contents
                     } else {
+                        if ["write_file", "replace_text", "create_folder", "delete_file", "delete_folder", "run_file", "run_current"].contains(call.name) {
+                            guard !workspace.isRunning else { throw AgentWorkspaceRecoveryError.running }
+                            if taskCheckpointID == nil {
+                                let request = messages.last(where: { $0.role == .user })?.text ?? "Agent change"
+                                let checkpoint = try workspace.makeAgentCheckpoint(project: projectRoot, request: request)
+                                taskCheckpointID = checkpoint.id
+                                reloadRestorePoints()
+                            }
+                        }
+                        if call.name == "run_file" || call.name == "run_current" { ownsProgramRun = true }
                         output = await executeTool(call)
                         try Task.checkCancellation()
                         guard id == runID else { return }
@@ -274,10 +395,22 @@ final class AgentSession {
 
     private func persistMessages() {
         guard savesHistory else { return }
-        let url = Self.historyURL(language: workspace.language)
-        try? FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
-        guard let data = try? JSONEncoder().encode(SavedConversation(project: projectRoot, messages: Array(messages.suffix(100)))) else { return }
-        try? data.write(to: url, options: .atomic)
+        guard historyWritable else { return }
+        // Remember an empty fresh chat across restart without adding an empty
+        // history row or evicting the conversation that preceded it.
+        let hasRequest = messages.contains(where: { $0.role == .user })
+        if hasRequest {
+            let record = AgentSavedConversation(id: conversationID, project: projectRoot, updatedAt: Date(), messages: Array(messages.suffix(100)))
+            if let index = savedConversations.firstIndex(where: { $0.id == conversationID }) { savedConversations[index] = record }
+            else { savedConversations.append(record) }
+            let keep = Set(conversationHistory.prefix(20).map(\.id))
+            savedConversations.removeAll { $0.project == projectRoot && !keep.contains($0.id) }
+        }
+        do {
+            try workspace.agentHistoryStore.selectConversation(conversationID, project: projectRoot)
+            if hasRequest { try workspace.agentHistoryStore.saveConversations(savedConversations) }
+        }
+        catch { notice = "This conversation could not be saved. Keep the app open and try again." }
     }
 
     private func systemPrompt() -> String {
@@ -293,6 +426,7 @@ final class AgentSession {
         Current file (project-relative): \(current)
         Current project: \(project)
         All paths in tool calls are relative to that project folder. Do not access other projects.
+        Conversation tool results describe past operations. The user may have edited or restored files since then; inspect current source before changing it.
         Folders:
         \(folders)
         Files:

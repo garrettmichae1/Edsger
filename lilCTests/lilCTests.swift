@@ -603,6 +603,71 @@ struct lilCTests {
     }
 
     @MainActor
+    @Test func agentCheckpointPrecedesWritesAndRollbackKeepsConversationHistory() async throws {
+        let parent = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: parent) }
+        let suiteName = "agent-rollback-" + UUID().uuidString
+        let suite = UserDefaults(suiteName: suiteName)!
+        defer { suite.removePersistentDomain(forName: suiteName) }
+        let workspace = LocalCWorkspace(defaults: suite, directoryURL: parent.appendingPathComponent("workspace"))
+        let project = "project-" + UUID().uuidString
+        let original = "int main(void) { return 0; }\r\n"
+        workspace.agentWriteFile(project + "/main.c", contents: original)
+        let client = ScriptedAgentClient(responses: [
+            .init(assistantText: "Editing", toolCalls: [
+                agentCall("write_file", ["path": "main.c", "contents": "int main(void) { return 2; }\n"]),
+                agentCall("write_file", ["path": "include/helper.h", "contents": "int helper(void);\n"])
+            ]),
+            .init(assistantText: "Done", toolCalls: [])
+        ])
+        let session = AgentSession(workspace: workspace, settings: AgentSettingsStore(defaults: suite), client: client)
+        session.draft = "Update the program and add a header."
+        session.send()
+        await session.waitUntilIdle()
+        #expect(session.restorePoints.count == 1)
+        let point = try #require(session.restorePoints.first)
+        let snapshot = try workspace.agentHistoryStore.checkpoint(id: point.id)
+        #expect(snapshot.contents["main.c"] == Data(original.utf8))
+        #expect(snapshot.contents["include/helper.h"] == nil)
+        let conversationID = session.conversationID
+        session.newConversation()
+        #expect(session.messages.isEmpty)
+        #expect(session.conversationHistory.contains(where: { $0.id == conversationID }))
+        session.restore(point)
+        #expect(workspace.agentReadFile(project + "/main.c") == original)
+        #expect(workspace.agentReadFile(project + "/include/helper.h") == nil)
+        #expect(session.messages.isEmpty)
+        #expect(session.restorePoints.contains(where: { $0.isRecovery }))
+        let reopened = AgentSession(workspace: workspace, settings: AgentSettingsStore(defaults: suite), client: client)
+        #expect(reopened.conversationHistory.contains(where: { $0.id == conversationID }))
+    }
+
+    @MainActor
+    @Test func failedAgentCheckpointBlocksTheFirstWrite() async throws {
+        let parent = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: parent) }
+        let suiteName = "agent-rollback-failure-" + UUID().uuidString
+        let suite = UserDefaults(suiteName: suiteName)!
+        defer { suite.removePersistentDomain(forName: suiteName) }
+        let workspace = LocalCWorkspace(defaults: suite, directoryURL: parent.appendingPathComponent("workspace"))
+        let path = workspace.currentFile.relativePath
+        let original = workspace.currentFile.code
+        // A file where the metadata directory should be simulates unavailable storage.
+        try Data("blocked".utf8).write(to: workspace.agentHistoryStore.metadataURL)
+        let client = ScriptedAgentClient(responses: [
+            .init(assistantText: "Editing", toolCalls: [agentCall("write_file", ["path": path, "contents": "overwritten"])])
+        ])
+        let session = AgentSession(workspace: workspace, settings: AgentSettingsStore(defaults: suite), client: client, savesHistory: false)
+        session.draft = "Change this program."
+        session.send()
+        await session.waitUntilIdle()
+        #expect(session.statusLine == "Error")
+        #expect(workspace.currentFile.code == original)
+        #expect(try Data(contentsOf: workspace.currentFileURL) == Data(original.utf8))
+        #expect(session.restorePoints.isEmpty)
+    }
+
+    @MainActor
     @Test func agentSessionRejectsUninspectedEditsAndTraversal() async {
         let suite = UserDefaults(suiteName: "lilc-tests-\(UUID().uuidString)")!
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)

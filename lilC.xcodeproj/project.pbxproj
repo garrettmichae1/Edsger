@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+        F9B000000000000000000001 = {isa = PBXBuildFile; fileRef = F9C000000000000000000001; };
         F8B000000000000000000011 = {isa = PBXBuildFile; fileRef = F8C000000000000000000011; };
         F8B000000000000000000010 = {isa = PBXBuildFile; fileRef = F8C000000000000000000010; };
         F8B000000000000000000005 /* TreeSitterLuaRunestone in Frameworks */ = {isa = PBXBuildFile; productRef = F8D000000000000000000005; };
@@ -153,6 +154,7 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+        F9C000000000000000000001 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Domain/AgentProjectHistory.swift"; sourceTree = "<group>"; };
         F8C000000000000000000011 = {isa = PBXFileReference; lastKnownFileType = text; path = "Resources/Runestone-LICENSES.txt"; sourceTree = "<group>"; };
         F8C000000000000000000010 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Domain/EditorSupport.swift"; sourceTree = "<group>"; };
         A1D000000000000000000011 /* PromptReuseCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Infrastructure/PromptReuseCache.swift; sourceTree = "<group>"; };
@@ -344,6 +346,7 @@
 			children = (
                 F8C000000000000000000011,
                 F8C000000000000000000010,
+                F9C000000000000000000001,
                 F5C000000000000000000002,
                 F5C000000000000000000003,
                 F5C000000000000000000004,
@@ -675,6 +678,7 @@
 			buildActionMask = 2147483647;
 			files = (
                 F8B000000000000000000010,
+                F9B000000000000000000001,
                 F5B000000000000000000002,
                 F5B000000000000000000003,
                 E4B000000000000000000002,

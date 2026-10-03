@@ -177,6 +177,9 @@ struct AgentChatScreen: View {
 struct AgentConversationView: View {
     @Bindable var session: AgentSession
     @FocusState private var composerFocused: Bool
+    @State private var showsHistory = false
+    @State private var showsRestorePoints = false
+    @State private var pendingRestore: AgentCheckpointInfo?
 
     private var visibleMessages: [AgentChatMessage] {
         AgentTranscriptPresentation.visibleMessages(session.messages)
@@ -184,7 +187,34 @@ struct AgentConversationView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            ConversationTranscript(conversationID: session.messages.first?.id,
+            HStack(spacing: 0) {
+                Spacer()
+                if !session.restorePoints.isEmpty {
+                    Button { showsRestorePoints = true } label: {
+                        Image(systemName: "arrow.uturn.backward").frame(width: 44, height: 44)
+                    }
+                    .accessibilityLabel("Project restore points")
+                    .accessibilityIdentifier("agent-restore-points")
+                    .disabled(session.isThinking)
+                }
+                Button { showsHistory = true } label: {
+                    Image(systemName: "clock").frame(width: 44, height: 44)
+                }
+                .accessibilityLabel("Agent conversation history")
+                .accessibilityIdentifier("agent-history")
+                .disabled(!session.canManageConversations)
+                Button { session.newConversation(); composerFocused = true } label: {
+                    Image(systemName: "square.and.pencil").frame(width: 44, height: 44)
+                }
+                .accessibilityLabel("New agent chat")
+                .accessibilityIdentifier("agent-new-chat")
+                .disabled(!session.canManageConversations)
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(AppPalette.silver)
+            .font(.system(size: 15))
+
+            ConversationTranscript(conversationID: session.conversationID,
                                    revision: session.messages.count,
                                    sentMessageID: session.messages.last(where: { $0.role == .user })?.id) {
                 LazyVStack(alignment: .leading, spacing: 12) {
@@ -214,6 +244,10 @@ struct AgentConversationView: View {
                             .font(.footnote)
                             .foregroundStyle(AppPalette.silver)
                     }
+                    if let notice = session.notice {
+                        Text(notice).font(.footnote).foregroundStyle(AppPalette.silver)
+                            .accessibilityIdentifier("agent-notice")
+                    }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.horizontal, 4)
@@ -226,6 +260,83 @@ struct AgentConversationView: View {
             composer
         }
         .background(AppPalette.card)
+        .onAppear { session.activateCurrentProject() }
+        .onChange(of: session.workspaceProjectPath) { _, _ in session.activateCurrentProject() }
+        .sheet(isPresented: $showsHistory) { historySheet }
+        .sheet(isPresented: $showsRestorePoints) { restoreSheet }
+    }
+
+    private var historySheet: some View {
+        NavigationStack {
+            List {
+                if session.conversationHistory.isEmpty {
+                    Text("Your agent chats for this project will appear here.").foregroundStyle(.secondary)
+                }
+                ForEach(session.conversationHistory) { conversation in
+                    Button {
+                        session.openConversation(conversation)
+                        showsHistory = false
+                    } label: {
+                        HStack {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(conversation.title).foregroundStyle(.primary).lineLimit(2)
+                                Text(conversation.updatedAt, style: .date).font(.caption).foregroundStyle(.secondary)
+                            }
+                            Spacer()
+                            if conversation.id == session.conversationID { Image(systemName: "checkmark") }
+                        }
+                    }
+                }
+            }
+            .navigationTitle("Agent chats")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { showsHistory = false } } }
+            .safeAreaInset(edge: .bottom) {
+                Text(session.projectTitle).font(.footnote).foregroundStyle(.secondary).padding(10)
+            }
+        }
+    }
+
+    private var restoreSheet: some View {
+        NavigationStack {
+            List {
+                Section {
+                    Text("Restore " + session.restoreScopeDescription + " to before an agent change. Later edits in that scope will also be replaced; a recovery copy lets you undo the rollback.")
+                        .font(.footnote).foregroundStyle(.secondary)
+                    if !session.canRestore { Text("Stop the running program before restoring.").font(.footnote).foregroundStyle(.secondary) }
+                }
+                Section(session.projectTitle) {
+                    ForEach(session.restorePoints) { point in
+                        Button { pendingRestore = point } label: {
+                            VStack(alignment: .leading, spacing: 5) {
+                                Text(point.isRecovery ? "Undo rollback" : "Before: " + point.request)
+                                    .foregroundStyle(.primary).lineLimit(3)
+                                Text(point.createdAt, format: .dateTime.month().day().hour().minute())
+                                    .font(.caption).foregroundStyle(.secondary)
+                            }
+                        }
+                        .disabled(!session.canRestore)
+                    }
+                }
+            }
+            .navigationTitle("Restore points")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { showsRestorePoints = false } } }
+            .confirmationDialog("Restore this project?", isPresented: Binding(
+                get: { pendingRestore != nil }, set: { if !$0 { pendingRestore = nil } }
+            ), titleVisibility: .visible) {
+                if let point = pendingRestore {
+                    Button("Restore project", role: .destructive) {
+                        session.restore(point)
+                        pendingRestore = nil
+                        showsRestorePoints = false
+                    }
+                }
+                Button("Cancel", role: .cancel) { pendingRestore = nil }
+            } message: {
+                Text("Replaces files in " + session.restoreScopeDescription + " with the selected restore point. A recovery copy preserves the current files.")
+            }
+        }
     }
 
     private var composer: some View {

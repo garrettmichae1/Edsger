@@ -61,6 +61,7 @@ assert expected <= products.keys()
 linked = {objects[ref].get('productRef') for ref in objects['100000000000000000000601']['files']}
 assert {products[p] for p in expected} <= linked
 for name, phase in [('Domain/EditorSupport.swift', '100000000000000000000901'),
+                    ('Domain/AgentProjectHistory.swift', '100000000000000000000901'),
                     ('Resources/Runestone-LICENSES.txt', '100000000000000000000A01')]:
     refs = {key for key, obj in objects.items() if obj.get('path') == name}
     assert len(refs) == 1 and (root / 'lilC' / name).is_file()
