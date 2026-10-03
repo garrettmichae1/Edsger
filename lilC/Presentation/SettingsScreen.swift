@@ -11,6 +11,8 @@ struct SettingsScreen: View {
     @State private var document: LegalDocument?
     @State private var confirmEraseAll = false
     @State private var showsTour = false
+    @State private var showsModels = false
+    @State private var models = ChatModelStore.shared
 
     // Match the quiet surfaces used by Chat and its Info sheet.
     private var background: Color { scheme == .dark ? Color(white: 0.055) : .white }
@@ -29,6 +31,7 @@ struct SettingsScreen: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 28) {
                     appearanceSection
+                    modelsSection
                     editorSection
                     if AgentRuntimeConfig.surfacesVisibleInThisRelease {
                         agentSection
@@ -56,6 +59,8 @@ struct SettingsScreen: View {
         .tint(.blue)
         .lilCPreferredScheme(appearance.colorWay)
         .accessibilityIdentifier("settings.root")
+        .sheet(isPresented: $showsModels) { ChatModelPicker() }
+        .task { await models.refresh() }
         .sheet(item: $document) { item in
             LegalDocumentView(document: item)
         }
@@ -167,6 +172,16 @@ struct SettingsScreen: View {
         .background(dark ? Color(white: 0.075) : Color.white, in: RoundedRectangle(cornerRadius: 12))
         .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.gray.opacity(0.18)))
         .accessibilityHidden(true)
+    }
+
+    private var modelsSection: some View {
+        settingsGroup("Chat") {
+            Button { showsModels = true } label: {
+                navigationRow("Model · " + models.selected.title, symbol: "cpu")
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("settings.models")
+        }
     }
 
     private var editorSection: some View {
@@ -364,7 +379,13 @@ private enum LegalDocument: String, Identifiable {
         THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
 
         lilC source (except third-party components) is licensed under the Apache License 2.0. See LICENSE, NOTICE, and TRADEMARKS.md in the project repository.
-        """ + editorLicenses + pythonLicenses
+        """ + modelLicenses + editorLicenses + pythonLicenses
+    }
+
+    private var modelLicenses: String {
+        guard let url = Bundle.main.url(forResource: "LiquidAI-LICENSE", withExtension: "txt"),
+              let text = try? String(contentsOf: url, encoding: .utf8) else { return "" }
+        return "\n\nEdsger mini · Liquid AI LFM2.5-1.2B-Instruct\nUnmodified optional model weights, provided by Liquid AI.\n\n" + text
     }
 
     private var editorLicenses: String {

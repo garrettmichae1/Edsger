@@ -10,6 +10,7 @@ trap 'rm -rf "$TEST_DIR"' EXIT
 swiftc -swift-version 6 -parse-as-library -O -F "$FRAMEWORK_DIR" -framework llama \
   -Xlinker -rpath -Xlinker "$FRAMEWORK_DIR" \
   "$ROOT_DIR/lilC/Domain/AgentModels.swift" \
+  "$ROOT_DIR/lilC/Domain/ChatModel.swift" \
   "$ROOT_DIR/lilC/Domain/TutorModels.swift" \
   "$ROOT_DIR/lilC/Domain/MathCalculation.swift" \
   "$ROOT_DIR/lilC/Domain/MathPlanning.swift" \

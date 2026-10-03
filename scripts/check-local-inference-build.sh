@@ -20,10 +20,13 @@ trap 'rm -rf "$TEST_DIR"' EXIT
 xcrun swiftc -swift-version 6 -strict-concurrency=complete -parse-as-library \
   -O -whole-module-optimization -c -F "$FRAMEWORK_DIR" \
   "$ROOT_DIR/lilC/Domain/AgentModels.swift" \
+  "$ROOT_DIR/lilC/Domain/ChatModel.swift" \
   "$ROOT_DIR/lilC/Domain/TutorModels.swift" \
   "$ROOT_DIR/lilC/Domain/MathCalculation.swift" \
   "$ROOT_DIR/lilC/Domain/MathPlanning.swift" \
   "$ROOT_DIR/lilC/Infrastructure/PromptReuseCache.swift" \
   "$ROOT_DIR/lilC/Infrastructure/LocalAgentClient.swift" \
+  "$ROOT_DIR/lilC/Application/ChatModelStore.swift" \
+  "$ROOT_DIR/lilC/Infrastructure/LocalModelFiles.swift" \
   -o "$TEST_DIR/inference.o"
 echo "Shared inference code compiled with Apple's OSLog. The iOS app build remains a separate check."

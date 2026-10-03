@@ -26,3 +26,10 @@ Run `scripts/test-local-agent.sh` on macOS for an opt-in real-model test. It use
 ## Performance investigation
 
 See [Agent performance](AGENT_PERFORMANCE.md) for the measured bottlenecks, first optimizations, retained correctness checks, and the path toward 20–30-second requests. Small selected files are now supplied as current snapshots, and the agent's successful edits refresh its inspection state. Physical iPhone latency remains to be measured. Run `scripts/test-local-agent.sh --snapshot --binary-search` for the expanded real-model check and per-stage timing output.
+
+## Optional Chat model
+
+Chat can download and select **Edsger mini** without changing the IDE agent.
+The shared actor releases each model before loading another; the agent and math
+planner still explicitly request the bundled Qwen model. See [Edsger mini](EDSGER_MINI.md)
+for the artifact, deletion/rollback, lifecycle tests, and device validation.

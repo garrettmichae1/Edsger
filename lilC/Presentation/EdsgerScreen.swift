@@ -92,6 +92,8 @@ struct EdsgerScreen: View {
     @FocusState private var composerFocused: Bool
     @State private var showsHistory = false
     @State private var showsInfo = false
+    @State private var showsModels = false
+    @State private var models = ChatModelStore.shared
     @State private var historySearch = ""
     @State private var pendingDelete: TutorConversation?
     private var background: Color { scheme == .dark ? Color(white: 0.055) : .white }
@@ -110,6 +112,8 @@ struct EdsgerScreen: View {
             if !composerFocused { navigation }
         }
         .sheet(isPresented: $showsHistory) { history }
+        .sheet(isPresented: $showsModels) { ChatModelPicker() }
+        .task { await models.refresh() }
         .sheet(isPresented: $showsInfo) {
             EdsgerInfoSheet(background: background, surface: surface, selection: selection)
         }
@@ -132,10 +136,18 @@ struct EdsgerScreen: View {
             .accessibilityLabel("Chat history")
             .accessibilityIdentifier("edsger-history")
             Spacer(minLength: 0)
-            Text("EDSGER")
-                .font(.system(size: 18, weight: .semibold))
-                .accessibilityAddTraits(.isHeader)
-                .accessibilityIdentifier("edsger-title")
+            Button { composerFocused = false; showsModels = true } label: {
+                HStack(spacing: 6) {
+                    Text(models.selected == .mini ? "EDSGER mini" : "EDSGER")
+                        .font(.system(size: 18, weight: .semibold))
+                        .accessibilityIdentifier("edsger-title")
+                    Image(systemName: "chevron.down").font(.caption2.weight(.semibold))
+                }
+                .frame(minHeight: 44)
+            }
+            .accessibilityLabel("Chat model: " + models.selected.title)
+            .accessibilityHint("Choose or download a model")
+            .accessibilityIdentifier("edsger-model-picker")
             Spacer(minLength: 0)
             Button {
                 session.newConversation(); composerFocused = true
@@ -192,6 +204,12 @@ struct EdsgerScreen: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                     }
                 }
+                if let error = models.errorMessage {
+                    HStack(alignment: .top) {
+                        Text(error).font(.subheadline).foregroundStyle(.secondary)
+                        Button("Dismiss") { models.clearError() }.font(.caption)
+                    }
+                }
                 if let error = session.errorMessage {
                     VStack(alignment: .leading, spacing: 8) {
                         Text(error).foregroundStyle(.secondary)
@@ -220,6 +238,12 @@ struct EdsgerScreen: View {
 
     private var composer: some View {
         VStack(alignment: .leading, spacing: 15) {
+            if models.isChanging {
+                HStack(spacing: 10) {
+                    ProgressView().controlSize(.small)
+                    Text("Preparing model…").font(.footnote).foregroundStyle(.secondary)
+                }
+            }
             if session.messages.isEmpty {
                 HStack(spacing: 13) {
                     Text("📚").font(.system(size: 23))
@@ -269,7 +293,7 @@ struct EdsgerScreen: View {
                             .frame(width: 44, height: 44)
                             .background(Color.blue.opacity(session.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !session.isResponding ? 0.45 : 1), in: Circle())
                     }
-                    .disabled(!session.isResponding && session.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    .disabled(!session.isResponding && (models.isChanging || session.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty))
                     .accessibilityLabel(session.isResponding ? "Stop EDSGER" : "Send to EDSGER")
                     .accessibilityIdentifier("edsger-send")
                 }

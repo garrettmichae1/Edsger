@@ -20,8 +20,8 @@ private struct TestCalculator: MathCalculating {
     }
 }
 // Only the default dependency is replaced. All session and routing code is production code.
-extension CalculatingTutorClient {
-    static let shared = Self(tutor: ImmediateTutor(), planner: TestPlanner(), calculator: TestCalculator())
+enum SelectedChatClient {
+    static let shared = CalculatingTutorClient(tutor: ImmediateTutor(), planner: TestPlanner(), calculator: TestCalculator())
 }
 
 private final class StatusRecorder: @unchecked Sendable {

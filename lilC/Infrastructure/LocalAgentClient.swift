@@ -25,7 +25,7 @@ enum LocalAgentError: LocalizedError {
 }
 
 /// One model instance shared by every agent conversation. llama.cpp keeps all inference on device.
-actor LocalAgentClient: AgentCompleting, TutorCompleting, MathPlanning {
+actor LocalAgentClient: AgentCompleting, TutorCompleting, MathPlanning, ChatModelActivating {
     static let shared = LocalAgentClient()
 
     // Immutable ownership box permits deterministic cleanup from nonisolated deinit.
@@ -42,6 +42,7 @@ actor LocalAgentClient: AgentCompleting, TutorCompleting, MathPlanning {
     }
     struct Timing: Sendable {
         var mode = "agent"
+        var modelName = "standard"
         var outcome = "failed"
         var tokenizationSeconds = 0.0
         var firstTokenSeconds: Double?
@@ -57,16 +58,19 @@ actor LocalAgentClient: AgentCompleting, TutorCompleting, MathPlanning {
     private(set) var lastTiming = Timing()
     private static let logger = Logger(subsystem: "app.lilc", category: "AgentPerformance")
     private var resources: Resources?
+    private(set) var loadedChoice: ChatModel?
     private var model: OpaquePointer? { resources?.model }
     private var context: OpaquePointer? { resources?.context }
     private let contextSize: Int32 = 8192
     private let modelURL: URL?
+    private let miniModelURL: URL?
     private var promptCache: PromptReuseCache
     private let cachePressure = PromptCachePressure()
     private var messageEndToken: Int32?
 
-    init(modelURL: URL? = nil, cacheByteLimit: Int = PromptReuseCache.defaultByteLimit) {
+    init(modelURL: URL? = nil, miniModelURL: URL? = nil, cacheByteLimit: Int = PromptReuseCache.defaultByteLimit) {
         self.modelURL = modelURL
+        self.miniModelURL = miniModelURL
         self.promptCache = PromptReuseCache(byteLimit: cacheByteLimit)
     }
 
@@ -95,7 +99,7 @@ actor LocalAgentClient: AgentCompleting, TutorCompleting, MathPlanning {
         lastTiming = timing
         // OSLog interpolations escape; never capture the inout parameter.
         let snapshot = timing
-        Self.logger.info("inference mode=\(snapshot.mode, privacy: .public) outcome=\(snapshot.outcome, privacy: .public) total=\(snapshot.totalSeconds) load=\(snapshot.loadSeconds) tokenize=\(snapshot.tokenizationSeconds) prompt=\(snapshot.promptSeconds) decode=\(snapshot.cache.decodeSeconds) restore=\(snapshot.cache.restoreSeconds) capture=\(snapshot.cache.captureSeconds) generation=\(snapshot.generationSeconds) firstToken=\(snapshot.firstTokenSeconds ?? -1) firstUpdate=\(snapshot.firstUpdateSeconds ?? -1) inputTokens=\(snapshot.promptTokens) reusedTokens=\(snapshot.cache.reusedTokens) decodedTokens=\(snapshot.cache.decodedTokens) outputTokens=\(snapshot.generatedTokens) cache=\(snapshot.cache.outcome, privacy: .public) captureStatus=\(snapshot.cache.capture, privacy: .public) cacheBytes=\(snapshot.cache.retainedBytes)")
+        Self.logger.info("inference model=\(snapshot.modelName, privacy: .public) mode=\(snapshot.mode, privacy: .public) outcome=\(snapshot.outcome, privacy: .public) total=\(snapshot.totalSeconds) load=\(snapshot.loadSeconds) tokenize=\(snapshot.tokenizationSeconds) prompt=\(snapshot.promptSeconds) decode=\(snapshot.cache.decodeSeconds) restore=\(snapshot.cache.restoreSeconds) capture=\(snapshot.cache.captureSeconds) generation=\(snapshot.generationSeconds) firstToken=\(snapshot.firstTokenSeconds ?? -1) firstUpdate=\(snapshot.firstUpdateSeconds ?? -1) inputTokens=\(snapshot.promptTokens) reusedTokens=\(snapshot.cache.reusedTokens) decodedTokens=\(snapshot.cache.decodedTokens) outputTokens=\(snapshot.generatedTokens) cache=\(snapshot.cache.outcome, privacy: .public) captureStatus=\(snapshot.cache.capture, privacy: .public) cacheBytes=\(snapshot.cache.retainedBytes)")
     }
 
     private func preparePrompt(_ tokens: [Int32], timing: inout Timing) throws {
@@ -119,8 +123,8 @@ actor LocalAgentClient: AgentCompleting, TutorCompleting, MathPlanning {
         var timing = Timing()
         defer { finishTiming(&timing, since: start) }
         try checkInferenceCancellation()
-        if resources == nil { onStatus(.loadingModel) }
-        try loadIfNeeded()
+        if loadedChoice != .standard { onStatus(.loadingModel) }
+        try loadIfNeeded(.standard)
         timing.loadSeconds = InferenceClock.seconds(since: start)
         onStatus(.preparingPrompt)
         let tokenizationStart = clock.now
@@ -190,14 +194,20 @@ actor LocalAgentClient: AgentCompleting, TutorCompleting, MathPlanning {
 
     func reply(messages: [TutorMessage], onStatus: @escaping GenerationStatusHandler,
                onUpdate: @escaping @Sendable (String) -> Void) async throws -> String {
+        try await reply(messages: messages, modelChoice: .standard, onStatus: onStatus, onUpdate: onUpdate)
+    }
+
+    func reply(messages: [TutorMessage], modelChoice: ChatModel, onStatus: @escaping GenerationStatusHandler,
+               onUpdate: @escaping @Sendable (String) -> Void) async throws -> String {
         let clock = ContinuousClock()
         let start = clock.now
         var timing = Timing()
         timing.mode = "chat"
+        timing.modelName = modelChoice.rawValue
         defer { finishTiming(&timing, since: start) }
         try checkInferenceCancellation()
-        if resources == nil { onStatus(.loadingModel) }
-        try loadIfNeeded()
+        if loadedChoice != modelChoice { onStatus(.loadingModel) }
+        try loadIfNeeded(modelChoice)
         timing.loadSeconds = InferenceClock.seconds(since: start)
         onStatus(.preparingPrompt)
         let tokenizationStart = clock.now
@@ -208,8 +218,8 @@ actor LocalAgentClient: AgentCompleting, TutorCompleting, MathPlanning {
         var tokens = [llama_token](repeating: 0, count: Int(contextSize))
         var count: Int32 = 0
         while true {
-            let prompt = TutorPrompt.make(messages: history)
-            count = prompt.withCString { llama_tokenize(vocab, $0, Int32(strlen($0)), &tokens, tokenCapacity, true, true) }
+            let prompt = modelChoice.adaptPrompt(TutorPrompt.make(messages: history))
+            count = prompt.withCString { llama_tokenize(vocab, $0, Int32(strlen($0)), &tokens, tokenCapacity, modelChoice == .standard, true) }
             if count > 0 && count < contextSize - 2048 { break }
             let users = history.indices.filter { history[$0].role == .user }
             guard users.count > 1 else { throw LocalAgentError.promptTooLong }
@@ -222,7 +232,15 @@ actor LocalAgentClient: AgentCompleting, TutorCompleting, MathPlanning {
         defer { timing.generationSeconds = InferenceClock.seconds(since: generationStart) }
         let sampler = llama_sampler_chain_init(llama_sampler_chain_default_params())
         defer { llama_sampler_free(sampler) }
-        llama_sampler_chain_add(sampler, llama_sampler_init_greedy())
+        if modelChoice == .mini {
+            // Liquid's recommended chat profile; math planning remains grammar-constrained greedy.
+            llama_sampler_chain_add(sampler, llama_sampler_init_penalties(llama_vocab_n_tokens(vocab), 64, 1.05, 0, 0))
+            llama_sampler_chain_add(sampler, llama_sampler_init_top_k(50))
+            llama_sampler_chain_add(sampler, llama_sampler_init_temp(0.1))
+            llama_sampler_chain_add(sampler, llama_sampler_init_dist(LLAMA_DEFAULT_SEED))
+        } else {
+            llama_sampler_chain_add(sampler, llama_sampler_init_greedy())
+        }
         var generated = Data()
         var piece = [CChar](repeating: 0, count: 4096)
         var lastUpdate = clock.now
@@ -264,14 +282,15 @@ actor LocalAgentClient: AgentCompleting, TutorCompleting, MathPlanning {
         let start = clock.now
         var timing = Timing()
         timing.mode = "math"
+        timing.modelName = ChatModel.standard.rawValue
         defer { finishTiming(&timing, since: start) }
         try checkInferenceCancellation()
         guard let latest = messages.last, latest.text.utf8.count <= 8000 else {
             timing.outcome = "success"
             return .clarify("Please send a shorter question with one expression or equation to calculate.")
         }
-        if resources == nil { onStatus(.loadingModel) }
-        try loadIfNeeded()
+        if loadedChoice != .standard { onStatus(.loadingModel) }
+        try loadIfNeeded(.standard)
         timing.loadSeconds = InferenceClock.seconds(since: start)
         onStatus(.preparingPrompt)
         let tokenizationStart = clock.now
@@ -315,9 +334,28 @@ actor LocalAgentClient: AgentCompleting, TutorCompleting, MathPlanning {
         throw LocalAgentError.invalidResponse
     }
 
-    private func loadIfNeeded() throws {
-        if model != nil { return }
-        guard let url = modelURL ?? Bundle.main.url(forResource: "Qwen3.5-4B-Q4_K_M", withExtension: "gguf") else {
+    func activateChatModel(_ choice: ChatModel) throws {
+        try Task.checkCancellation()
+        try loadIfNeeded(choice)
+    }
+
+    func unloadMiniModel() {
+        if loadedChoice == .mini { unloadModel() }
+    }
+
+    private func unloadModel() {
+        promptCache.removeAll()
+        messageEndToken = nil
+        // Synchronous actor work cannot interleave with generation. Release before loading another model.
+        resources = nil
+        loadedChoice = nil
+    }
+
+    private func loadIfNeeded(_ choice: ChatModel) throws {
+        if resources != nil && loadedChoice == choice { return }
+        unloadModel()
+        let resolvedURL = choice == .mini ? MiniModelAsset.installedURL : Bundle.main.url(forResource: "Qwen3.5-4B-Q4_K_M", withExtension: "gguf")
+        guard let url = (choice == .mini ? miniModelURL : modelURL) ?? resolvedURL, FileManager.default.fileExists(atPath: url.path) else {
             throw LocalAgentError.modelMissing
         }
         llama_backend_init()
@@ -340,6 +378,7 @@ actor LocalAgentClient: AgentCompleting, TutorCompleting, MathPlanning {
         }
         promptCache.removeAll()
         resources = Resources(model: loaded, context: loadedContext)
+        loadedChoice = choice
         var endToken = [Int32](repeating: 0, count: 8)
         let marker = "<|im_end|>"
         let endCount = marker.withCString {
@@ -528,5 +567,23 @@ private struct LlamaPromptStateBackend: PromptStateBackend {
     }
     func restore(from buffer: UnsafeRawBufferPointer) -> Int {
         llama_state_seq_set_data(context, buffer.bindMemory(to: UInt8.self).baseAddress!, buffer.count, 0)
+    }
+}
+
+struct ModelBoundChatClient: TutorCompleting, MathPlanning {
+    let model: ChatModel
+    var engine: LocalAgentClient = .shared
+    func reply(messages: [TutorMessage], onUpdate: @escaping @Sendable (String) -> Void) async throws -> String {
+        try await reply(messages: messages, onStatus: { _ in }, onUpdate: onUpdate)
+    }
+    func reply(messages: [TutorMessage], onStatus: @escaping GenerationStatusHandler,
+               onUpdate: @escaping @Sendable (String) -> Void) async throws -> String {
+        try await engine.reply(messages: messages, modelChoice: model, onStatus: onStatus, onUpdate: onUpdate)
+    }
+    func mathPlan(messages: [TutorMessage]) async throws -> MathPlan {
+        try await mathPlan(messages: messages, onStatus: { _ in })
+    }
+    func mathPlan(messages: [TutorMessage], onStatus: @escaping GenerationStatusHandler) async throws -> MathPlan {
+        try await engine.mathPlan(messages: messages, onStatus: onStatus)
     }
 }

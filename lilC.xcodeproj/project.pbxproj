@@ -7,6 +7,12 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+        FAC000000000000000000006 = {isa = PBXBuildFile; fileRef = FAD000000000000000000006; };
+        FAC000000000000000000005 = {isa = PBXBuildFile; fileRef = FAD000000000000000000005; };
+        FAC000000000000000000004 = {isa = PBXBuildFile; fileRef = FAD000000000000000000004; };
+        FAC000000000000000000003 = {isa = PBXBuildFile; fileRef = FAD000000000000000000003; };
+        FAC000000000000000000002 = {isa = PBXBuildFile; fileRef = FAD000000000000000000002; };
+        FAC000000000000000000001 = {isa = PBXBuildFile; fileRef = FAD000000000000000000001; };
         F9B000000000000000000001 = {isa = PBXBuildFile; fileRef = F9C000000000000000000001; };
         F8B000000000000000000011 = {isa = PBXBuildFile; fileRef = F8C000000000000000000011; };
         F8B000000000000000000010 = {isa = PBXBuildFile; fileRef = F8C000000000000000000010; };
@@ -154,6 +160,12 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+        FAD000000000000000000006 = {isa = PBXFileReference; lastKnownFileType = text; path = "Resources/LiquidAI-LICENSE.txt"; sourceTree = "<group>"; };
+        FAD000000000000000000005 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Presentation/ChatModelPicker.swift"; sourceTree = "<group>"; };
+        FAD000000000000000000004 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Infrastructure/SelectedChatClient.swift"; sourceTree = "<group>"; };
+        FAD000000000000000000003 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Infrastructure/LocalModelFiles.swift"; sourceTree = "<group>"; };
+        FAD000000000000000000002 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Application/ChatModelStore.swift"; sourceTree = "<group>"; };
+        FAD000000000000000000001 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Domain/ChatModel.swift"; sourceTree = "<group>"; };
         F9C000000000000000000001 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Domain/AgentProjectHistory.swift"; sourceTree = "<group>"; };
         F8C000000000000000000011 = {isa = PBXFileReference; lastKnownFileType = text; path = "Resources/Runestone-LICENSES.txt"; sourceTree = "<group>"; };
         F8C000000000000000000010 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Domain/EditorSupport.swift"; sourceTree = "<group>"; };
@@ -344,6 +356,12 @@
 		100000000000000000000702 /* lilC */ = {
 			isa = PBXGroup;
 			children = (
+                FAD000000000000000000006,
+                FAD000000000000000000005,
+                FAD000000000000000000004,
+                FAD000000000000000000003,
+                FAD000000000000000000002,
+                FAD000000000000000000001,
                 F8C000000000000000000011,
                 F8C000000000000000000010,
                 F9C000000000000000000001,
@@ -611,6 +629,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+                FAC000000000000000000006,
                 F8B000000000000000000011,
                 A1C000000000000000000002 /* Qwen model in Resources */,
                 A1C000000000000000000005 /* Qwen license in Resources */,
@@ -677,6 +696,11 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+                FAC000000000000000000005,
+                FAC000000000000000000004,
+                FAC000000000000000000003,
+                FAC000000000000000000002,
+                FAC000000000000000000001,
                 F8B000000000000000000010,
                 F9B000000000000000000001,
                 F5B000000000000000000002,
