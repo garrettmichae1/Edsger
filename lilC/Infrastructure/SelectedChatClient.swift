@@ -17,6 +17,29 @@ struct SelectedChatClient: DocumentTutorCompleting {
     func replyWithDocuments(messages: [TutorMessage], onStatus: @escaping GenerationStatusHandler,
                             onSources: @escaping @Sendable ([ChatDocumentSource]) async -> Void,
                             onUpdate: @escaping @Sendable (String) -> Void) async throws -> String {
+        let providers = await BYOKStore.shared
+        try await providers.beginRun()
+        do {
+            let result: String
+            if let choice = await providers.chatChoice {
+                let bound = BYOKChatClient(agent: try await providers.client(for: choice))
+                let ordinary = CalculatingTutorClient(tutor: bound, planner: bound, calculator: LocalMathCalculator.shared)
+                let client = DocumentTutorClient(tutor: ordinary, documentTutor: bound, documents: ChatDocumentStore.shared)
+                result = try await client.replyWithDocuments(messages: messages, onStatus: onStatus, onSources: onSources, onUpdate: onUpdate)
+            } else {
+                result = try await localReply(messages: messages, onStatus: onStatus, onSources: onSources, onUpdate: onUpdate)
+            }
+            await providers.endRun()
+            return result
+        } catch {
+            await providers.endRun()
+            throw error
+        }
+    }
+
+    private func localReply(messages: [TutorMessage], onStatus: @escaping GenerationStatusHandler,
+                            onSources: @escaping @Sendable ([ChatDocumentSource]) async -> Void,
+                            onUpdate: @escaping @Sendable (String) -> Void) async throws -> String {
         let store = await ChatModelStore.shared
         let model = try await store.beginReply()
         do {

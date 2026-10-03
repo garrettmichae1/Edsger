@@ -13,10 +13,14 @@ import {
 } from "./quota";
 import { handleGitHubAuth } from "./github";
 import type { Env } from "./types";
+import { handleBYOK } from "./byok";
 
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
+
+    const byok = await handleBYOK(request, env, url);
+    if (byok) return byok;
 
     if (request.method === "GET" && url.pathname === "/health") {
       return json({ ok: true, service: "lilc-agent" });

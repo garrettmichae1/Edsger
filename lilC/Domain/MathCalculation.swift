@@ -236,6 +236,7 @@ struct CalculatingTutorClient: TutorCompleting {
     }
     private func propagateCancellation(_ error: Error) throws {
         if error is CancellationError || (error as? AgentTransportError) == .cancelled { throw CancellationError() }
+        if let error = error as? any TutorRequestFailure { throw error }
         try Task.checkCancellation()
     }
 }

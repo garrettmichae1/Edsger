@@ -150,6 +150,12 @@
 		100000000000000000000232 /* Vendor/PicoC/cstdlib/time.c in Sources */ = {isa = PBXBuildFile; fileRef = 100000000000000000000132 /* Vendor/PicoC/cstdlib/time.c */; };
 		100000000000000000000233 /* Vendor/PicoC/lilc/platform_lilc_ios.c in Sources */ = {isa = PBXBuildFile; fileRef = 100000000000000000000133 /* Vendor/PicoC/lilc/platform_lilc_ios.c */; };
 		100000000000000000000234 /* Vendor/PicoC/lilc/lilc_picoc_runner.c in Sources */ = {isa = PBXBuildFile; fileRef = 100000000000000000000134 /* Vendor/PicoC/lilc/lilc_picoc_runner.c */; };
+        FCC000000000000000000001 = {isa = PBXBuildFile; fileRef = FCB000000000000000000001; };
+        FCC000000000000000000002 = {isa = PBXBuildFile; fileRef = FCB000000000000000000002; };
+        FCC000000000000000000003 = {isa = PBXBuildFile; fileRef = FCB000000000000000000003; };
+        FCC000000000000000000004 = {isa = PBXBuildFile; fileRef = FCB000000000000000000004; };
+        FCC000000000000000000005 = {isa = PBXBuildFile; fileRef = FCB000000000000000000005; };
+        FCC000000000000000000006 = {isa = PBXBuildFile; fileRef = FCB000000000000000000006; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -309,6 +315,12 @@
 		100000000000000000000501 /* lilC.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = lilC.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		100000000000000000000502 /* lilCTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = lilCTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		100000000000000000000503 /* lilCUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = lilCUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+        FCB000000000000000000001 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Domain/BYOKModels.swift"; sourceTree = "<group>"; };
+        FCB000000000000000000002 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Infrastructure/ProviderKeychain.swift"; sourceTree = "<group>"; };
+        FCB000000000000000000003 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Infrastructure/BYOKClient.swift"; sourceTree = "<group>"; };
+        FCB000000000000000000004 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Application/BYOKStore.swift"; sourceTree = "<group>"; };
+        FCB000000000000000000005 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Presentation/BYOKSettingsScreen.swift"; sourceTree = "<group>"; };
+        FCB000000000000000000006 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "BYOKTests.swift"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXCopyFilesBuildPhase section */
@@ -376,6 +388,12 @@
 		100000000000000000000702 /* lilC */ = {
 			isa = PBXGroup;
 			children = (
+                FCB000000000000000000006,
+                FCB000000000000000000005,
+                FCB000000000000000000004,
+                FCB000000000000000000003,
+                FCB000000000000000000002,
+                FCB000000000000000000001,
                 FB2000000000000000000005,
                 FB2000000000000000000004,
                 FB2000000000000000000003,
@@ -731,6 +749,11 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+                FCC000000000000000000005,
+                FCC000000000000000000004,
+                FCC000000000000000000003,
+                FCC000000000000000000002,
+                FCC000000000000000000001,
                 FB1000000000000000000004,
                 FB1000000000000000000003,
                 FB1000000000000000000002,
@@ -850,6 +873,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+                FCC000000000000000000006,
                 FB1000000000000000000007,
 				10000000000000000000010D /* lilCTests.swift in Sources */,
                 F7B000000000000000000004,

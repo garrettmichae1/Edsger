@@ -60,6 +60,9 @@ struct TutorConversation: Identifiable, Codable, Equatable, Sendable {
     }
 }
 
+/// Connection/account failures must not be treated as a failed math interpretation.
+protocol TutorRequestFailure: Error {}
+
 protocol TutorCompleting: Sendable {
     func reply(messages: [TutorMessage], onUpdate: @escaping @Sendable (String) -> Void) async throws -> String
     func reply(messages: [TutorMessage], onStatus: @escaping GenerationStatusHandler,

@@ -11,6 +11,7 @@ struct SettingsScreen: View {
     @State private var document: LegalDocument?
     @State private var confirmEraseAll = false
     @State private var showsTour = false
+    @State private var showsBYOK = false
 
     // Match the quiet surfaces used by Chat and its Info sheet.
     private var background: Color { scheme == .dark ? Color(white: 0.055) : .white }
@@ -62,6 +63,10 @@ struct SettingsScreen: View {
         }
         .fullScreenCover(isPresented: $showsTour) {
             OnboardingView(isReplay: true) { showsTour = false }
+        }
+        .fullScreenCover(isPresented: $showsBYOK) {
+            BYOKSettingsScreen { showsBYOK = false }
+                .lilCPreferredScheme(appearance.colorWay)
         }
         .alert("Erase \(workspace.language.name) workspace?", isPresented: $confirmEraseAll) {
             Button("Erase files", role: .destructive) {
@@ -181,6 +186,14 @@ struct SettingsScreen: View {
             .padding(.horizontal, 18)
             .padding(.vertical, 6)
             .accessibilityIdentifier("settings.models")
+            rowDivider
+            Button { showsBYOK = true } label: {
+                HStack {
+                    rowLabel("BYOK", symbol: "key", detail: "Bring your own OpenAI or Claude models.")
+                    Spacer()
+                    Image(systemName: "chevron.right").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                }.padding(18).contentShape(Rectangle())
+            }.buttonStyle(.plain).accessibilityIdentifier("settings.byok")
         }
     }
 
@@ -226,7 +239,7 @@ struct SettingsScreen: View {
                 get: { agentSettings.agentsEnabled },
                 set: { agentSettings.agentsEnabled = $0 }
             )) {
-                rowLabel("Agent mode", symbol: "sparkles", detail: "On-device help inside the IDE.")
+                rowLabel("Agent mode", symbol: "sparkles", detail: "Use Edsger or your selected model inside the IDE.")
             }
             .padding(18)
             .accessibilityIdentifier("agent-mode-toggle")
