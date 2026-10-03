@@ -98,6 +98,16 @@ static int allowed_path(PyObject *value, int writing) {
     }
     return 0;
 }
+static int restricted_module(const char *name) {
+    static const char *blocked[] = {"ctypes", "_ctypes", "subprocess", "_posixsubprocess", "multiprocessing", "_multiprocessing", "threading", "_thread", "socket", "_socket", "ssl", "_ssl", "signal", "_signal", "resource", "mmap", "fcntl", "faulthandler", "_interpreters", "_xxsubinterpreters", "_testcapi", "_testinternalcapi", NULL};
+    for (int i = 0; blocked[i]; i++) {
+        size_t length = strlen(blocked[i]);
+        for (const char *part = name; part; part = strchr(part, '.') ? strchr(part, '.') + 1 : NULL) {
+            if (strncmp(part, blocked[i], length) == 0 && (part[length] == '\0' || part[length] == '.')) return 1;
+        }
+    }
+    return 0;
+}
 static int project_audit(const char *event, PyObject *args, void *unused) {
     (void)unused;
     if (!sandbox_job || !sandbox_job->sandbox_active || PyThreadState_GetInterpreter(PyThreadState_Get()) != sandbox_interpreter) return 0;
@@ -108,19 +118,13 @@ static int project_audit(const char *event, PyObject *args, void *unused) {
         strcmp(event, "os.system") == 0 || strcmp(event, "os.chdir") == 0 || strcmp(event, "os.fchdir") == 0 ||
         strcmp(event, "os.kill") == 0 || strcmp(event, "os.killpg") == 0 || strcmp(event, "os.posix_spawn") == 0 ||
         strcmp(event, "os.putenv") == 0 || strcmp(event, "os.unsetenv") == 0) return deny_operation();
+    if (strcmp(event, "cpython.PyInterpreterState_New") == 0) return deny_operation();
     if (strcmp(event, "import") == 0) {
         const char *name = PyUnicode_AsUTF8(PyTuple_GetItem(args, 0));
         if (!name) return -1;
-        static const char *blocked[] = {"ctypes", "_ctypes", "subprocess", "_posixsubprocess", "multiprocessing", "threading", "_thread", "socket", "_socket", "signal", "resource", "mmap", "fcntl", "_testcapi", "_testinternalcapi", NULL};
-        for (int i = 0; blocked[i]; i++) {
-            size_t n = strlen(blocked[i]);
-            for (const char *part = name; part; part = strchr(part, '.') ? strchr(part, '.') + 1 : NULL) {
-                if (strncmp(part, blocked[i], n) == 0 && (part[n] == '\0' || part[n] == '.')) {
-                    // Standard-library modules catch ImportError to select safe
-                    // fallbacks (e.g. pathlib's optional fcntl in Python 3.14).
-                    PyErr_SetString(PyExc_ImportError, "This module is unavailable in the project runtime."); return -1;
-                }
-            }
+        if (restricted_module(name)) {
+            // Standard-library modules catch ImportError to select safe fallbacks.
+            PyErr_SetString(PyExc_ImportError, "This module is unavailable in the project runtime."); return -1;
         }
         PyObject *filename = PyTuple_GetItem(args, 1);
         if (filename && filename != Py_None && allowed_path(filename, 0) < 0) return -1;
@@ -165,6 +169,50 @@ static int install_project_audit(void) {
     if (PySys_AddAuditHook(project_audit, NULL) != 0) return -1;
     audit_installed = 1;
     return 0;
+}
+
+// BuiltinImporter can otherwise recreate posix/_thread and restore removed raw
+// descriptor/process functions without an import audit event. Preload safe
+// builtins, then replace the creator/executor with native, non-reinitializing
+// entry points. Neither originals nor authority state are stored in Python.
+static PyObject *safe_create_builtin(PyObject *self, PyObject *spec) {
+    (void)self;
+    PyObject *name = PyObject_GetAttrString(spec, "name");
+    if (!name) return NULL;
+    const char *text = PyUnicode_Check(name) ? PyUnicode_AsUTF8(name) : NULL;
+    static const char *blocked[] = {"posix", "_imp", "_thread", "_signal", "faulthandler", "_interpreters", "_xxsubinterpreters", NULL};
+    int denied = !text || restricted_module(text);
+    for (int i = 0; text && blocked[i]; i++) if (strcmp(text, blocked[i]) == 0) denied = 1;
+    PyObject *module = !denied ? PyDict_GetItemWithError(PyImport_GetModuleDict(), name) : NULL;
+    Py_XINCREF(module); Py_DECREF(name);
+    if (!module) PyErr_SetString(PyExc_ImportError, "Built-in module recreation is unavailable in the project runtime.");
+    return module;
+}
+static PyObject *safe_exec_builtin(PyObject *self, PyObject *module) {
+    (void)self; (void)module; return PyLong_FromLong(0);
+}
+static PyMethodDef builtin_guards[] = {
+    {"create_builtin", safe_create_builtin, METH_O, NULL},
+    {"exec_builtin", safe_exec_builtin, METH_O, NULL},
+    {NULL, NULL, 0, NULL}
+};
+static int guard_builtin_reinitialization(void) {
+    PyObject *names = PySys_GetObject("builtin_module_names");
+    if (!names || !PyTuple_Check(names)) return -1;
+    for (Py_ssize_t i = 0; i < PyTuple_GET_SIZE(names); i++) {
+        const char *name = PyUnicode_AsUTF8(PyTuple_GET_ITEM(names, i));
+        if (!name) return -1;
+        static const char *safe[] = {"builtins", "sys", "posix", "_imp", "atexit", "errno", "itertools", "gc", "marshal", "time", "_ast", "_string", "_sre", "_collections", "_functools", "_operator", "_stat", "_io", "_codecs", "_locale", "_warnings", "_weakref", "_symtable", "_opcode", "_uuid", "_tokenize", "_typing", "_contextvars", "math", "cmath", "array", "binascii", "zlib", "unicodedata", "_bisect", "_heapq", "_csv", "_datetime", "_decimal", "_json", "_pickle", "_random", "_statistics", "_struct", "_hashlib", "_blake2", "_md5", "_sha1", "_sha2", "_sha256", "_sha3", "_sha512", "_bz2", "_lzma", "_sqlite3", NULL};
+        int allowed = 0;
+        for (int index = 0; safe[index]; index++) if (strcmp(name, safe[index]) == 0) allowed = 1;
+        if (!allowed) continue;
+        PyObject *module = PyImport_ImportModule(name);
+        if (!module) return -1;
+        Py_DECREF(module);
+    }
+    PyObject *imp = PyImport_ImportModule("_imp");
+    if (!imp) return -1;
+    int result = PyModule_AddFunctions(imp, builtin_guards); Py_DECREF(imp); return result;
 }
 
 lilc_python_job *lilc_python_create(void) {
@@ -310,7 +358,7 @@ int lilc_python_run(lilc_python_job *j, const char *home, const char *bootstrap,
         PyObject *p = PyUnicode_DecodeFSDefault(path), *r = PyUnicode_DecodeFSDefault(root);
         PyDict_SetItemString(globals, "_script_path", p); PyDict_SetItemString(globals, "_project_root", r);
         Py_DECREF(p); Py_DECREF(r);
-        FILE *file = fopen(bootstrap, "r");
+        FILE *file = guard_builtin_reinitialization() == 0 ? fopen(bootstrap, "r") : NULL;
         if (file) {
             PyObject *result = PyRun_FileEx(file, bootstrap, Py_file_input, globals, globals, 1);
             if (result) {

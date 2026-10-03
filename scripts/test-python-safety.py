@@ -56,8 +56,12 @@ with tempfile.TemporaryDirectory(prefix='edsger-python-safety-') as temporary:
     script = project / 'main.py'
     cases = {
         'normal program and project file': ("import math, json, pathlib\np=pathlib.Path('result.txt')\np.write_text(json.dumps({'answer':math.sqrt(81)}))\nprint(p.read_text())", True, '9.0'),
+        'safe library classes and numbers': ("import dataclasses, decimal, datetime, hashlib\n@dataclasses.dataclass\nclass Point:\n x: int\nprint(Point(3).x, decimal.Decimal('1.5') * 2, len(hashlib.sha256(b'hello').hexdigest()), datetime.date(2026,1,1).year)", True, '3 3.0 64 2026'),
         'default directory listing': ("import os\nprint('main.py' in os.listdir())", True, 'True'),
         'raw descriptor APIs removed': ("import os, sys\nprint(not hasattr(os, 'read') and not hasattr(sys.modules['posix'], 'open'))", True, 'True'),
+        'built-in module reload cannot restore descriptor APIs': ("import importlib.machinery, _imp\n_imp.create_builtin(importlib.machinery.ModuleSpec('posix', None))", False, 'ImportError'),
+        'built-in re-execution cannot restore descriptor APIs': ("import sys, _imp\n_imp.exec_builtin(sys.modules['posix'])\nprint(not hasattr(sys.modules['posix'], 'read'))", True, 'True'),
+        'loader recreation cannot remove native guards': ("import importlib.machinery, _imp\n_imp.create_builtin(importlib.machinery.ModuleSpec('_imp', None))", False, 'ImportError'),
         'preloaded thread APIs removed': ("import sys\nprint(not hasattr(sys.modules.get('_thread'), 'start_new_thread'))", True, 'True'),
         'outside read': (f"print(open({str(outside)!r}).read())", False, 'PermissionError'),
         'original bootstrap-global bypass': (f"import sys\nsys._getframe(1).f_globals['_finishing']=True\nsys._getframe(1).f_globals['_project_root']={str(directory)!r}\nprint(open({str(outside)!r}).read())", False, 'PermissionError'),
@@ -68,6 +72,7 @@ with tempfile.TemporaryDirectory(prefix='edsger-python-safety-') as temporary:
         'outside directory listing': (f"import os\nprint(os.listdir({str(directory)!r}))", False, 'PermissionError'),
         'directory-fd mutation': ("import os\nos.remove('main.py', dir_fd=1)", False, 'PermissionError'),
         'outside deletion': (f"import os\nos.remove({str(outside)!r})", False, 'PermissionError'),
+        'second interpreter import': ("import _xxsubinterpreters", False, 'ImportError'),
         'socket import': ("import socket\nprint(socket.socket())", False, 'ImportError'),
         'ctypes import': ("import ctypes", False, 'ImportError'),
         'subprocess import': ("import subprocess", False, 'ImportError'),

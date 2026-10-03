@@ -20,7 +20,7 @@ Agent IDE retains local project tools, checkpoints, read-before-edit checks, cod
 
 ## Native Python runtime hardening
 
-The host registers `PySys_AddAuditHook` before CPython initialization. The authority lives in native memory and is tied to the actual interpreter, covering Python execution and finalizers. The bootstrap no longer defines a mutable Python audit policy. Restrictions check resolved paths, existing and dangling symlinks, parent traversal, raw descriptors, directory-fd operations, SQLite paths, unsafe imports, sockets/process operations, trace changes and preloaded thread entry points. Project file I/O and safe standard-library/local imports remain supported. Trusted bounded SymPy uses its separate interpreter; IDE policy cannot be disabled by changing bootstrap globals.
+The host registers `PySys_AddAuditHook` before CPython initialization. The authority lives in native memory and is tied to the actual interpreter, covering Python execution and finalizers. The bootstrap no longer defines a mutable Python audit policy. Restrictions check resolved paths, existing and dangling symlinks, parent traversal, raw descriptors, directory-fd operations, SQLite paths, unsafe imports, sockets/process operations, trace changes, built-in module recreation, secondary interpreter creation and preloaded thread entry points. Project file I/O and safe standard-library/local imports remain supported. Trusted bounded SymPy uses its separate interpreter; IDE policy cannot be disabled by changing bootstrap globals.
 
 New installations default the existing deletion-tool safeguard on; explicitly saved user choices are preserved. This safeguard blocks deletion tools, not every mutation performed by a generated program. Review generated programs before running them and retain restore points. CPython remains in the app process: native audit hardening closes the demonstrated bypass and common routes but is not a formal security sandbox, process isolation or a guarantee against every interpreter/native-extension vulnerability. Cooperative cancellation does not guarantee interruption of a long native operation.
 
@@ -32,7 +32,7 @@ Maintain `AgentRuntimeDocumentation` and increment its version when runtime bind
 
 ## Validation and release checks
 
-- `python3 scripts/test-python-safety.py` compiles and runs the actual native runner against a host CPython, including the original bootstrap-global bypass, symlinks, unsafe imports, finalizers and ordinary programs. CI uses Python 3.14; host tests do not substitute for iPhone execution.
+- `python3 scripts/test-python-safety.py` compiles and runs the actual native runner against a host CPython, including the original bootstrap-global bypass, built-in loader recreation, secondary interpreters, symlinks, unsafe imports, finalizers and ordinary programs. CI uses Python 3.14; host tests do not substitute for iPhone execution.
 - `bash scripts/test-byok.sh` executes actual Swift domain/store/Keychain/transport/codec tests on macOS without live credentials. Fixtures cover both native tool round trips, model catalogs, credential routing, errors, consent, histories, limits and runtime guides.
 - CI compiles the unsigned iPhone app and BYOK unit-test target, checks Swift syntax/project/privacy manifests and existing math/model regressions. iOS integration tests are compiled; simulator/physical-device execution is a separate release check.
 - The Worker typecheck, retired-route regression tests and Wrangler dry-run cover packaging without deployment.
