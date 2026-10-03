@@ -92,3 +92,7 @@ scripts/test-local-agent.sh --snapshot --binary-search
 ```
 
 The header-only smoke command independently compiles and checks the generated function. Its project prompt differs from the exploratory trace, so use it for repeatable correctness/performance comparisons rather than expecting the exact recorded timings. For device measurements, use the existing `app.lilc` / `AgentPerformance` logs and record several warm runs plus a separate cold run. Context reuse remains a later, separately validated change because this hybrid model has recurrent state; removing the memory clear alone is unsafe.
+
+## October 3 follow-up: prompt reuse and generation experiments
+
+See [the further latency investigation](PROMPT_REUSE_INVESTIGATION.md) for four exact-output native state-reuse comparisons, CPU runtime measurements, and a speculative-decoding probe. Prompt processing fell 47–87% on cache hits in these host-only samples. The speculative code response failed output equivalence and is not counted as a speedup. These are investigation artifacts; app inference behavior remains at the October 2 implementation pending cache integration and iPhone validation.

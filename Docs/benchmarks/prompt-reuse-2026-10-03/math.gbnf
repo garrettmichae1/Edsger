@@ -1,0 +1,7 @@
+root ::= "{" ws ("\"kind\":\"none\"" | "\"kind\":\"clarify\",\"message\":" string | "\"kind\":\"unsupported\",\"message\":" string | "\"kind\":\"calculate\",\"request\":" request) ws "}"
+request ::= "{" "\"operation\":" operation ",\"expression\":" string ",\"variable\":" variable ",\"lower\":" string ",\"upper\":" string "}"
+operation ::= "\"evaluate\"" | "\"simplify\"" | "\"expand\"" | "\"factor\"" | "\"differentiate\"" | "\"integrate\"" | "\"solve\"" | "\"determinant\"" | "\"inverse\"" | "\"rref\"" | "\"rank\"" | "\"mean\"" | "\"median\"" | "\"variance\"" | "\"sample_variance\"" | "\"stddev\"" | "\"sample_stddev\""
+variable ::= "\"x\"" | "\"y\"" | "\"z\"" | "\"t\"" | "\"a\"" | "\"b\"" | "\"c\"" | "\"n\""
+string ::= "\"" char{0,400} "\""
+char ::= [^"\\\x00-\x1F] | "\\" (["\\/bfnrt] | "u" [0-9a-fA-F]{4})
+ws ::= [ \t\n\r]{0,4}

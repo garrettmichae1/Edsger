@@ -1,0 +1,1 @@
+The `return` statement sends the calculated value back to the code that called the function.

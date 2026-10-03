@@ -1,0 +1,1 @@
+{"message":"The file only contains a declaration, not the function body","tool_calls":[{"name":"replace_text","arguments":{"path":"math.h","old_text":"int square(int n);","new_text":"int square(int n) {\n    return n * n;\n}"}}]}
