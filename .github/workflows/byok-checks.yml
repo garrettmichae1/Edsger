@@ -39,6 +39,7 @@ jobs:
       - name: Swift syntax and Xcode project validation
         run: |
           plutil -lint lilC.xcodeproj/project.pbxproj
+          plutil -lint lilC/Resources/PrivacyInfo.xcprivacy
           find lilC -name '*.swift' -print0 | xargs -0 xcrun swiftc -frontend -parse
           python3 scripts/check-editor-project.py
       - name: Fetch existing pinned build assets
