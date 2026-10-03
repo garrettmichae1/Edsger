@@ -10,6 +10,12 @@ final class TutorSession {
         get { draft(for: selectedID) }
         set {
             guard newValue != draft else { return }
+            // Editing moves on from Clear; dismiss both Undo and its notice without
+            // changing the persisted inference boundary or restoring the file.
+            if documentContextUndo?.conversationID == selectedID {
+                documentContextUndo = nil
+                if notice == "Document context cleared." { notice = nil }
+            }
             drafts[selectedID.uuidString] = newValue.isEmpty ? nil : newValue
             draftStateDirty = true
             scheduleDraftSave()

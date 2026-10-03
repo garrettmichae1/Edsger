@@ -22,8 +22,11 @@ attachment preserves earlier ordinary-chat inference context.
 Clearing during generation stops the response, retaining any partial answer and
 the next draft. The composer offers **Document context cleared → Undo**, restoring
 the previous active context and any pending replacement file. Undo does not resume
-cancelled generation. It is available until sending, selecting a file, changing
-conversations, or relaunching; the cleared state itself survives relaunch. Retrying
+cancelled generation. The notice and Undo disappear on the first actual draft edit
+(typing, deleting or pasting), or when sending, selecting a file, changing
+conversations, or relaunching. Focusing the input or assigning unchanged text keeps
+Undo available; an existing draft waits for its next edit. Dismissing Undo keeps
+document context cleared, and the cleared state itself survives relaunch. Retrying
 an old turn cannot reactivate context after clearing it. Conversation activity
 order is not changed by Clear or Undo.
 
@@ -135,6 +138,8 @@ Executed on a Linux Swift 6.0.3 host:
 - Clear/Undo restores pending and active files, preserves messages/drafts/originals,
   survives relaunch/switching, returns to ordinary routing, handles unsent files and
   rejects late callbacks when clearing during generation.
+- First draft edits dismiss the notice and Undo without restoring context; unchanged
+  drafts preserve Undo, and typing/deleting/pasting preserve the edited draft.
 - Existing chat-experience, model-selection, prompt-cache and ten math-domain
   regressions; Xcode source/product/license membership and immutable package pins.
 - Swift 6 integration typecheck with the real SelectedChatClient and document

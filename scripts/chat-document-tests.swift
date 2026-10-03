@@ -196,6 +196,27 @@ private func zip(_ url: URL, entries: [(String, Data)], symlink: Bool = false) t
         leaving.attach(a); leaving.clearDocumentContext(); leaving.undoClearDocumentContext()
         try check(leaving.pendingDocument == a && leaving.activeDocument == word, "undo lost pending replacement or previous active file")
         leaving.clearDocumentContext()
+        let clearedBoundary = leaving.current.documentContextStartIndex
+        leaving.draft = "Keep this unfinished question"
+        try check(leaving.canUndoDocumentContext && leaving.notice == "Document context cleared.", "unchanged draft dismissed undo")
+        leaving.draft = "Keep this unfinished question?"
+        try check(!leaving.canUndoDocumentContext && leaving.notice == nil && leaving.activeDocument == nil && leaving.pendingDocument == nil,
+                  "first draft edit did not dismiss notice and undo while keeping context cleared")
+        leaving.undoClearDocumentContext()
+        leaving.flushDrafts()
+        let editedReopen = TutorSession(client: client, storageURL: root.appendingPathComponent("leaving.json"))
+        try check(leaving.current.documentContextStartIndex == clearedBoundary && leaving.messages == originalMessages && leaving.current.updatedAt == originalActivity &&
+                  editedReopen.activeDocument == nil && editedReopen.draft == "Keep this unfinished question?", "editing or stale undo changed context, history, activity or draft persistence")
+        for (index, edit) in [("", "H"), ("Draft", ""), ("Draft", "Pasted text")].enumerated() {
+            let editing = TutorSession(client: client, storageURL: root.appendingPathComponent("edit-\(index).json"))
+            editing.draft = edit.0; editing.attach(word); editing.clearDocumentContext()
+            editing.draft = edit.0
+            try check(editing.canUndoDocumentContext && editing.notice != nil, "no-op assignment dismissed pending-only undo")
+            editing.draft = edit.1; editing.undoClearDocumentContext()
+            try check(editing.notice == nil && !editing.canUndoDocumentContext && editing.pendingDocument == nil && editing.activeDocument == nil && editing.draft == edit.1 &&
+                      editing.current.documentContextStartIndex == nil, "typing, deleting or pasting restored an unsent file or lost draft")
+        }
+        print("PASS first text edit dismisses notice/undo, unchanged drafts preserve undo and cleared context stays cleared")
         let documentCallsBefore = await grounded.requests.count
         leaving.draft = String(repeating: "x", count: 2001); leaving.send(); await leaving.waitUntilIdle()
         let ordinaryAfterClear = await ordinary.requests.last!
