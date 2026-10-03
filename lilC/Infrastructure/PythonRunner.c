@@ -115,7 +115,11 @@ static int project_audit(const char *event, PyObject *args, void *unused) {
         for (int i = 0; blocked[i]; i++) {
             size_t n = strlen(blocked[i]);
             for (const char *part = name; part; part = strchr(part, '.') ? strchr(part, '.') + 1 : NULL) {
-                if (strncmp(part, blocked[i], n) == 0 && (part[n] == '\0' || part[n] == '.')) return deny_operation();
+                if (strncmp(part, blocked[i], n) == 0 && (part[n] == '\0' || part[n] == '.')) {
+                    // Standard-library modules catch ImportError to select safe
+                    // fallbacks (e.g. pathlib's optional fcntl in Python 3.14).
+                    PyErr_SetString(PyExc_ImportError, "This module is unavailable in the project runtime."); return -1;
+                }
             }
         }
         PyObject *filename = PyTuple_GetItem(args, 1);
