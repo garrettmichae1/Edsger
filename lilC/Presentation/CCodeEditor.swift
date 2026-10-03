@@ -1,60 +1,12 @@
 import SwiftUI
 import UIKit
+@preconcurrency import Runestone
+import TreeSitterCRunestone
+import TreeSitterPythonRunestone
+import TreeSitterJavaScriptRunestone
+import TreeSitterLuaRunestone
 
-struct CaretJump: Equatable {
-    var id: UUID
-    var line: Int
-    var column: Int
-
-    init(line: Int, column: Int, id: UUID = UUID()) {
-        self.id = id
-        self.line = line
-        self.column = column
-    }
-}
-
-enum EditorSearch {
-    static func nsMatches(in text: String, query: String) -> [NSRange] {
-        let needle = query.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !needle.isEmpty else { return [] }
-        let haystack = text as NSString
-        var matches: [NSRange] = []
-        var search = NSRange(location: 0, length: haystack.length)
-        while search.length > 0 {
-            let found = haystack.range(of: needle, options: [.caseInsensitive], range: search)
-            guard found.location != NSNotFound else { break }
-            matches.append(found)
-            let next = found.location + max(found.length, 1)
-            if next >= haystack.length { break }
-            search = NSRange(location: next, length: haystack.length - next)
-        }
-        return matches
-    }
-}
-
-enum CCodeEditorKeyboardPolicy {
-    /// SwiftUI `FocusState` lags behind `UITextView` on each keystroke. Resigning
-    /// to "match" that stale flag is what collapsed the keyboard while typing.
-    static func shouldResignFirstResponder(swiftUIWantsFocus: Bool, textViewIsFirstResponder: Bool) -> Bool {
-        false
-    }
-
-    static func shouldBecomeFirstResponder(swiftUIWantsFocus: Bool, textViewIsFirstResponder: Bool) -> Bool {
-        swiftUIWantsFocus && !textViewIsFirstResponder
-    }
-
-    static func shouldApplyBoundText(
-        fileChanged: Bool,
-        isFirstResponder: Bool,
-        viewText: String,
-        boundText: String
-    ) -> Bool {
-        if fileChanged { return viewText != boundText }
-        if isFirstResponder { return false }
-        return viewText != boundText
-    }
-}
-
+/// Keeps the app's editor contract; Runestone owns text layout and incremental parsing.
 struct CCodeEditor: UIViewRepresentable {
     @Binding var text: String
     var fileID: String
@@ -68,355 +20,345 @@ struct CCodeEditor: UIViewRepresentable {
     var formatEpoch: Int = 0
     var overlayHeight: CGFloat
     var syntaxColoring: Bool
+    var diagnostic: EditorRuntimeDiagnostic? = nil
     var onBeginEditing: () -> Void
     var onEndEditing: () -> Void
 
-    func makeCoordinator() -> Coordinator {
-        Coordinator(parent: self)
-    }
+    func makeCoordinator() -> Coordinator { Coordinator(parent: self) }
 
-    func makeUIView(context: Context) -> UITextView {
-        let textView = UITextView()
-        textView.delegate = context.coordinator
-        context.coordinator.textView = textView
-        textView.backgroundColor = .clear
-        textView.text = text
-        textView.font = Self.editorFont
-        textView.alwaysBounceVertical = true
-        textView.keyboardDismissMode = .interactive
-        textView.autocorrectionType = .no
-        textView.autocapitalizationType = .none
-        textView.spellCheckingType = .no
-        textView.smartQuotesType = .no
-        textView.smartDashesType = .no
-        textView.smartInsertDeleteType = .no
-        textView.keyboardType = .asciiCapable
-        textView.inputAssistantItem.leadingBarButtonGroups = []
-        textView.inputAssistantItem.trailingBarButtonGroups = []
-        textView.textContainer.lineFragmentPadding = 0
+    func makeUIView(context: Context) -> Runestone.TextView {
+        let view = Runestone.TextView(frame: .zero)
+        view.alwaysBounceVertical = true
+        view.keyboardDismissMode = .interactive
+        view.autocorrectionType = .no
+        view.autocapitalizationType = .none
+        view.spellCheckingType = .no
+        view.smartQuotesType = .no
+        view.smartDashesType = .no
+        view.smartInsertDeleteType = .no
+        view.keyboardType = .asciiCapable
+        view.inputAssistantItem.leadingBarButtonGroups = []
+        view.inputAssistantItem.trailingBarButtonGroups = []
+        view.showLineNumbers = true
+        view.isLineWrappingEnabled = true
+        view.indentStrategy = .space(length: 4)
+        view.characterPairs = [] // Preserve literal typing and our existing symbol toolbar.
         let accessory = CSymbolAccessoryView(language: language)
         accessory.coordinator = context.coordinator
-        textView.inputAccessoryView = accessory
+        view.inputAccessoryView = accessory
+        context.coordinator.textView = view
         context.coordinator.accessory = accessory
-        applyChrome(textView, context: context)
-        textView.accessibilityIdentifier = "code-editor"
-        return textView
+        context.coordinator.loadFile(in: view)
+        view.editorDelegate = context.coordinator
+        view.accessibilityIdentifier = "code-editor"
+        view.accessibilityLabel = "Code editor"
+        applyChrome(view, coordinator: context.coordinator)
+        context.coordinator.updateHighlights()
+        return view
     }
 
-    func updateUIView(_ textView: UITextView, context: Context) {
-        context.coordinator.parent = self
-        context.coordinator.textView = textView
-        applyChrome(textView, context: context)
-
-        let fileChanged = context.coordinator.fileID != fileID
-        if fileChanged {
-            context.coordinator.fileID = fileID
-        }
-        let viewText = textView.text ?? ""
-        if CCodeEditorKeyboardPolicy.shouldApplyBoundText(
-            fileChanged: fileChanged,
-            isFirstResponder: textView.isFirstResponder,
-            viewText: viewText,
-            boundText: text
-        ) {
-            let selected = textView.selectedRange
-            textView.text = text
-            if fileChanged, jump == nil {
-                let location = min(textView.selectedRange.location, (textView.text as NSString).length)
-                textView.selectedRange = NSRange(location: location, length: 0)
-            } else if !fileChanged {
-                let maxLength = (text as NSString).length
-                let location = min(selected.location, maxLength)
-                let length = min(selected.length, max(0, maxLength - location))
-                textView.selectedRange = NSRange(location: location, length: length)
+    func updateUIView(_ view: Runestone.TextView, context: Context) {
+        let coordinator = context.coordinator
+        coordinator.parent = self
+        coordinator.textView = view
+        if coordinator.fileID != fileID {
+            coordinator.savePosition(in: view)
+            coordinator.loadFile(in: view)
+        } else {
+            coordinator.applyExternalTextIfNeeded()
+            if coordinator.language != language || coordinator.syntaxWasEnabled != syntaxColoring {
+                coordinator.language = language
+                coordinator.syntaxWasEnabled = syntaxColoring
+                view.setLanguageMode(syntaxColoring
+                    ? TreeSitterLanguageMode(language: Self.parser(for: language))
+                    : PlainTextLanguageMode())
             }
         }
+        applyChrome(view, coordinator: coordinator)
+        coordinator.updateHighlights()
 
-        applyEditorAttributes(
-            textView,
-            previouslyFinding: context.coordinator.findWasVisible,
-            previouslyColoring: context.coordinator.syntaxWasEnabled
-        )
-        context.coordinator.findWasVisible = findVisible
-        context.coordinator.syntaxWasEnabled = syntaxColoring
-
-        if let jump, context.coordinator.appliedJumpID != jump.id {
-            context.coordinator.appliedJumpID = jump.id
-            selectLine(jump.line, column: jump.column, in: textView)
-            if !textView.isFirstResponder {
-                textView.becomeFirstResponder()
+        if let jump, coordinator.appliedJumpID != jump.id, jump.fileID == nil || jump.fileID == fileID {
+            coordinator.appliedJumpID = jump.id
+            if let range = EditorTextCoordinates.selection(in: view.text, jump: jump) {
+                view.selectedRange = range
+                view.scrollRangeToVisible(range)
+                if !view.isEditing { view.becomeFirstResponder() }
             }
         }
-
-        if findVisible,
-           context.coordinator.appliedFindEpoch != findEpoch {
-            context.coordinator.appliedFindEpoch = findEpoch
-            let matches = EditorSearch.nsMatches(in: textView.text, query: findQuery)
+        if findVisible, coordinator.appliedFindEpoch != findEpoch {
+            coordinator.appliedFindEpoch = findEpoch
+            let matches = EditorSearch.nsMatches(in: view.text, query: findQuery)
             if matches.indices.contains(findIndex) {
-                let range = matches[findIndex]
-                textView.selectedRange = range
-                textView.scrollRangeToVisible(range)
+                view.selectedRange = matches[findIndex]
+                view.scrollRangeToVisible(matches[findIndex])
             }
         }
-
-        if formatEpoch != context.coordinator.appliedFormatEpoch {
-            context.coordinator.appliedFormatEpoch = formatEpoch
+        if coordinator.appliedFormatEpoch != formatEpoch {
+            coordinator.appliedFormatEpoch = formatEpoch
             if formatEpoch > 0 {
-                DispatchQueue.main.async {
-                    context.coordinator.formatBuffer()
+                let expectedFileID = fileID
+                DispatchQueue.main.async { [weak coordinator] in
+                    guard coordinator?.fileID == expectedFileID else { return }
+                    coordinator?.formatBuffer()
                 }
             }
         }
-
+        // Runestone's inner text input is the responder; TextView.isFirstResponder
+        // is not the editing-state flag. Never chase a lagging SwiftUI focus value.
         if CCodeEditorKeyboardPolicy.shouldBecomeFirstResponder(
-            swiftUIWantsFocus: isFocused,
-            textViewIsFirstResponder: textView.isFirstResponder
+            swiftUIWantsFocus: isFocused, textViewIsFirstResponder: view.isEditing
         ) {
-            DispatchQueue.main.async {
-                guard textView.window != nil else { return }
-                guard context.coordinator.parent.isFocused, !textView.isFirstResponder else { return }
-                textView.becomeFirstResponder()
+            DispatchQueue.main.async { [weak view, weak coordinator] in
+                guard let view, view.window != nil, coordinator?.parent.isFocused == true, !view.isEditing else { return }
+                view.becomeFirstResponder()
             }
         }
     }
 
-    private func applyChrome(_ textView: UITextView, context: Context) {
-        let foreground = UIColor(AppPalette.foreground)
-        let accent = UIColor(AppPalette.green)
-        textView.backgroundColor = UIColor(AppPalette.editor)
-        textView.textColor = foreground
-        textView.tintColor = accent
-        let appearance: UIKeyboardAppearance = AppearanceStore.shared.colorWay == .dark ? .dark : .default
-        if textView.keyboardAppearance != appearance {
-            textView.keyboardAppearance = appearance
-        }
-        textView.textContainerInset = UIEdgeInsets(top: 8 + overlayHeight, left: 10, bottom: 8, right: 10)
-        textView.typingAttributes = [
-            .font: Self.editorFont,
-            .foregroundColor: foreground
-        ]
-        context.coordinator.accessory?.applyPalette()
+    static func dismantleUIView(_ view: Runestone.TextView, coordinator: Coordinator) {
+        view.editorDelegate = nil
+        coordinator.textView = nil
+        coordinator.accessory?.coordinator = nil
     }
 
-    fileprivate func applyEditorAttributes(
-        _ textView: UITextView,
-        previouslyFinding: Bool,
-        previouslyColoring: Bool
-    ) {
-        if !syntaxColoring && !findVisible && !previouslyFinding && !previouslyColoring { return }
-        let storage = textView.textStorage
-        let full = NSRange(location: 0, length: storage.length)
-        guard full.length > 0 else { return }
-        let selected = textView.selectedRange
-        let foreground = UIColor(AppPalette.foreground)
+    private func applyChrome(_ view: Runestone.TextView, coordinator: Coordinator) {
         let way = AppearanceStore.shared.colorWay
-        storage.beginEditing()
-        storage.setAttributes([
-            .font: Self.editorFont,
-            .foregroundColor: foreground
-        ], range: full)
-        if syntaxColoring {
-            for token in ScriptSyntax.tokens(in: textView.text, language: language) {
-                guard NSMaxRange(token.range) <= full.length else { continue }
-                storage.addAttribute(
-                    .foregroundColor,
-                    value: CSyntaxPalette.color(token.kind, way: way),
-                    range: token.range
-                )
-            }
+        if coordinator.colorWay != way {
+            coordinator.colorWay = way
+            view.theme = EdsgerEditorTheme(way: way)
         }
-        if findVisible {
-            let matches = EditorSearch.nsMatches(in: textView.text, query: findQuery)
-            let accent = UIColor(AppPalette.green)
-            for (index, range) in matches.enumerated() {
-                guard NSMaxRange(range) <= full.length else { continue }
-                let color = index == findIndex
-                    ? accent.withAlphaComponent(0.28)
-                    : accent.withAlphaComponent(0.14)
-                storage.addAttribute(.backgroundColor, value: color, range: range)
-            }
-        }
-        storage.endEditing()
-        let maxLength = storage.length
-        let location = min(selected.location, maxLength)
-        let length = min(selected.length, max(0, maxLength - location))
-        textView.selectedRange = NSRange(location: location, length: length)
+        let accent = UIColor(AppPalette.green)
+        view.backgroundColor = UIColor(AppPalette.editor)
+        view.tintColor = accent
+        view.insertionPointColor = accent
+        view.selectionBarColor = accent
+        view.selectionHighlightColor = accent.withAlphaComponent(0.2)
+        view.keyboardAppearance = way == .dark ? .dark : .default
+        view.textContainerInset = UIEdgeInsets(top: 8 + overlayHeight, left: 10, bottom: 8, right: 10)
+        coordinator.accessory?.applyPalette()
     }
 
-    private func selectLine(_ line: Int, column: Int, in textView: UITextView) {
-        let ns = textView.text as NSString
-        let length = ns.length
-        guard length > 0 else {
-            textView.selectedRange = NSRange(location: 0, length: 0)
-            return
+    fileprivate static func parser(for language: ProgrammingLanguage) -> TreeSitterLanguage {
+        switch language {
+        case .c: .c
+        case .python: .python
+        case .javascript: .javaScript
+        case .lua: .lua
         }
-        var current = 1
-        var start = 0
-        while current < max(line, 1), start < length {
-            let lineRange = ns.lineRange(for: NSRange(location: start, length: 0))
-            let next = NSMaxRange(lineRange)
-            if next <= start { break }
-            start = next
-            current += 1
-        }
-        let lineRange = ns.lineRange(for: NSRange(location: min(start, length - 1), length: 0))
-        var contentLength = lineRange.length
-        while contentLength > 0 {
-            let last = ns.substring(with: NSRange(location: lineRange.location + contentLength - 1, length: 1))
-            if last == "\n" || last == "\r" {
-                contentLength -= 1
-            } else {
-                break
-            }
-        }
-        let columnOffset = min(max(column, 1) - 1, contentLength)
-        textView.selectedRange = NSRange(location: lineRange.location + columnOffset, length: max(0, contentLength - columnOffset))
-        textView.scrollRangeToVisible(NSRange(location: lineRange.location, length: max(contentLength, 1)))
     }
 
-    private static let editorFont = UIFont.monospacedSystemFont(ofSize: 15, weight: .regular)
-
-    final class Coordinator: NSObject, UITextViewDelegate {
+    @MainActor
+    final class Coordinator: NSObject, @preconcurrency Runestone.TextViewDelegate {
         var parent: CCodeEditor
-        weak var textView: UITextView?
+        weak var textView: Runestone.TextView?
         weak var accessory: CSymbolAccessoryView?
         var fileID = ""
+        var language: ProgrammingLanguage = .c
+        var syntaxWasEnabled = false
+        var colorWay: AppColorWay?
         var appliedJumpID: UUID?
         var appliedFindEpoch = -1
         var appliedFormatEpoch = 0
-        var findWasVisible = false
-        var syntaxWasEnabled = false
+        var lastPublishedText: String
+        private var isApplyingText = false
+        private var positions: [String: (selection: NSRange, offset: CGPoint)] = [:]
 
         init(parent: CCodeEditor) {
             self.parent = parent
+            self.lastPublishedText = parent.text
         }
 
-        func textView(_ textView: UITextView, shouldChangeTextIn range: NSRange, replacementText text: String) -> Bool {
-            guard parent.language != .c, text == "\n", range.length == 0 else { return true }
-            let before = (textView.text as NSString).substring(to: range.location)
+        func savePosition(in view: Runestone.TextView) {
+            guard !fileID.isEmpty else { return }
+            if positions.count >= 100 { positions.removeAll(keepingCapacity: true) }
+            positions[fileID] = (view.selectedRange, view.contentOffset)
+        }
+
+        func loadFile(in view: Runestone.TextView) {
+            isApplyingText = true
+            defer { isApplyingText = false }
+            if language != parent.language {
+                let newAccessory = CSymbolAccessoryView(language: parent.language)
+                newAccessory.coordinator = self
+                view.inputAccessoryView = newAccessory
+                accessory = newAccessory
+                view.reloadInputViews()
+            }
+            fileID = parent.fileID
+            language = parent.language
+            syntaxWasEnabled = parent.syntaxColoring
+            colorWay = AppearanceStore.shared.colorWay
+            let theme = EdsgerEditorTheme(way: AppearanceStore.shared.colorWay)
+            let state = parent.syntaxColoring
+                ? TextViewState(text: parent.text, theme: theme, language: CCodeEditor.parser(for: language))
+                : TextViewState(text: parent.text, theme: theme)
+            // A document switch must not allow undo to insert another file's text.
+            view.setState(state)
+            if let lineEndings = state.detectedLineEndings { view.lineEndings = lineEndings }
+            else { view.lineEndings = .lf }
+            lastPublishedText = parent.text
+            let position = positions[fileID]
+            view.selectedRange = EditorTextCoordinates.clampedSelection(position?.selection ?? NSRange(location: 0, length: 0), in: view.text)
+            view.setContentOffset(clampedOffset(position?.offset ?? .zero, in: view), animated: false)
+            appliedFindEpoch = -1
+            appliedFormatEpoch = parent.formatEpoch
+            view.accessibilityValue = view.text
+        }
+
+        func applyExternalTextIfNeeded() {
+            guard let view = textView,
+                  CCodeEditorKeyboardPolicy.shouldApplyBoundText(
+                    fileChanged: false, isFirstResponder: view.isEditing,
+                    viewText: view.text, boundText: parent.text,
+                    lastPublishedText: lastPublishedText, hasMarkedText: view.markedTextRange != nil
+                  ) else { return }
+            let selection = view.selectedRange
+            let offset = view.contentOffset
+            replaceBuffer(with: parent.text, selection: selection, publish: false)
+            view.setContentOffset(clampedOffset(offset, in: view), animated: false)
+        }
+
+        private func clampedOffset(_ offset: CGPoint, in view: Runestone.TextView) -> CGPoint {
+            let inset = view.adjustedContentInset
+            let minX = -inset.left
+            let minY = -inset.top
+            let maxX = max(minX, view.contentSize.width - view.bounds.width + inset.right)
+            let maxY = max(minY, view.contentSize.height - view.bounds.height + inset.bottom)
+            return CGPoint(x: min(max(offset.x, minX), maxX), y: min(max(offset.y, minY), maxY))
+        }
+
+        func textView(_ view: Runestone.TextView, shouldChangeTextIn range: NSRange, replacementText text: String) -> Bool {
+            guard !isApplyingText, parent.language != .c,
+                  (text == "\n" || text == "\r\n" || text == "\r"), range.length == 0,
+                  view.markedTextRange == nil else { return true }
+            let before = (view.text as NSString).substring(to: range.location).replacingOccurrences(of: "\r\n", with: "\n").replacingOccurrences(of: "\r", with: "\n")
             let insertion = ScriptSyntax.newlineIndent(before: before, language: parent.language)
-            textView.text = (textView.text as NSString).replacingCharacters(in: range, with: insertion)
-            textView.selectedRange = NSRange(location: range.location + (insertion as NSString).length, length: 0)
-            parent.text = textView.text; recolor(textView)
+            let normalized = insertion.replacingOccurrences(of: "\n", with: text)
+            isApplyingText = true
+            view.replace(range, withText: normalized)
+            isApplyingText = false
+            view.selectedRange = NSRange(location: range.location + (normalized as NSString).length, length: 0)
+            publishText()
             return false
         }
 
-        func textViewDidChange(_ textView: UITextView) {
-            parent.text = textView.text ?? ""
-            recolor(textView)
+        func textViewDidChange(_ view: Runestone.TextView) {
+            guard !isApplyingText else { return }
+            publishText()
         }
 
-        func recolor(_ textView: UITextView) {
-            parent.applyEditorAttributes(
-                textView,
-                previouslyFinding: parent.findVisible,
-                previouslyColoring: parent.syntaxColoring
-            )
+        func textViewDidBeginEditing(_ view: Runestone.TextView) { parent.onBeginEditing() }
+        func textViewDidEndEditing(_ view: Runestone.TextView) { parent.onEndEditing() }
+
+        private func publishText() {
+            guard let view = textView else { return }
+            lastPublishedText = view.text
+            if parent.text != view.text { parent.text = view.text }
+            view.accessibilityValue = view.text
+            updateHighlights()
         }
 
-        func textViewDidBeginEditing(_ textView: UITextView) {
-            parent.onBeginEditing()
+        func updateHighlights() {
+            guard let view = textView else { return }
+            var ranges: [HighlightedRange] = []
+            // Runtime markers never use Tree-sitter ERROR nodes or a desktop linter.
+            if view.text == parent.text, let diagnostic = parent.diagnostic, let range = diagnostic.range(in: view.text) {
+                ranges.append(HighlightedRange(id: "runtime-error", range: range, color: .systemRed.withAlphaComponent(0.14), cornerRadius: 3))
+            }
+            if parent.findVisible {
+                let accent = UIColor(AppPalette.green)
+                for (index, range) in EditorSearch.nsMatches(in: view.text, query: parent.findQuery).enumerated() {
+                    ranges.append(HighlightedRange(id: "find-\(index)", range: range, color: accent.withAlphaComponent(index == parent.findIndex ? 0.28 : 0.14), cornerRadius: 2))
+                }
+            }
+            if view.highlightedRanges != ranges { view.highlightedRanges = ranges }
         }
 
-        func textViewDidEndEditing(_ textView: UITextView) {
-            parent.onEndEditing()
-        }
-
-        func hideKeyboard() {
-            textView?.resignFirstResponder()
-        }
+        func hideKeyboard() { textView?.resignFirstResponder() }
 
         func formatBuffer() {
-            guard parent.language == .c, let textView else { return }
-            let original = textView.text ?? ""
-            let selected = textView.selectedRange
-            let output = CIndentFormatter.formatKeepingCaret(original, caretUTF16: selected.location)
-            guard output.text != original else { return }
-            let keepFocus = textView.isFirstResponder
-            if let end = textView.position(from: textView.beginningOfDocument, offset: (original as NSString).length),
-               let range = textView.textRange(from: textView.beginningOfDocument, to: end) {
-                textView.replace(range, withText: output.text)
-            } else {
-                textView.text = output.text
-            }
-            let maxLength = (textView.text as NSString).length
-            textView.selectedRange = NSRange(location: min(output.caretUTF16, maxLength), length: 0)
-            parent.text = textView.text ?? ""
-            recolor(textView)
-            if keepFocus, !textView.isFirstResponder {
-                textView.becomeFirstResponder()
-            }
+            guard parent.language == .c, let view = textView, view.markedTextRange == nil else { return }
+            let output = CIndentFormatter.formatKeepingCaret(view.text, caretUTF16: view.selectedRange.location)
+            guard output.text != view.text else { return }
+            replaceBuffer(with: output.text, selection: NSRange(location: output.caretUTF16, length: 0))
         }
 
         func insertSymbol(_ value: String) {
             textView?.insertText(value)
-            if let textView {
-                parent.text = textView.text ?? ""
-                recolor(textView)
-            }
+            publishText()
         }
 
         func indentSelection(outdent: Bool) {
-            guard let textView else { return }
-            let unit = "    "
-            let ns = (textView.text ?? "") as NSString
-            let selected = textView.selectedRange
-            let inclusiveEnd = selected.length == 0
-                ? selected.location
-                : max(selected.location, selected.location + selected.length - 1)
-            var starts: [Int] = []
-            var cursor = ns.lineRange(for: NSRange(location: min(selected.location, ns.length), length: 0)).location
-            while cursor <= inclusiveEnd, cursor <= ns.length {
-                starts.append(cursor)
-                let lineRange = ns.lineRange(for: NSRange(location: min(cursor, max(ns.length - 1, 0)), length: 0))
-                let next = NSMaxRange(lineRange)
-                if next <= cursor { break }
-                cursor = next
-                if cursor > inclusiveEnd || cursor >= ns.length { break }
-            }
-            let mutable = NSMutableString(string: ns as String)
-            var totalDelta = 0
-            var firstDelta = 0
-            for (index, start) in starts.enumerated() {
-                let adjusted = start + totalDelta
-                if outdent {
-                    let removed = Self.stripLeadingIndent(from: mutable, at: adjusted, max: unit.count)
-                    if index == 0 { firstDelta = -removed }
-                    totalDelta -= removed
-                } else {
-                    mutable.insert(unit, at: min(adjusted, mutable.length))
-                    if index == 0 { firstDelta = unit.count }
-                    totalDelta += unit.count
-                }
-            }
-            textView.text = mutable as String
-            let location = max(0, selected.location + firstDelta)
-            let length = max(0, selected.length + totalDelta - firstDelta)
-            let maxLength = (textView.text as NSString).length
-            textView.selectedRange = NSRange(
-                location: min(location, maxLength),
-                length: min(length, max(0, maxLength - min(location, maxLength)))
-            )
-            parent.text = textView.text ?? ""
-            recolor(textView)
+            guard let view = textView, view.markedTextRange == nil else { return }
+            let edit = EditorIndentation.apply(to: view.text, selection: view.selectedRange, outdent: outdent)
+            guard edit.text != view.text else { return }
+            replaceBuffer(with: edit.text, selection: edit.selection)
         }
 
-        private static func stripLeadingIndent(from mutable: NSMutableString, at location: Int, max count: Int) -> Int {
-            var removed = 0
-            while removed < count, location < mutable.length {
-                let character = mutable.substring(with: NSRange(location: location, length: 1))
-                if character == " " {
-                    mutable.deleteCharacters(in: NSRange(location: location, length: 1))
-                    removed += 1
-                } else if character == "\t", removed == 0 {
-                    mutable.deleteCharacters(in: NSRange(location: location, length: 1))
-                    return 1
-                } else {
-                    break
-                }
-            }
-            return removed
+        private func replaceBuffer(with text: String, selection: NSRange, publish: Bool = true) {
+            guard let view = textView else { return }
+            isApplyingText = true
+            // Bulk changes are one undoable state transition. Runestone.replace
+            // normalizes pasted line endings; state preserves external source bytes
+            // exactly, including mixed endings and AI edits, without losing history.
+            let state = parent.syntaxColoring
+                ? TextViewState(text: text, theme: view.theme, language: CCodeEditor.parser(for: parent.language))
+                : TextViewState(text: text, theme: view.theme)
+            view.setState(state, addUndoAction: true)
+            if let endings = state.detectedLineEndings { view.lineEndings = endings }
+            view.selectedRange = EditorTextCoordinates.clampedSelection(selection, in: view.text)
+            isApplyingText = false
+            lastPublishedText = view.text
+            if publish { publishText() }
+            else { view.accessibilityValue = view.text }
         }
+    }
+}
+
+@MainActor
+private final class EdsgerEditorTheme: @preconcurrency Runestone.Theme {
+    let way: AppColorWay
+    let font = UIFont.monospacedSystemFont(ofSize: 15, weight: .regular)
+    let lineNumberFont = UIFont.monospacedSystemFont(ofSize: 12, weight: .regular)
+    let textColor: UIColor
+    let gutterBackgroundColor: UIColor
+    let gutterHairlineColor: UIColor
+    let lineNumberColor: UIColor
+    let selectedLineBackgroundColor: UIColor
+    let selectedLinesLineNumberColor: UIColor
+    let selectedLinesGutterBackgroundColor: UIColor
+    let invisibleCharactersColor: UIColor
+    let pageGuideHairlineColor: UIColor
+    let pageGuideBackgroundColor: UIColor = .clear
+    let markedTextBackgroundColor: UIColor
+
+    init(way: AppColorWay) {
+        self.way = way
+        let palette = way.palette
+        textColor = UIColor(palette.foreground)
+        gutterBackgroundColor = UIColor(palette.editor)
+        gutterHairlineColor = UIColor(palette.line)
+        lineNumberColor = UIColor(palette.silver)
+        selectedLineBackgroundColor = UIColor(palette.accent).withAlphaComponent(0.035)
+        selectedLinesLineNumberColor = textColor
+        selectedLinesGutterBackgroundColor = gutterBackgroundColor
+        invisibleCharactersColor = lineNumberColor
+        pageGuideHairlineColor = gutterHairlineColor
+        markedTextBackgroundColor = UIColor(palette.accent).withAlphaComponent(0.12)
+    }
+
+    func textColor(for highlightName: String) -> UIColor? {
+        let name = highlightName.lowercased()
+        let kind: CSyntaxKind?
+        if name.hasPrefix("comment") { kind = .comment }
+        else if name.hasPrefix("string") || name.hasPrefix("character") { kind = .string }
+        else if name.hasPrefix("number") || name.hasPrefix("float") || name.hasPrefix("constant.numeric") { kind = .number }
+        else if name.hasPrefix("type") { kind = .type }
+        else if name.hasPrefix("keyword") || name.hasPrefix("conditional") || name.hasPrefix("repeat") || name.hasPrefix("boolean") { kind = .control }
+        else if name.hasPrefix("preproc") || name.hasPrefix("include") { kind = .preprocessor }
+        else if name.hasPrefix("operator") { kind = .op }
+        else { kind = nil }
+        return kind.map { CSyntaxPalette.color($0, way: way) }
     }
 }
 

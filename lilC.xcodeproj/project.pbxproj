@@ -7,6 +7,13 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+        F8B000000000000000000011 = {isa = PBXBuildFile; fileRef = F8C000000000000000000011; };
+        F8B000000000000000000010 = {isa = PBXBuildFile; fileRef = F8C000000000000000000010; };
+        F8B000000000000000000005 /* TreeSitterLuaRunestone in Frameworks */ = {isa = PBXBuildFile; productRef = F8D000000000000000000005; };
+        F8B000000000000000000004 /* TreeSitterJavaScriptRunestone in Frameworks */ = {isa = PBXBuildFile; productRef = F8D000000000000000000004; };
+        F8B000000000000000000003 /* TreeSitterPythonRunestone in Frameworks */ = {isa = PBXBuildFile; productRef = F8D000000000000000000003; };
+        F8B000000000000000000002 /* TreeSitterCRunestone in Frameworks */ = {isa = PBXBuildFile; productRef = F8D000000000000000000002; };
+        F8B000000000000000000001 /* Runestone in Frameworks */ = {isa = PBXBuildFile; productRef = F8D000000000000000000001; };
         A1D000000000000000000001 /* PromptReuseCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1D000000000000000000011 /* PromptReuseCache.swift */; };
         F7B000000000000000000004 = {isa = PBXBuildFile; fileRef = F7C000000000000000000004; };
         F7B000000000000000000003 = {isa = PBXBuildFile; fileRef = F7C000000000000000000003; };
@@ -146,6 +153,8 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+        F8C000000000000000000011 = {isa = PBXFileReference; lastKnownFileType = text; path = "Resources/Runestone-LICENSES.txt"; sourceTree = "<group>"; };
+        F8C000000000000000000010 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Domain/EditorSupport.swift"; sourceTree = "<group>"; };
         A1D000000000000000000011 /* PromptReuseCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Infrastructure/PromptReuseCache.swift; sourceTree = "<group>"; };
         F7C000000000000000000004 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MathEngineTests.swift; sourceTree = "<group>"; };
         F7C000000000000000000003 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Infrastructure/LocalMathCalculator.swift; sourceTree = "<group>"; };
@@ -289,6 +298,11 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+                F8B000000000000000000005,
+                F8B000000000000000000004,
+                F8B000000000000000000003,
+                F8B000000000000000000002,
+                F8B000000000000000000001,
                 A1C000000000000000000003 /* llama.xcframework in Frameworks */,
                 F5B000000000000000000001,
                 F6B000000000000000000001,
@@ -328,6 +342,8 @@
 		100000000000000000000702 /* lilC */ = {
 			isa = PBXGroup;
 			children = (
+                F8C000000000000000000011,
+                F8C000000000000000000010,
                 F5C000000000000000000002,
                 F5C000000000000000000003,
                 F5C000000000000000000004,
@@ -490,6 +506,11 @@
 			);
 			name = lilC;
 			packageProductDependencies = (
+                F8D000000000000000000005,
+                F8D000000000000000000004,
+                F8D000000000000000000003,
+                F8D000000000000000000002,
+                F8D000000000000000000001,
                 F6D000000000000000000001,
                 F5D000000000000000000001,
 			);
@@ -566,6 +587,8 @@
 			);
 			mainGroup = 100000000000000000000701;
 			packageReferences = (
+                F8E000000000000000000001,
+                F8E000000000000000000002,
                 F6E000000000000000000001,
                 F5E000000000000000000001,
 			);
@@ -585,6 +608,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+                F8B000000000000000000011,
                 A1C000000000000000000002 /* Qwen model in Resources */,
                 A1C000000000000000000005 /* Qwen license in Resources */,
                 F5B000000000000000000004,
@@ -630,10 +654,18 @@
 /* End PBXShellScriptBuildPhase section */
 
 /* Begin XCRemoteSwiftPackageReference section */
+        F8E000000000000000000001 = {isa = XCRemoteSwiftPackageReference; repositoryURL = "https://github.com/simonbs/Runestone"; requirement = {kind = exactVersion; version = 0.5.2; }; };
+        F8E000000000000000000002 = {isa = XCRemoteSwiftPackageReference; repositoryURL = "https://github.com/simonbs/TreeSitterLanguages"; requirement = {kind = exactVersion; version = 0.1.10; }; };
         F6E000000000000000000001 = {isa = XCRemoteSwiftPackageReference; repositoryURL = "https://github.com/gonzalezreal/textual.git"; requirement = {kind = exactVersion; version = 0.5.0; }; };
         F5E000000000000000000001 = {isa = XCRemoteSwiftPackageReference; repositoryURL = "https://github.com/mgriebling/SwiftMath.git"; requirement = {kind = exactVersion; version = 1.7.3; }; };
 /* End XCRemoteSwiftPackageReference section */
 /* Begin XCSwiftPackageProductDependency section */
+        F8D000000000000000000001 /* Runestone */ = {isa = XCSwiftPackageProductDependency; package = F8E000000000000000000001; productName = Runestone; };
+        F8D000000000000000000002 /* TreeSitterCRunestone */ = {isa = XCSwiftPackageProductDependency; package = F8E000000000000000000002; productName = TreeSitterCRunestone; };
+        F8D000000000000000000003 /* TreeSitterPythonRunestone */ = {isa = XCSwiftPackageProductDependency; package = F8E000000000000000000002; productName = TreeSitterPythonRunestone; };
+        F8D000000000000000000004 /* TreeSitterJavaScriptRunestone */ = {isa = XCSwiftPackageProductDependency; package = F8E000000000000000000002; productName = TreeSitterJavaScriptRunestone; };
+        F8D000000000000000000005 /* TreeSitterLuaRunestone */ = {isa = XCSwiftPackageProductDependency; package = F8E000000000000000000002; productName = TreeSitterLuaRunestone; };
+
         F6D000000000000000000001 = {isa = XCSwiftPackageProductDependency; package = F6E000000000000000000001; productName = Textual; };
         F5D000000000000000000001 = {isa = XCSwiftPackageProductDependency; package = F5E000000000000000000001; productName = SwiftMath; };
 /* End XCSwiftPackageProductDependency section */
@@ -642,6 +674,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+                F8B000000000000000000010,
                 F5B000000000000000000002,
                 F5B000000000000000000003,
                 E4B000000000000000000002,

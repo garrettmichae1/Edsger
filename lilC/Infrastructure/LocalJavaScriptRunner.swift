@@ -11,12 +11,16 @@ final class LocalJavaScriptRunner: LocalScriptRunning, @unchecked Sendable {
         guard !console.isStopped else { return .init(output: "", failed: false, stopped: true) }
         guard let context = JSContext() else { return .init(output: "Could not initialize JavaScriptCore.", failed: true, stopped: false) }
         var errorText: String?
+        var diagnosticText: String?
         context.exceptionHandler = { _, error in
             guard let error, errorText == nil else { return }
             let message = error.toString() ?? "JavaScript error"
             let stack = error.forProperty("stack")?.toString() ?? ""
             let line = error.forProperty("line")?.toInt32() ?? 0
             errorText = "\(message)\n\(stack.isEmpty ? "\(path.lastPathComponent):\(max(1, line))" : Self.sourceStack(stack))\n"
+            let source = error.forProperty("sourceURL")?.toString() ?? ""
+            let location = stack.isEmpty ? (line > 0 && !source.isEmpty ? "\(source):\(line)" : "") : Self.sourceStack(stack)
+            diagnosticText = "\(message)\n\(location)\n"
         }
         func raise(_ error: Error) { JSContext.current()?.exception = JSValue(newErrorFromMessage: error.localizedDescription, in: JSContext.current()) }
         let write: @convention(block) (String) -> Void = { [console] text in do { try console.write(text) } catch { raise(error) } }
@@ -54,7 +58,7 @@ final class LocalJavaScriptRunner: LocalScriptRunning, @unchecked Sendable {
         } catch { errorText = error.localizedDescription }
         let stoppedResult = console.isStopped
         if let errorText, !stoppedResult { try? console.write(errorText) }
-        return .init(output: console.output, failed: errorText != nil && !stoppedResult, stopped: stoppedResult)
+        return .init(output: console.output, failed: errorText != nil && !stoppedResult, stopped: stoppedResult, diagnosticOutput: diagnosticText)
     }
     private static func sourceStack(_ stack: String) -> String {
         stack.components(separatedBy: "\n").filter { !$0.contains("javascript_bootstrap.js") && !$0.contains("acorn.js") }.joined(separator: "\n")

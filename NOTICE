@@ -35,3 +35,5 @@ Source: https://github.com/mgriebling/SwiftMath
 Textual 0.5.0 and its runtime dependencies provide offline rich Markdown formatting and syntax highlighting.
 See lilC/Resources/Textual-LICENSES.txt for license notices. Existing chat math continues to render with SwiftMath.
 Source: https://github.com/gonzalezreal/textual
+
+Runestone 0.5.2 and TreeSitterLanguages 0.1.10 by Simon Støvring, Tree-sitter 0.20.9, and the C/Python/JavaScript/Lua grammars provide native editor layout and incremental syntax highlighting. Their MIT notices are bundled in lilC/Resources/Runestone-LICENSES.txt and shown in Settings > Licenses. See Docs/RUNESTONE_EDITOR.md for pinned sources and integration details.

@@ -1,4 +1,5 @@
 import Foundation
+import Observation
 
 /// Canonical public legal URLs (GitHub Pages). App Store review and Settings links use these.
 enum LegalURLs {

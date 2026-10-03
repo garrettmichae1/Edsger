@@ -1,6 +1,20 @@
 import Foundation
 
-struct ScriptRunResult: Sendable { let output: String; let failed: Bool; let stopped: Bool }
+struct ScriptRunResult: Sendable {
+    let output: String
+    let failed: Bool
+    let stopped: Bool
+    /// Error-only output when the engine can provide it. Keeps printed filenames
+    /// and line numbers out of the diagnostic-location parser.
+    let diagnosticOutput: String?
+
+    init(output: String, failed: Bool, stopped: Bool, diagnosticOutput: String? = nil) {
+        self.output = output
+        self.failed = failed
+        self.stopped = stopped
+        self.diagnosticOutput = diagnosticOutput
+    }
+}
 
 protocol LocalScriptRunning: AnyObject, Sendable {
     func stop()

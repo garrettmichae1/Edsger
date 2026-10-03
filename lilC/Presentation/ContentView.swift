@@ -1121,6 +1121,7 @@ private struct LocalModeScreen: View {
                     formatEpoch: formatEpoch,
                     overlayHeight: findVisible ? 36 : 0,
                     syntaxColoring: appearance.syntaxColoring,
+                    diagnostic: workspace.currentEditorDiagnostic,
                     onBeginEditing: { focusedLocalField = .editor },
                     onEndEditing: {
                         if focusedLocalField == .editor {
@@ -1470,7 +1471,7 @@ private struct LocalModeScreen: View {
         guard let jump = workspace.revealErrorJump() else { return }
         outputExpanded = true
         focusedLocalField = .editor
-        caretJump = CaretJump(line: jump.line, column: jump.column)
+        caretJump = CaretJump(line: jump.line, column: jump.column, columnEncoding: jump.columnEncoding, fileID: workspace.language.rawValue + ":" + jump.fileID)
     }
 }
 

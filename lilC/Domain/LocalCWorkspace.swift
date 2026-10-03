@@ -139,7 +139,10 @@ final class LocalCWorkspace {
     private let directoryURL: URL
     private var liveRunID = UUID()
 
-    var files: [LocalCFile]
+    var files: [LocalCFile] {
+        didSet { invalidateStaleEditorDiagnostic() }
+    }
+    private var editorDiagnosticSnapshot: EditorDiagnosticSnapshot?
     var folders: [LocalCFolder]
     var selectedFileID: String
     var browsePath = ""
@@ -185,6 +188,28 @@ final class LocalCWorkspace {
 
     var currentFile: LocalCFile {
         files.first { $0.id == selectedFileID } ?? files[0]
+    }
+
+    var currentEditorDiagnostic: EditorRuntimeDiagnostic? {
+        guard let snapshot = editorDiagnosticSnapshot,
+              snapshot.diagnostic.jump.fileID == selectedFileID,
+              snapshot.matches(files) else { return nil }
+        return snapshot.diagnostic
+    }
+
+    private func invalidateStaleEditorDiagnostic() {
+        guard let snapshot = editorDiagnosticSnapshot, !snapshot.matches(files) else { return }
+        if lastErrorJump == snapshot.diagnostic.jump { lastErrorJump = nil }
+        editorDiagnosticSnapshot = nil
+    }
+
+    /// Called only with completed runtime output and the source snapshot used by that run.
+    func recordEditorDiagnostic(jump: CErrorJump?, message: String, sources: [LocalCFile]) {
+        lastErrorJump = jump
+        editorDiagnosticSnapshot = jump.map {
+            EditorDiagnosticSnapshot(diagnostic: EditorRuntimeDiagnostic(jump: $0, message: message), files: sources)
+        }
+        invalidateStaleEditorDiagnostic()
     }
 
     var currentProjectPath: String {
@@ -700,6 +725,7 @@ final class LocalCWorkspace {
 
     func startLiveRun() {
         if language != .c { startScriptRun(); return }
+        editorDiagnosticSnapshot = nil
         if isRunning {
             LocalCRunner.requestStop()
         }
@@ -757,24 +783,26 @@ final class LocalCWorkspace {
         touchCurrentFile()
 
         Task.detached { [weak self] in
+            guard let self else { return }
             let result = LocalCRunner.runInteractive(
                 code,
                 mainName: mainName,
                 extraFileNames: [],
                 includeRoot: includeRoot
             ) { chunk in
-                Task { @MainActor in
+                Task { @MainActor [weak self] in
                     guard let workspace = self, workspace.liveRunID == runID else { return }
                     workspace.output += chunk
                 }
             } onWaitingForInput: { waiting in
-                Task { @MainActor in
+                Task { @MainActor [weak self] in
                     guard let workspace = self, workspace.liveRunID == runID else { return }
                     workspace.isWaitingForInput = waiting
                 }
             }
             await MainActor.run {
-                guard let workspace = self, workspace.liveRunID == runID else { return }
+                let workspace = self
+                guard workspace.liveRunID == runID else { return }
                 let formatted = CDiagnosticFormatter.displayOutput(for: result)
                 workspace.output = ConsoleTranscript.finishing(
                     live: workspace.output,
@@ -783,14 +811,15 @@ final class LocalCWorkspace {
                 )
                 workspace.lastRunFailed = formatted.failed
                 if formatted.failed, let diagnostic = CDiagnosticFormatter.diagnostic(from: result) {
-                    workspace.lastErrorJump = CDiagnosticJump.resolve(
+                    let jump = CDiagnosticJump.resolve(
                         diagnostic: diagnostic,
                         runFile: runFile,
                         extras: extras,
                         projectFiles: projectSnapshot
                     )
+                    workspace.recordEditorDiagnostic(jump: jump, message: diagnostic.displayText, sources: projectSnapshot)
                 } else {
-                    workspace.lastErrorJump = nil
+                    workspace.recordEditorDiagnostic(jump: nil, message: "", sources: [])
                 }
                 workspace.isRunning = false
                 workspace.isWaitingForInput = false
@@ -801,7 +830,9 @@ final class LocalCWorkspace {
 
     private func startScriptRun() {
         guard !isRunning else { return }
+        editorDiagnosticSnapshot = nil
         projectFiles.forEach { persist($0) }
+        let projectSnapshot = projectFiles
         let file = currentFile
         let path = currentFileURL
         let root = currentIncludeRootURL
@@ -818,24 +849,28 @@ final class LocalCWorkspace {
         output = ""; stdinLine = ""; isRunning = true; isWaitingForInput = false
         lastRunFailed = false; lastRunNeedsFillIn = false; lastErrorJump = nil
         Task.detached { [weak self] in
+            guard let self else { return }
             let result = runner.run(path: path, root: root, onOutput: { chunk in
-                Task { @MainActor in
+                Task { @MainActor [weak self] in
                     guard let self, self.liveRunID == id, self.isRunning else { return }
                     self.output += chunk
                 }
             }, onWaiting: { waiting in
-                Task { @MainActor in
+                Task { @MainActor [weak self] in
                     guard let self, self.liveRunID == id, self.isRunning else { return }
                     self.isWaitingForInput = waiting
                 }
             })
             await MainActor.run {
-                guard let self, self.liveRunID == id else { return }
+                guard self.liveRunID == id else { return }
                 self.output = ConsoleTranscript.finishing(live: self.output, captured: result.output, failed: result.failed)
                 if result.stopped { self.output += "\nStopped.\n" }
                 self.lastRunFailed = result.failed
                 if result.failed {
-                    self.lastErrorJump = PythonDiagnostics.jump(output: result.output, files: self.files, root: root, fallback: file)
+                    let jump = PythonDiagnostics.jump(output: result.diagnosticOutput ?? result.output, files: projectSnapshot, root: root, fallback: file, language: self.language)
+                    self.recordEditorDiagnostic(jump: jump, message: result.output, sources: projectSnapshot)
+                } else {
+                    self.recordEditorDiagnostic(jump: nil, message: "", sources: [])
                 }
                 self.isRunning = false; self.isWaitingForInput = false; self.scriptRun = nil
                 // Programs may write source files. Refresh only after the run finishes.

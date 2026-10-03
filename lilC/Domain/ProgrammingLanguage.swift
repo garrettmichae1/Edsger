@@ -64,19 +64,89 @@ enum ProgrammingLanguage: String, CaseIterable, Identifiable, Sendable {
     }
 }
 
+// Uses locations emitted by our embedded runtimes. No desktop-language validator
+// or Tree-sitter syntax-error nodes participate in runtime diagnostics.
 enum PythonDiagnostics {
-    static func jump(output: String, files: [LocalCFile], root: URL, fallback: LocalCFile) -> CErrorJump? {
-        let patterns = [#"File "([^"]+)", line ([0-9]+)"#, #"(?:file://)?([^\s@]+\.(?:js|lua)):([0-9]+)"#]
-        for pattern in patterns {
-            guard let regex = try? NSRegularExpression(pattern: pattern) else { continue }
-            let ns = output as NSString
-            for match in regex.matches(in: output, range: NSRange(location: 0, length: ns.length)).reversed() {
-                let path = ns.substring(with: match.range(at: 1)).removingPercentEncoding ?? ns.substring(with: match.range(at: 1))
-                let line = Int(ns.substring(with: match.range(at: 2))) ?? 1
-                if let file = files.first(where: { root.appendingPathComponent($0.name).path == path || path.hasSuffix("/" + $0.relativePath) || path == $0.name }) {
-                    return CErrorJump(fileID: file.id, line: line, column: 1)
-                }
+    static func jump(output: String, files: [LocalCFile], root: URL, fallback: LocalCFile,
+                     language: ProgrammingLanguage? = nil) -> CErrorJump? {
+        let language = language ?? ProgrammingLanguage.allCases.first { $0.fileExtension == (fallback.name as NSString).pathExtension } ?? .python
+        let pattern: String
+        let reversed: Bool
+        var diagnosticOutput = output
+        switch language {
+        case .python:
+            pattern = #"(?m)^  File "([^\"]+)", line ([0-9]+)"#
+            reversed = true // Innermost Python traceback frame is last.
+            if let trace = output.range(of: "Traceback (most recent call last):", options: .backwards) {
+                diagnosticOutput = String(output[trace.lowerBound...])
             }
+        case .javascript:
+            pattern = #"(?m)(?:^|@)((?:file://)?[^\n@]+\.js):([0-9]+)(?::([0-9]+))?"#
+            reversed = false // JavaScriptCore lists the throwing frame first.
+        case .lua:
+            pattern = #"([^\s]+\.lua):([0-9]+):"#
+            reversed = true // require() prefixes the original module error with its caller.
+            if let stack = output.range(of: "stack traceback:", options: .backwards) {
+                diagnosticOutput = String(output[..<stack.lowerBound])
+            }
+            // The header carries the original failure. Stack frames are callers,
+            // not alternative diagnostics. Nested require errors can have more
+            // than one location in this header; the deepest one is the original.
+            diagnosticOutput = diagnosticOutput.components(separatedBy: "\n").first ?? diagnosticOutput
+        case .c: return nil
+        }
+        guard let regex = try? NSRegularExpression(pattern: pattern) else { return nil }
+        let ns = diagnosticOutput as NSString
+        let matches = regex.matches(in: diagnosticOutput, range: NSRange(location: 0, length: ns.length))
+        let ordered = reversed ? Array(matches.reversed()) : matches
+        for match in ordered {
+            let rawPath = ns.substring(with: match.range(at: 1))
+            let path = rawPath.removingPercentEncoding ?? rawPath
+            guard let line = Int(ns.substring(with: match.range(at: 2))), line > 0,
+                  let file = resolve(path: path, files: files, root: root, fallback: fallback) else { continue }
+            // Instrumented JS runtime columns refer to inserted stop checks. Only
+            // Acorn's original-source syntax columns are safe to use precisely.
+            var column = 1
+            if language == .javascript, diagnosticOutput.hasPrefix("SyntaxError"),
+               match.numberOfRanges > 3, match.range(at: 3).location != NSNotFound {
+                column = max(Int(ns.substring(with: match.range(at: 3))) ?? 1, 1)
+            }
+            return CErrorJump(fileID: file.id, line: line, column: column)
+        }
+        return nil
+    }
+
+    private static func resolve(path: String, files: [LocalCFile], root: URL, fallback: LocalCFile) -> LocalCFile? {
+        let prefix = fallback.folderPath.isEmpty ? "" : fallback.folderPath + "/"
+        let candidates = files.filter { prefix.isEmpty || $0.relativePath.hasPrefix(prefix) }
+        let localPath = path.hasPrefix("file://") ? URL(string: path)?.path ?? path : path
+        // Lua shortens long chunk filenames using "...". iOS container paths
+        // commonly exceed its limit. Match the remaining path against known
+        // project URLs only, and require an unambiguous result.
+        if localPath.hasPrefix("...") {
+            let suffix = String(localPath.dropFirst(3))
+            guard suffix.contains("/"), !suffix.isEmpty else { return nil }
+            let matching = candidates.filter { file in
+                let relative = String(file.relativePath.dropFirst(prefix.count))
+                return root.appendingPathComponent(relative).path.hasSuffix(suffix)
+            }
+            return matching.count == 1 ? matching.first : nil
+        }
+        if localPath.hasPrefix("/") {
+            let standardized = URL(fileURLWithPath: localPath).standardizedFileURL.path
+            return candidates.first { file in
+                let relative = String(file.relativePath.dropFirst(prefix.count))
+                return root.appendingPathComponent(relative).standardizedFileURL.path == standardized
+            }
+        }
+        let relative = localPath.hasPrefix("./") ? String(localPath.dropFirst(2)) : localPath
+        guard !relative.contains(".."), !relative.hasPrefix("[") else { return nil }
+        let exact = candidates.filter { String($0.relativePath.dropFirst(prefix.count)) == relative || $0.relativePath == relative }
+        if exact.count == 1 { return exact.first }
+        // A bare filename is safe only when unambiguous within the run's project.
+        if !relative.contains("/") {
+            let named = candidates.filter { $0.name == relative }
+            return named.count == 1 ? named.first : nil
         }
         return nil
     }

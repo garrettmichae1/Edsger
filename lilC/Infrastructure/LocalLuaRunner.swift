@@ -5,6 +5,7 @@ final class LocalLuaRunner: LocalScriptRunning, @unchecked Sendable {
     private let job: OpaquePointer
     private let lock = NSLock()
     private var captured = ""
+    private var lastOutputChunk = ""
     private var outputHandler: (@Sendable (String) -> Void)?
     private var waitingHandler: (@Sendable (Bool) -> Void)?
     init() { job = lilc_lua_create()! }
@@ -13,7 +14,7 @@ final class LocalLuaRunner: LocalScriptRunning, @unchecked Sendable {
     func input(_ line: String) { lilc_lua_input(job, line) }
     func eof() { lilc_lua_eof(job) }
     fileprivate func receive(_ text: String) {
-        lock.lock(); captured += text; let handler = outputHandler; lock.unlock()
+        lock.lock(); captured += text; lastOutputChunk = text; let handler = outputHandler; lock.unlock()
         handler?(text)
     }
     fileprivate func waiting(_ value: Bool) {
@@ -26,8 +27,9 @@ final class LocalLuaRunner: LocalScriptRunning, @unchecked Sendable {
         let bootstrap = bundle.appendingPathComponent("lua_bootstrap.lua").path
         let context = Unmanaged.passUnretained(self).toOpaque()
         let code = lilc_lua_run(job, bootstrap, path.path, root.path, luaOutput, luaWaiting, context)
-        lock.lock(); let output = captured; outputHandler = nil; waitingHandler = nil; lock.unlock()
-        return Result(output: output, failed: code == 1, stopped: code == 2)
+        lock.lock(); let output = captured; let diagnostic = lastOutputChunk; outputHandler = nil; waitingHandler = nil; lock.unlock()
+        // LuaRunner.c emits the final error/traceback as one dedicated chunk.
+        return Result(output: output, failed: code == 1, stopped: code == 2, diagnosticOutput: code == 1 ? diagnostic : nil)
     }
 }
 

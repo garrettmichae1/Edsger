@@ -3,6 +3,7 @@ import SwiftUI
 import Testing
 import Textual
 import UIKit
+import Runestone
 @testable import lilC
 
 @Suite(.serialized)
@@ -1907,6 +1908,115 @@ struct lilCTests {
     }
 
     @MainActor
+    @Test func editorRuntimeMarkerUsesCompletedSourceAndClearsAfterEdit() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let suite = "editor-runtime-" + UUID().uuidString
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let workspace = LocalCWorkspace(defaults: defaults, directoryURL: root)
+        workspace.updateCurrentCode("int main(void) {\n    return missing;\n}\n")
+        workspace.startLiveRun()
+        for _ in 0..<300 where workspace.isRunning { try await Task.sleep(for: .milliseconds(10)) }
+        #expect(!workspace.isRunning)
+        #expect(workspace.lastRunFailed)
+        #expect(workspace.currentEditorDiagnostic != nil)
+        #expect(workspace.currentEditorDiagnostic?.jump.columnEncoding == .zeroBasedUTF8)
+        workspace.updateCurrentCode("int main(void) { return 0; }\n")
+        #expect(workspace.currentEditorDiagnostic == nil)
+        #expect(workspace.lastErrorJump == nil)
+        workspace.startLiveRun()
+        for _ in 0..<300 where workspace.isRunning { try await Task.sleep(for: .milliseconds(10)) }
+        #expect(!workspace.isRunning && !workspace.lastRunFailed)
+        #expect(workspace.currentEditorDiagnostic == nil)
+    }
+
+    @MainActor
+    @Test func runestoneLoadsAllFourLanguagesWithoutChangingSource() {
+        for (language, source) in [(ProgrammingLanguage.c, "int main(void) { return 0; }\n"),
+                                   (.python, "def add(a, b):\n    return a + b\n"),
+                                   (.javascript, "const n = 3;\nconsole.log(n);\n"),
+                                   (.lua, "local n = 3\nprint(n)\n")] {
+            var text = source
+            let editor = editorFixture(text: Binding(get: { text }, set: { text = $0 }), language: language)
+            let coordinator = CCodeEditor.Coordinator(parent: editor)
+            let view = Runestone.TextView(frame: CGRect(x: 0, y: 0, width: 320, height: 200))
+            coordinator.textView = view
+            coordinator.loadFile(in: view)
+            #expect(view.text == source)
+            #expect(view.syntaxNode(at: 2) != nil, "Language package must provide a working parser for \(language.name)")
+        }
+    }
+
+    @MainActor
+    @Test func runestoneExternalEditKeepsIdentityCaretSourceBytesAndUndo() {
+        var text = "int x;\r\n"
+        let editor = editorFixture(text: Binding(get: { text }, set: { text = $0 }))
+        let coordinator = CCodeEditor.Coordinator(parent: editor)
+        let view = Runestone.TextView(frame: CGRect(x: 0, y: 0, width: 320, height: 200))
+        coordinator.textView = view
+        coordinator.loadFile(in: view)
+        view.editorDelegate = coordinator
+        view.selectedRange = NSRange(location: 4, length: 1)
+        let identity = ObjectIdentifier(view)
+        text = "int y;\nint z;\r\n"
+        coordinator.applyExternalTextIfNeeded()
+        #expect(view.text == text, "AI edits must preserve source bytes, including mixed line endings")
+        #expect(view.selectedRange == NSRange(location: 4, length: 1))
+        #expect(ObjectIdentifier(view) == identity)
+        view.undoManager?.undo()
+        #expect(view.text == "int x;\r\n")
+        #expect(text == view.text, "Undo must reach the file-saving binding")
+        view.undoManager?.redo()
+        #expect(text == "int y;\nint z;\r\n")
+    }
+
+    @MainActor
+    @Test func runestoneFileSwitchCannotUndoTextFromAnotherDocument() {
+        var text = "int old;\n"
+        var editor = editorFixture(text: Binding(get: { text }, set: { text = $0 }))
+        let coordinator = CCodeEditor.Coordinator(parent: editor)
+        let view = Runestone.TextView(frame: CGRect(x: 0, y: 0, width: 320, height: 200))
+        coordinator.textView = view
+        coordinator.loadFile(in: view)
+        text = "int edited;\n"
+        coordinator.applyExternalTextIfNeeded()
+        #expect(view.undoManager?.canUndo == true)
+        text = "print('other')\n"
+        editor.fileID = "python:other.py"
+        editor.language = .python
+        coordinator.parent = editor
+        coordinator.loadFile(in: view)
+        #expect(view.text == text)
+        #expect(view.undoManager?.canUndo == false)
+        #expect(coordinator.accessory?.controlAccessibilityLabels.contains(":") == true)
+        #expect(coordinator.accessory?.controlAccessibilityLabels.contains("Format code") == false)
+    }
+
+    @MainActor
+    @Test func runestoneSearchAndRuntimeHighlightsCoexistWithoutEditingText() {
+        var text = "int value = missing;\n"
+        var editor = editorFixture(text: Binding(get: { text }, set: { text = $0 }))
+        editor.findVisible = true
+        editor.findQuery = "value"
+        editor.diagnostic = .init(jump: .init(fileID: "main.c", line: 1, column: 12), message: "PicoC name error")
+        let coordinator = CCodeEditor.Coordinator(parent: editor)
+        let view = Runestone.TextView(frame: CGRect(x: 0, y: 0, width: 320, height: 200))
+        coordinator.textView = view
+        coordinator.loadFile(in: view)
+        coordinator.updateHighlights()
+        #expect(view.highlightedRanges.map(\.id) == ["runtime-error", "find-0"])
+        #expect(view.text == text)
+        editor.diagnostic = nil
+        editor.findVisible = false
+        coordinator.parent = editor
+        coordinator.updateHighlights()
+        #expect(view.highlightedRanges.isEmpty)
+        #expect(view.text == text)
+    }
+
+    @MainActor
     @Test func accessoryBarHasOneDismissAndFormatBesideIt() {
         let accessory = CSymbolAccessoryView()
         let labels = accessory.controlAccessibilityLabels
@@ -1936,7 +2046,7 @@ struct lilCTests {
             onEndEditing: {}
         )
         let coordinator = CCodeEditor.Coordinator(parent: editor)
-        let textView = UITextView(frame: CGRect(x: 0, y: 0, width: 320, height: 200))
+        let textView = Runestone.TextView(frame: CGRect(x: 0, y: 0, width: 320, height: 200))
         textView.text = text
         coordinator.textView = textView
         let identity = ObjectIdentifier(textView)
@@ -1944,6 +2054,8 @@ struct lilCTests {
         #expect(textView.text == "int main(void) {\n    return 0;\n}\n")
         #expect(text == textView.text)
         #expect(ObjectIdentifier(textView) == identity)
+        textView.undoManager?.undo()
+        #expect(textView.text == "int main(void) {\nreturn 0;\n}\n")
     }
 
     @MainActor
@@ -1976,10 +2088,10 @@ struct lilCTests {
 
         let after = firstTextView(in: host.view)
         #expect(after.map(ObjectIdentifier.init) == identity)
-        #expect((textView.text ?? "").contains("a"))
+        #expect(textView.text.contains("a"))
         if becameFirstResponder {
             #expect(
-                textView.isFirstResponder,
+                textView.isEditing,
                 "Typing must not resign first responder; updateUIView used to resign when FocusState lagged"
             )
         }
@@ -2967,6 +3079,15 @@ private let picoCAndRunnerErrorCatalog = [
     "Cannot run this project: it has more than one main() function (a.c, b.c). Keep one main() and turn the others into helper functions.",
 ]
 
+@MainActor
+private func editorFixture(text: Binding<String>, language: ProgrammingLanguage = .c) -> CCodeEditor {
+    CCodeEditor(text: text, fileID: language.rawValue + ":main." + language.fileExtension,
+                language: language, isFocused: false, jump: nil,
+                findVisible: false, findQuery: "", findIndex: 0, findEpoch: 0,
+                overlayHeight: 0, syntaxColoring: true,
+                onBeginEditing: {}, onEndEditing: {})
+}
+
 private struct EditorKeyboardHarness: View {
     @Binding var text: String
 
@@ -3016,8 +3137,8 @@ struct BridgingLessonCase: Sendable {
 }
 
 @MainActor
-private func firstTextView(in view: UIView) -> UITextView? {
-    if let textView = view as? UITextView {
+private func firstTextView(in view: UIView) -> Runestone.TextView? {
+    if let textView = view as? Runestone.TextView {
         return textView
     }
     for child in view.subviews {

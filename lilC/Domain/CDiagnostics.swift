@@ -51,6 +51,7 @@ struct CErrorJump: Equatable, Sendable {
     var fileID: String
     var line: Int
     var column: Int
+    var columnEncoding: EditorColumnEncoding = .oneBasedUTF16
 }
 
 enum CDiagnosticJump {
@@ -61,17 +62,21 @@ enum CDiagnosticJump {
         projectFiles: [LocalCFile]
     ) -> CErrorJump? {
         guard let line = diagnostic.line, line > 0 else { return nil }
-        let column = max(diagnostic.column ?? 1, 1)
+        let column = max(diagnostic.column ?? 0, 0)
         let reportedName = diagnostic.file.map { URL(fileURLWithPath: $0).lastPathComponent }
 
-        if let name = reportedName,
-           let named = projectFiles.first(where: { $0.name.caseInsensitiveCompare(name) == .orderedSame }),
-           named.id != runFile.id {
-            return CErrorJump(fileID: named.id, line: line, column: column)
+        if let name = reportedName, name != runFile.name {
+            let reportedPath = diagnostic.file ?? name
+            let exact = projectFiles.filter { $0.relativePath == reportedPath || reportedPath.hasSuffix("/" + $0.relativePath) }
+            let candidates = exact.isEmpty ? projectFiles.filter { $0.name == name } : exact
+            // Never guess between two headers with the same basename, or jump
+            // into main.c for an error reported outside this project.
+            guard candidates.count == 1, let named = candidates.first else { return nil }
+            return CErrorJump(fileID: named.id, line: line, column: column, columnEncoding: .zeroBasedUTF8)
         }
 
         let mapped = mapConcatenatedLine(line, runFile: runFile, extras: extras)
-        return CErrorJump(fileID: mapped.fileID, line: max(mapped.line, 1), column: column)
+        return CErrorJump(fileID: mapped.fileID, line: max(mapped.line, 1), column: column, columnEncoding: .zeroBasedUTF8)
     }
 
     static func concatenatedSource(runFile: LocalCFile, extras: [LocalCFile]) -> String {
@@ -217,7 +222,7 @@ enum CDiagnosticFormatter {
         let pattern = #"^(.+):(\d+):(\d+)\s+(.+)$"#
         guard let regex = try? NSRegularExpression(pattern: pattern) else { return nil }
 
-        for (index, line) in lines.enumerated() {
+        for (index, line) in lines.enumerated().reversed() {
             let range = NSRange(line.startIndex..<line.endIndex, in: line)
             guard let match = regex.firstMatch(in: line, range: range),
                   let fileRange = Range(match.range(at: 1), in: line),

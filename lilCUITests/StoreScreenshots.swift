@@ -72,7 +72,7 @@ final class StoreScreenshots: XCTestCase {
             if !create.isHittable { app.scrollViews.firstMatch.swipeDown() }
             XCTAssertTrue(create.label.contains("A single " + name + " file"))
             create.tap()
-            let editor = app.textViews["code-editor"]
+            let editor = app.descendants(matching: .any)["code-editor"]
             XCTAssertTrue(editor.waitForExistence(timeout: 5), app.debugDescription)
             XCTAssertTrue((editor.value as? String)?.contains(source) == true)
             app.buttons["RUN"].tap()
@@ -99,7 +99,7 @@ final class StoreScreenshots: XCTestCase {
         let newFile = app.buttons.matching(NSPredicate(format: "label CONTAINS 'New file'")).firstMatch
         XCTAssertTrue(newFile.exists, app.debugDescription)
         newFile.tap()
-        let editor = app.textViews["code-editor"]
+        let editor = app.descendants(matching: .any)["code-editor"]
         XCTAssertTrue(editor.waitForExistence(timeout: 5), app.debugDescription)
         XCTAssertTrue((editor.value as? String)?.contains("print(") == true)
         XCTAssertFalse(app.buttons["FMT"].exists)
@@ -164,7 +164,7 @@ final class StoreScreenshots: XCTestCase {
         let openEditor = app.buttons["home-editor"]
         XCTAssertTrue(openEditor.waitForExistence(timeout: 10), app.debugDescription)
         openEditor.tap()
-        let editor = app.textViews["code-editor"]
+        let editor = app.descendants(matching: .any)["code-editor"]
         XCTAssertTrue(editor.waitForExistence(timeout: 5))
         let originalCode = editor.value as? String
 
@@ -299,7 +299,7 @@ final class StoreScreenshots: XCTestCase {
         XCTAssertTrue(create.waitForExistence(timeout: 5), app.debugDescription)
         if !create.isHittable { app.scrollViews.firstMatch.swipeDown() }
         create.tap()
-        XCTAssertTrue(app.textViews["code-editor"].waitForExistence(timeout: 5), app.debugDescription)
+        XCTAssertTrue(app.descendants(matching: .any)["code-editor"].waitForExistence(timeout: 5), app.debugDescription)
     }
 
     private func openIDE() {
@@ -358,7 +358,7 @@ final class StoreScreenshots: XCTestCase {
     }
 
     private func replaceEditor(with text: String) {
-        let editor = app.textViews["code-editor"]
+        let editor = app.descendants(matching: .any)["code-editor"]
         XCTAssertTrue(editor.waitForExistence(timeout: 8), app.debugDescription)
         editor.tap()
         sleep(1)
