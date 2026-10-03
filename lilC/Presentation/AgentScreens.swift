@@ -189,6 +189,7 @@ struct AgentConversationView: View {
     var body: some View {
         VStack(spacing: 0) {
             HStack(spacing: 0) {
+                AgentModelPicker(session: session)
                 Spacer()
                 if !session.restorePoints.isEmpty {
                     Button { showsRestorePoints = true } label: {

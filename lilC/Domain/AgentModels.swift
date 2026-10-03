@@ -3,6 +3,7 @@ import Foundation
 struct AgentCompletion: Sendable {
     var assistantText: String
     var toolCalls: [AgentToolCall]
+    var continuationJSON: String? = nil
 }
 
 protocol AgentCompleting: Sendable {
@@ -94,19 +95,28 @@ struct AgentChatMessage: Identifiable, Equatable, Codable {
     var text: String
     var toolName: String?
     var createdAt: Date
+    var toolCalls: [AgentToolCall]?
+    var toolCallID: String?
+    var continuationJSON: String?
 
     init(
         id: UUID = UUID(),
         role: Role,
         text: String,
         toolName: String? = nil,
-        createdAt: Date = Date()
+        createdAt: Date = Date(),
+        toolCalls: [AgentToolCall]? = nil,
+        toolCallID: String? = nil,
+        continuationJSON: String? = nil
     ) {
         self.id = id
         self.role = role
         self.text = text
         self.toolName = toolName
         self.createdAt = createdAt
+        self.toolCalls = toolCalls
+        self.toolCallID = toolCallID
+        self.continuationJSON = continuationJSON
     }
 }
 
@@ -116,6 +126,7 @@ enum AgentTranscriptPresentation {
         let firstRequest = messages.firstIndex { $0.role == .user } ?? messages.endIndex
         return messages.enumerated().compactMap { index, message in
             guard message.role != .system else { return nil }
+            if message.role == .assistant && message.text.isEmpty { return nil }
             if index < firstRequest, message.role == .assistant,
                message.text.hasPrefix("I can read and edit your ") { return nil }
             return message
@@ -140,6 +151,7 @@ enum AgentTranscriptPresentation {
             case "select file": return "Opening a file…"
             case "delete file", "delete folder": return "Removing an item…"
             case "stop run": return "Stopping the program…"
+            case "calculate math": return "Calculating on device…"
             default: return "Working…"
             }
         }
@@ -177,6 +189,7 @@ struct AgentToolActivity {
         case "list_folders": title = "Project folders"; symbol = "folder"
         case "select_file": title = "File selection"; symbol = "doc"
         case "stop_run": title = "Program stop result"; symbol = "stop.circle"
+        case "calculate_math": title = "On-device math result"; symbol = "function"
         default: title = "Activity details"; symbol = "ellipsis.circle"
         }
     }
@@ -186,7 +199,7 @@ struct AgentToolActivity {
     }
 }
 
-struct AgentToolCall: Equatable, Sendable {
+struct AgentToolCall: Equatable, Codable, Sendable {
     var id: String
     var name: String
     var argumentsJSON: String

@@ -620,7 +620,7 @@ private struct EdsgerInfoSheet: View {
                     VStack(alignment: .leading, spacing: 0) {
                         infoAnswer("What works without Wi-Fi?", text: "Once Edsger is installed, the bundled AI can answer in Chat and work on code in Agent mode without an internet connection or a separate model download. Math calculations and supported code execution are local too.")
                         Divider().padding(.vertical, 16)
-                        infoAnswer("What makes this different?", text: "Your device does the AI work. Chat and Agent do not need a cloud AI account or API key. Your conversations are saved locally, and the agent works with files in your IDE. Device backups and any files you choose to share follow your normal iOS settings.")
+                        infoAnswer("What makes this different?", text: "Edsger’s bundled models do the AI work on your device, without a cloud account or API key. Your conversations are saved locally, and the agent works with files in your IDE. You can optionally add OpenAI or Claude keys in Settings → BYOK. Choosing a cloud model needs internet and sends context to that provider through Edsger’s relay, with your explicit consent. Device backups and files you choose to share follow your normal iOS settings.")
                         Divider().padding(.vertical, 16)
                         infoAnswer("What should I expect?", text: "Local AI can make mistakes and has no live web access. It is best used for focused questions and small coding tasks. Speed depends on your device and the size of the request; the first reply may take longer while the model loads.")
                     }

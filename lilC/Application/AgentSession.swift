@@ -47,12 +47,20 @@ final class AgentSession {
     private var projectRoot = ""
     private var runID = UUID()
     private var inferenceStatusID: UUID?
-    private let client: any AgentCompleting
+    private let client: (any AgentCompleting)?
+    private let providers = BYOKStore.shared
     private let savesHistory: Bool
+
+    var modelChoice: BYOKChoice? { providers.agentChoice(language: workspace.language, project: workspace.currentProjectPath) }
+    var modelTitle: String { modelChoice.map(providers.title) ?? "Edsger 1.0" }
+    func selectModel(_ choice: BYOKChoice?) {
+        guard !isThinking else { return }
+        providers.selectAgent(choice, language: workspace.language, project: workspace.currentProjectPath)
+    }
 
     func waitUntilIdle() async { await runTask?.value }
 
-    init(workspace: LocalCWorkspace, settings: AgentSettingsStore, client: any AgentCompleting = LocalAgentClient.shared, savesHistory: Bool = true) {
+    init(workspace: LocalCWorkspace, settings: AgentSettingsStore, client: (any AgentCompleting)? = nil, savesHistory: Bool = true) {
         self.workspace = workspace
         self.settings = settings
         self.client = client
@@ -79,7 +87,7 @@ final class AgentSession {
         if messages.isEmpty { messages = [
             AgentChatMessage(
                 role: .assistant,
-                text: "I can read and edit your \(workspace.language.name) project, create files, run code, and help fix errors. Everything runs on this iPhone."
+                text: "I can read and edit your \(workspace.language.name) project, create files, run code, and help fix errors. Code and math run on this iPhone. Choose Edsger for local AI or a BYOK model for cloud AI."
             )
         ] }
         reloadRestorePoints()
@@ -209,23 +217,32 @@ final class AgentSession {
         guard settings.canRunAgents else { return }
         guard !workspace.isRunning else { notice = "Stop the running program before starting another agent request."; return }
         activateCurrentProject()
+        let selectedClient: any AgentCompleting
+        do {
+            if let client { selectedClient = client }
+            else if let choice = modelChoice { selectedClient = try providers.client(for: choice) }
+            else { selectedClient = LocalAgentClient.shared }
+            try providers.beginRun()
+        } catch { notice = error.localizedDescription; return }
         notice = historyWritable ? nil : "History is unavailable. This request won’t be saved."
         draft = ""
         messages.append(AgentChatMessage(role: .user, text: prompt))
         if let clarification = AgentRequestPolicy.clarification(for: prompt, currentFile: workspace.currentFile.name) {
             messages.append(AgentChatMessage(role: .assistant, text: clarification))
             statusLine = "Ready"
+            providers.endRun()
             return
         }
         isThinking = true
         statusLine = GenerationStatus.waiting.label
         runID = UUID()
         let id = runID
-        runTask = Task { await loop(id: id) }
+        runTask = Task { await loop(id: id, client: selectedClient) }
     }
 
-    private func loop(id: UUID) async {
+    private func loop(id: UUID, client: any AgentCompleting) async {
         defer {
+            providers.endRun()
             // A cancelled task must finish its checkpoint bookkeeping before
             // a later task gets a new checkpoint ID.
             if runID == id { isThinking = false; inferenceStatusID = nil; finishCheckpoint() }
@@ -247,11 +264,12 @@ final class AgentSession {
                     + String(decoding: snapshot, as: UTF8.self)
                 inspectedFiles[initialPath] = source
             }
-            let toolsJSON = try JSONSerialization.data(withJSONObject: Self.toolSpecs)
+            let toolsJSON = try JSONSerialization.data(withJSONObject: AgentToolRegistry.specifications)
             var changedFiles = false
             var reviewedCompletion = false
             var previousCalls = ""
             var repeatedCalls = 0
+            var executedCalls: [String: (signature: String, output: String)] = [:]
             while hops < 20 {
                 if Task.isCancelled { throw AgentTransportError.cancelled }
                 hops += 1
@@ -292,38 +310,28 @@ final class AgentSession {
                 if result.toolCalls.isEmpty {
                     let text = result.assistantText.trimmingCharacters(in: .whitespacesAndNewlines)
                     if !text.isEmpty {
-                        messages.append(AgentChatMessage(role: .assistant, text: text))
+                        messages.append(AgentChatMessage(role: .assistant, text: text, continuationJSON: result.continuationJSON))
                     }
                     statusLine = "Ready"
                     return
                 }
-                if !result.assistantText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                    messages.append(AgentChatMessage(role: .assistant, text: result.assistantText))
-                }
-                var toolCallPayload: [[String: Any]] = []
+                guard Set(result.toolCalls.map(\.id)).count == result.toolCalls.count else { throw BYOKError.invalidResponse }
+                // Validate the entire batch before any file or runtime action.
+                for call in result.toolCalls { _ = try AgentToolRegistry.validatedArguments(call) }
+                messages.append(AgentChatMessage(role: .assistant, text: result.assistantText, toolCalls: result.toolCalls, continuationJSON: result.continuationJSON))
+                wire.append(AgentWireHistory.assistant(text: result.assistantText, calls: result.toolCalls, continuation: result.continuationJSON))
                 for call in result.toolCalls {
-                    toolCallPayload.append([
-                        "id": call.id,
-                        "type": "function",
-                        "function": [
-                            "name": call.name,
-                            "arguments": call.argumentsJSON
-                        ]
-                    ])
-                }
-                wire.append([
-                    "role": "assistant",
-                    "content": result.assistantText,
-                    "tool_calls": toolCallPayload
-                ])
-                for call in result.toolCalls {
-                    let args = (try? JSONSerialization.jsonObject(with: Data(call.argumentsJSON.utf8))) as? [String: Any] ?? [:]
+                    let args = try AgentToolRegistry.validatedArguments(call)
                     let path = scopedPath(args["path"] as? String ?? "")
                     try Task.checkCancellation()
                     statusLine = "Working: " + call.name.replacingOccurrences(of: "_", with: " ")
                     let mustInspect = ["write_file", "replace_text", "delete_file"].contains(call.name)
                     let output: String
-                    if mustInspect, let contents = workspace.agentReadFile(path), inspectedFiles[path] != contents {
+                    let callSignature = call.name + call.argumentsJSON
+                    if let previous = executedCalls[call.id] {
+                        guard previous.signature == callSignature else { throw BYOKError.invalidResponse }
+                        output = previous.output
+                    } else if mustInspect, let contents = workspace.agentReadFile(path), inspectedFiles[path] != contents {
                         output = "Change not applied. Read the existing file \(path) below before retrying. Re-evaluate your change against these current contents:\n" + contents
                         inspectedFiles[path] = contents
                     } else {
@@ -353,7 +361,8 @@ final class AgentSession {
                             inspectedFiles[path] = workspace.agentReadFile(path)
                         }
                     }
-                    messages.append(AgentChatMessage(role: .tool, text: output, toolName: call.name))
+                    executedCalls[call.id] = (callSignature, output)
+                    messages.append(AgentChatMessage(role: .tool, text: output, toolName: call.name, toolCallID: call.id))
                     wire.append([
                         "role": "tool",
                         "tool_call_id": call.id,
@@ -383,19 +392,7 @@ final class AgentSession {
         // Keep recent complete turns; the local client additionally budgets actual tokens.
         let starts = messages.indices.filter { messages[$0].role == .user }
         let start = starts.suffix(3).first ?? messages.startIndex
-        for message in messages[start...] {
-            switch message.role {
-            case .user:
-                payload.append(["role": "user", "content": message.text])
-            case .assistant:
-                if message.text.hasPrefix("I can read and edit your ") { continue }
-                payload.append(["role": "assistant", "content": message.text])
-            case .tool:
-                payload.append(["role": "tool", "content": "Tool \(message.toolName ?? "result"): \(message.text)"])
-            case .system:
-                continue
-            }
-        }
+        payload += AgentWireHistory.messages(Array(messages[start...]))
         return payload
     }
 
@@ -469,14 +466,21 @@ final class AgentSession {
         \(files)
         Deleting: \(deletes)
         You may brainstorm without tools. For code, use tools: create folders, write source files including tests, select, run, read output.
+        For supported symbolic calculations use calculate_math; it invokes the bounded on-device SymPy calculator. Never invent a calculator result or attempt unrestricted Python through that tool.
         Prefer a folder as a project. Put tests next to the code they cover.
         """
     }
 
     private func executeTool(_ call: AgentToolCall) async -> String {
-        let args = (try? JSONSerialization.jsonObject(with: Data(call.argumentsJSON.utf8))) as? [String: Any] ?? [:]
+        guard let args = try? AgentToolRegistry.validatedArguments(call) else { return "Invalid tool arguments. No action was performed." }
         let path = scopedPath(args["path"] as? String ?? "")
         switch call.name {
+        case "calculate_math":
+            do {
+                let request = try JSONDecoder().decode(MathRequest.self, from: Data(call.argumentsJSON.utf8))
+                let result = try await LocalMathCalculator.shared.calculate(request)
+                return result.answer(for: request) ?? ("Calculation unavailable: " + (result.error ?? "Unsupported calculation."))
+            } catch { return Task.isCancelled ? "Stopped." : "The on-device calculator could not finish this calculation." }
         case "list_files":
             return workspace.agentListFilesSummary(in: projectRoot)
         case "list_folders":
@@ -534,52 +538,7 @@ final class AgentSession {
         return projectRoot.isEmpty ? path : "\(projectRoot)/\(path)"
     }
 
-    private static let toolSpecs: [[String: Any]] = [
-        function("list_files", "List source files in the project."),
-        function("list_folders", "List project folders."),
-        function("read_file", "Read a file.", ["path": stringProp], ["path"]),
-        function("write_file", "Create or overwrite a source file for the selected language (including tests).", [
-            "path": stringProp,
-            "contents": stringProp
-        ], ["path", "contents"]),
-        function("replace_text", "Replace one exact, unique substring in an existing file. Read it first.", [
-            "path": stringProp, "old_text": stringProp, "new_text": stringProp
-        ], ["path", "old_text", "new_text"]),
-        function("create_folder", "Create a project or nested folder.", ["path": stringProp], ["path"]),
-        function("select_file", "Select a file in the editor.", ["path": stringProp], ["path"]),
-        function("run_file", "Select a source file and run it with the active language runtime.", ["path": stringProp], ["path"]),
-        function("run_current", "Run the selected file."),
-        function("stop_run", "Stop a running program."),
-        function("read_output", "Read recent program output."),
-        function("delete_file", "Delete a file. Blocked while safeguards are on.", ["path": stringProp], ["path"]),
-        function("delete_folder", "Delete a folder and its files. Blocked while safeguards are on.", ["path": stringProp], ["path"])
-    ]
 
-    private static var stringProp: [String: Any] { ["type": "string"] }
-
-    private static func function(
-        _ name: String,
-        _ description: String,
-        _ properties: [String: Any] = [:],
-        _ required: [String] = []
-    ) -> [String: Any] {
-        var parameters: [String: Any] = [
-            "type": "object",
-            "properties": properties,
-            "additionalProperties": false
-        ]
-        if !required.isEmpty {
-            parameters["required"] = required
-        }
-        return [
-            "type": "function",
-            "function": [
-                "name": name,
-                "description": description,
-                "parameters": parameters
-            ]
-        ]
-    }
 }
 
 enum AgentRequestPolicy {

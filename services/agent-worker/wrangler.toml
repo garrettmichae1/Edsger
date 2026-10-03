@@ -4,6 +4,7 @@ compatibility_date = "2026-08-01"
 workers_dev = true
 
 [vars]
+BYOK_ENABLED = "false"
 APPLE_BUNDLE_ID = "lilC"
 PRODUCT_ID = "lilc.agent.monthly"
 OPENAI_MODEL = "gpt-4o-mini"
@@ -15,3 +16,13 @@ GLOBAL_REQUESTS_PER_DAY = "18000"
 WINDOW_HOURS = "12"
 TOKENS_PER_WINDOW = "4000"
 GITHUB_MODEL = "openai/gpt-4o-mini"
+
+# This account-unique namespace must be checked before deployment.
+[[unsafe.bindings]]
+name = "BYOK_RATE_LIMIT"
+type = "ratelimit"
+namespace_id = "1003"
+simple = { limit = 60, period = 60 }
+
+[observability]
+enabled = false

@@ -60,6 +60,9 @@ struct TutorConversation: Identifiable, Codable, Equatable, Sendable {
     }
 }
 
+/// Connection/account failures must not be treated as a failed math interpretation.
+protocol TutorRequestFailure: Error {}
+
 protocol TutorCompleting: Sendable {
     func reply(messages: [TutorMessage], onUpdate: @escaping @Sendable (String) -> Void) async throws -> String
     func reply(messages: [TutorMessage], onStatus: @escaping GenerationStatusHandler,
@@ -81,7 +84,7 @@ enum GenerationStatus: Sendable, Equatable {
 
     var label: String {
         switch self {
-        case .waiting: "Waiting for the on-device engine…"
+        case .waiting: "Waiting for the model…"
         case .loadingModel: "Loading the on-device model…"
         case .preparingPrompt: "Reading your request…"
         case .generatingResponse: "Generating a response…"

@@ -31,6 +31,22 @@ struct LocalAgentClient: AgentCompleting {
         throw AgentTransportError.cancelled
     }
 }
+// Cloud/Keychain/SymPy are platform boundaries in this Linux persistence harness.
+// The actual BYOK store, transport and credential policy have separate host tests.
+@MainActor final class BYOKStore {
+    static let shared = BYOKStore()
+    func agentChoice(language: ProgrammingLanguage, project: String) -> BYOKChoice? { nil }
+    func title(_ choice: BYOKChoice) -> String { choice.modelID }
+    func selectAgent(_ choice: BYOKChoice?, language: ProgrammingLanguage, project: String) {}
+    func client(for choice: BYOKChoice) throws -> LocalAgentClient { throw BYOKError.relayUnavailable }
+    func beginRun() throws {}
+    func endRun() {}
+}
+actor LocalMathCalculator {
+    static let shared = LocalMathCalculator()
+    func calculate(_ request: MathRequest) throws -> MathCalculation { throw BYOKError.relayUnavailable }
+}
+
 #endif
 
 private final class FailedInstallFileManager: FileManager, @unchecked Sendable {

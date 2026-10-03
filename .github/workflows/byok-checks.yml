@@ -1,0 +1,51 @@
+name: BYOK checks
+on:
+  pull_request:
+    paths: ['lilC/**', 'lilCTests/**', 'lilC.xcodeproj/**', 'services/agent-worker/**', 'scripts/**', '.github/workflows/byok-checks.yml']
+permissions:
+  contents: read
+concurrency:
+  group: byok-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  relay:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: services/agent-worker/package-lock.json
+      - run: npm ci --ignore-scripts
+        working-directory: services/agent-worker
+      - run: npm run typecheck && npm test
+        working-directory: services/agent-worker
+      - run: npx wrangler deploy --dry-run --outdir /tmp/byok-worker
+        working-directory: services/agent-worker
+        env:
+          WRANGLER_SEND_METRICS: 'false'
+  swift-and-ios:
+    runs-on: macos-15
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - name: Provider state, keychain and transport regression tests
+        run: bash scripts/test-byok.sh
+      - name: Existing math and model-selection regressions
+        run: |
+          bash scripts/test-math-domain.sh
+          bash scripts/test-model-selection.sh
+      - name: Swift syntax and Xcode project validation
+        run: |
+          plutil -lint lilC.xcodeproj/project.pbxproj
+          plutil -lint lilC/Resources/PrivacyInfo.xcprivacy
+          find lilC -name '*.swift' -print0 | xargs -0 xcrun swiftc -frontend -parse
+          python3 scripts/check-editor-project.py
+      - name: Fetch existing pinned build assets
+        run: |
+          bash scripts/fetch-agent-assets.sh
+          bash scripts/fetch-python-assets.sh
+          python3 scripts/fetch-math-assets.py
+      - name: Compile the iPhone application and BYOK unit tests
+        run: xcodebuild -project lilC.xcodeproj -scheme lilC -configuration Debug -destination 'generic/platform=iOS' -derivedDataPath /tmp/edsger-byok-derived CODE_SIGNING_ALLOWED=NO build-for-testing -only-testing:lilCTests/BYOKTests
