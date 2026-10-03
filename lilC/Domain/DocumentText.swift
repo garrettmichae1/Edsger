@@ -116,12 +116,25 @@ enum DocumentRetrieval {
             .filter { !$0.isEmpty && !stops.contains($0) })
     }
 
+    /// Recognize general file questions without treating a named subject as an overview.
+    /// Keep these framing words out of the lexical index: they may matter to specific searches.
+    private static func isGeneralFileRequest(_ question: String, query: Set<String>) -> Bool {
+        let words = Set(question.lowercased().components(separatedBy: CharacterSet.alphanumerics.inverted))
+        let references: Set<String> = ["file", "files", "document", "documents", "attachment", "pdf", "doc", "docx", "txt", "markdown", "text"]
+        let actions: Set<String> = ["talk", "talks", "discuss", "discusses", "cover", "covers", "contain", "contains", "describe", "describes", "description", "tell", "say", "says", "read", "explain", "content", "contents", "topic", "topics", "subject", "key", "points", "takeaways", "summarise", "summarising", "summarizing", "summarisation", "summarization"]
+        let framing: Set<String> = ["i", "we", "us", "are", "want", "need", "like", "know", "understand", "help", "give", "get", "show", "brief", "briefly", "quick", "quickly", "short", "general", "overall", "its", "s", "has", "on", "inside", "there", "here", "from", "attached", "uploaded"]
+        let summaryForms: Set<String> = ["summarise", "summarising", "summarizing", "summarisation", "summarization"]
+        guard !words.isDisjoint(with: references.union(["this", "that", "it"])) || !words.isDisjoint(with: summaryForms) else { return false }
+        return query.isSubset(of: references.union(actions).union(framing))
+    }
+
     static func sources(document: ExtractedDocument, question: String, previousQuestion: String = "") -> [ChatDocumentSource] {
         let chunks = DocumentText.chunks(document.sections)
         guard !chunks.isEmpty else { return [] }
         let query = terms(question)
         let contextual = query.count <= 2 ? terms(previousQuestion).union(query) : query
         let overview = contextual.isEmpty || !query.isDisjoint(with: ["summarize", "summary", "overview", "outline", "main", "themes"])
+            || isGeneralFileRequest(question, query: query)
         let ranked: [Int]
         if overview {
             ranked = Array(Set([0, chunks.count / 3, chunks.count * 2 / 3, chunks.count - 1])).sorted()

@@ -87,7 +87,12 @@ Licenses. Upstream: <https://github.com/weichsel/ZIPFoundation/tree/0.9.20>.
 `DocumentRetrieval` divides text into overlapping byte-bounded passages. It ranks
 lexical matches using inverse term frequency and supplies no more than four
 passages. Very short follow-ups also use the previous question's terms. Overviews
-sample passages across the file. A question without matching evidence returns a
+sample passages across the file. General file requests such as "What does this
+file talk about?", "Describe the contents", and "Summarise this document" use that
+same bounded overview path, including on the first attachment turn. The small
+intent check requires general framing without an additional subject; questions
+about a specific subject retain lexical retrieval. It adds no inference call or
+extra evidence budget. A question without matching evidence returns a
 clear refinement request without calling the model. There is no embedding model,
 second inference context, or persistent cache containing every document's text.
 
@@ -133,6 +138,8 @@ Executed on a Linux Swift 6.0.3 host:
   library quotas, catalog reopen and deletion.
 - Retrieval at the end of long and multilingual files, bounded source bytes,
   follow-ups, no-match model bypass and active-file isolation.
+- Natural file overview requests on initial attachment and follow-up turns;
+  specific subjects retain targeted retrieval and absent subjects retain no-match.
 - Production session attachment drafts, switching, source persistence, old JSON
   compatibility, attachment-only send and stale callbacks after cancellation.
 - Clear/Undo restores pending and active files, preserves messages/drafts/originals,

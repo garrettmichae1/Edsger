@@ -135,16 +135,51 @@ private func zip(_ url: URL, entries: [(String, Data)], symlink: Bool = false) t
         try check(multiSources.contains { $0.text.contains("zebratarget") }, "Unicode chunks must not lose the matching tail")
         let overview = DocumentRetrieval.sources(document: multilingual, question: "summarize")
         try check(overview.count <= 4 && overview.reduce(0) { $0 + $1.text.utf8.count } <= 2_600, "bounded Unicode evidence")
+        let intentFixture = ExtractedDocument(reference: reference(), sections: (0..<9).map {
+            .init(location: "Section \($0)", text: $0 == 4 ? "Refunds require a receipt." : "General project notes for section \($0).")
+        })
+        let overviewSources = DocumentRetrieval.sources(document: intentFixture, question: "Overview")
+        let generalQuestions = [
+            "What does this file talk about?", "What does this document cover?", "Tell me about this file", "What does this cover?",
+            "Describe the contents of this file", "Summarise this document", "summarise",
+            "What is this PDF about?", "What's in the attached document?", "What does this file contain?",
+            "What does this document discuss?", "Can you explain this file?", "Please read this document",
+            "Give me a quick description of this file", "What are the key points in this file?",
+            "What are the takeaways from this document?", "What is the topic of this document?",
+            "What is this file about?", "What is in this document?", "Summarizing this document",
+            "WHAT DOES THIS FILE TALK ABOUT?!"
+        ]
+        for question in generalQuestions {
+            let found = DocumentRetrieval.sources(document: intentFixture, question: question, previousQuestion: "refunds")
+            try check(found == overviewSources, "general file request did not use bounded overview: \(question)")
+        }
+        for question in ["What does this file say about refunds?", "Describe refunds in this file",
+                         "What does this document cover about refunds?", "Summarise refunds"] {
+            let found = DocumentRetrieval.sources(document: intentFixture, question: question)
+            try check(found.count == 1 && found[0].location == "Section 4", "specific subject was intercepted by overview: \(question)")
+        }
+        for question in ["What does this file say about quasar astrophysics?", "Describe quasar in this file", "Summarise quasar"] {
+            try check(DocumentRetrieval.sources(document: intentFixture, question: question).isEmpty, "no-match subject became an overview: \(question)")
+        }
         let prompt = try DocumentRetrieval.prompt(question: "Question", sources: sources, note: a.note)
         try check(prompt.contains("untrusted quoted data") && prompt.contains("explicitly limited") && prompt.contains("no calculator was run"), "grounding instructions")
         print("PASS precise retrieval, Unicode coverage, followups, explicit partial summaries and bounded evidence")
 
         let ordinary = RecordingTutor(); let grounded = RecordingTutor(); let recorder = SourceRecorder()
         let client = DocumentTutorClient(tutor: ordinary, documentTutor: grounded, documents: store)
+        for question in ["What does this file talk about?", "Describe the contents of this file", "Summarise this document"] {
+            let callsBefore = await grounded.requests.count
+            _ = try await client.replyWithDocuments(messages: [.init(role: .user, text: question, document: a)],
+                onStatus: { _ in }, onSources: { await recorder.set($0) }, onUpdate: { _ in })
+            try check(await grounded.requests.count == callsBefore + 1, "initial file overview bypassed the model")
+            try check(await recorder.sources == DocumentRetrieval.sources(document: contract, question: "Overview"), "initial file overview lost sources")
+        }
+        print("PASS natural overview phrasings, specific-subject/no-match preservation and first attachment model routing")
         let plain: [TutorMessage] = [.init(role: .user, text: "2 + 2")]
+        let groundedCalls = await grounded.requests.count
         _ = try await client.reply(messages: plain, onUpdate: { _ in })
-        let groundedEmpty = await grounded.requests.isEmpty
-        try check(await ordinary.requests == [plain] && groundedEmpty, "normal routing unchanged")
+        let groundedCallsAfterPlain = await grounded.requests.count
+        try check(await ordinary.requests == [plain] && groundedCallsAfterPlain == groundedCalls, "normal routing unchanged")
         var thread: [TutorMessage] = [.init(role: .user, text: "cancellation fee", document: a), .init(role: .assistant, text: "Old file answer: SECRET_OLD")]
         _ = try await client.replyWithDocuments(messages: thread, onStatus: { _ in }, onSources: { await recorder.set($0) }, onUpdate: { _ in })
         thread.append(.init(role: .user, text: "Hello", document: word))
