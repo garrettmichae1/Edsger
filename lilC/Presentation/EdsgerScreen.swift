@@ -93,6 +93,7 @@ struct EdsgerScreen: View {
     @State private var showsHistory = false
     @State private var showsInfo = false
     @State private var historySearch = ""
+    @State private var pendingDelete: TutorConversation?
     private var background: Color { scheme == .dark ? Color(white: 0.055) : .white }
     private var surface: Color { scheme == .dark ? Color(white: 0.11) : Color(white: 0.985) }
     private var selection: Color { scheme == .dark ? Color(white: 0.19) : Color(white: 0.93) }
@@ -323,58 +324,73 @@ struct EdsgerScreen: View {
                 .listRowSeparator(.hidden)
 
                 ForEach(session.conversations.filter { historySearch.isEmpty || $0.title.localizedCaseInsensitiveContains(historySearch) || session.draft(for: $0.id).localizedCaseInsensitiveContains(historySearch) || $0.messages.contains { $0.text.localizedCaseInsensitiveContains(historySearch) } }) { chat in
-                    Button {
-                        session.select(chat.id); showsHistory = false
-                    } label: {
-                        HStack(spacing: 14) {
-                            Image(systemName: chat.isPinned ? "pin.fill" : "bubble.left")
-                                .font(.system(size: 18, weight: .medium))
-                                .foregroundStyle(chat.isPinned ? Color.blue : Color.secondary)
-                                .frame(width: 44, height: 44)
-                                .background(chat.isPinned ? Color.blue.opacity(0.10) : selection, in: Circle())
-                            VStack(alignment: .leading, spacing: 7) {
-                                if !session.draft(for: chat.id).isEmpty {
-                                    Label("Draft", systemImage: "pencil")
-                                        .font(.caption).foregroundStyle(Color.blue)
+                    HStack(spacing: 0) {
+                        Button {
+                            session.select(chat.id); showsHistory = false
+                        } label: {
+                            HStack(spacing: 14) {
+                                Image(systemName: chat.isPinned ? "pin.fill" : "bubble.left")
+                                    .font(.system(size: 18, weight: .medium))
+                                    .foregroundStyle(chat.isPinned ? Color.blue : Color.secondary)
+                                    .frame(width: 44, height: 44)
+                                    .background(chat.isPinned ? Color.blue.opacity(0.10) : selection, in: Circle())
+                                VStack(alignment: .leading, spacing: 7) {
+                                    if !session.draft(for: chat.id).isEmpty {
+                                        Label("Draft", systemImage: "pencil")
+                                            .font(.caption).foregroundStyle(Color.blue)
+                                    }
+                                    Text(chat.messages.isEmpty && !session.draft(for: chat.id).isEmpty
+                                         ? String(session.draft(for: chat.id).prefix(70)) : chat.title)
+                                        .font(.system(size: 17, weight: .semibold))
+                                        .lineLimit(2)
+                                        .foregroundStyle(.primary)
+                                        .multilineTextAlignment(.leading)
+                                    Text(chat.updatedAt, style: .date)
+                                        .font(.system(size: 12, weight: .medium))
+                                        .foregroundStyle(.secondary)
                                 }
-                                Text(chat.messages.isEmpty && !session.draft(for: chat.id).isEmpty
-                                     ? String(session.draft(for: chat.id).prefix(70)) : chat.title)
-                                    .font(.system(size: 17, weight: .semibold))
-                                    .lineLimit(2)
-                                    .foregroundStyle(.primary)
-                                    .multilineTextAlignment(.leading)
-                                Text(chat.updatedAt, style: .date)
-                                    .font(.system(size: 12, weight: .medium))
-                                    .foregroundStyle(.secondary)
+                                Spacer(minLength: 0)
                             }
-                            Spacer(minLength: 0)
-                            Image(systemName: "chevron.right")
-                                .font(.system(size: 11, weight: .semibold))
-                                .foregroundStyle(.tertiary)
+                            .padding(17)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .contentShape(Rectangle())
                         }
-                        .padding(17)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .background(surface, in: RoundedRectangle(cornerRadius: 26))
-                        .overlay {
-                            RoundedRectangle(cornerRadius: 26)
-                                .stroke(.white.opacity(scheme == .dark ? 0.08 : 1), lineWidth: 1)
-                        }
-                        .shadow(color: .black.opacity(scheme == .dark ? 0 : 0.04), radius: 12, y: 4)
-                        .contentShape(RoundedRectangle(cornerRadius: 26))
-                    }
-                    .accessibilityValue(chat.isPinned ? "Pinned" : "")
-                    .accessibilityAction(named: chat.isPinned ? "Unpin chat" : "Pin chat") {
-                        toggleHistoryPin(chat.id)
-                    }
-                    .contextMenu {
-                        Button(chat.isPinned ? "Unpin" : "Pin", systemImage: chat.isPinned ? "pin.slash" : "pin") {
+                        .accessibilityValue(chat.isPinned ? "Pinned" : "")
+                        .accessibilityAction(named: chat.isPinned ? "Unpin chat" : "Pin chat") {
                             toggleHistoryPin(chat.id)
                         }
+                        .accessibilityAction(named: "Delete chat") { pendingDelete = chat }
+                        Menu {
+                            ConversationHistoryActions(isPinned: chat.isPinned,
+                                                       pin: { toggleHistoryPin(chat.id) },
+                                                       delete: { pendingDelete = chat })
+                        } label: {
+                            Image(systemName: "ellipsis")
+                                .frame(width: 44, height: 44)
+                                .contentShape(Rectangle())
+                        }
+                        .accessibilityLabel("Chat options for \(chat.title)")
+                        .accessibilityIdentifier("chat-options-\(chat.id)")
+                        .padding(.trailing, 8)
+                    }
+                    .background(surface, in: RoundedRectangle(cornerRadius: 26))
+                    .overlay {
+                        RoundedRectangle(cornerRadius: 26)
+                            .stroke(.white.opacity(scheme == .dark ? 0.08 : 1), lineWidth: 1)
+                    }
+                    .shadow(color: .black.opacity(scheme == .dark ? 0 : 0.04), radius: 12, y: 4)
+                    .contentShape(RoundedRectangle(cornerRadius: 26))
+                    .contextMenu {
+                        ConversationHistoryActions(isPinned: chat.isPinned,
+                                                   pin: { toggleHistoryPin(chat.id) },
+                                                   delete: { pendingDelete = chat })
                     }
                     .listRowInsets(EdgeInsets(top: 5, leading: 16, bottom: 5, trailing: 16))
                     .listRowBackground(Color.clear)
                     .listRowSeparator(.hidden)
-                    .swipeActions { Button("Delete", role: .destructive) { session.delete(chat.id) } }
+                    .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                        Button("Delete", systemImage: "trash", role: .destructive) { pendingDelete = chat }
+                    }
                     .swipeActions(edge: .leading) {
                         Button {
                             toggleHistoryPin(chat.id)
@@ -401,6 +417,12 @@ struct EdsgerScreen: View {
                         .foregroundStyle(.primary)
                 }
             }
+            .alert("Delete chat?", isPresented: Binding(get: { pendingDelete != nil }, set: { if !$0 { pendingDelete = nil } }), presenting: pendingDelete) { chat in
+                Button("Delete", role: .destructive) { session.delete(chat.id); pendingDelete = nil }
+                Button("Cancel", role: .cancel) { pendingDelete = nil }
+            } message: { _ in
+                Text("This conversation and its draft will be permanently deleted.")
+            }
         }
         .presentationDragIndicator(.visible)
         .presentationCornerRadius(32)
@@ -425,6 +447,18 @@ struct EdsgerScreen: View {
         .shadow(color: .black.opacity(scheme == .dark ? 0 : 0.04), radius: 12, y: 4)
     }
 
+}
+
+/// Shared by the visible options menu and long-press menu in both histories.
+struct ConversationHistoryActions: View {
+    let isPinned: Bool
+    let pin: () -> Void
+    let delete: () -> Void
+
+    var body: some View {
+        Button(isPinned ? "Unpin" : "Pin", systemImage: isPinned ? "pin.slash" : "pin", action: pin)
+        Button("Delete", systemImage: "trash", role: .destructive, action: delete)
+    }
 }
 
 private struct EdsgerInfoSheet: View {

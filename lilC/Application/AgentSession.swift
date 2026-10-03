@@ -31,7 +31,7 @@ final class AgentSession {
     private var ownsProgramRun = false
 
     var conversationHistory: [AgentSavedConversation] {
-        savedConversations.filter { $0.project == projectRoot }.sorted { $0.updatedAt > $1.updatedAt }
+        savedConversations.filter { $0.project == projectRoot }.sorted(by: AgentSavedConversation.historyOrder)
     }
     var canRestore: Bool { !isThinking && !workspace.isRunning && !restorePoints.isEmpty }
     var canManageConversations: Bool { !isThinking && historyWritable }
@@ -118,13 +118,45 @@ final class AgentSession {
     }
 
     func openConversation(_ conversation: AgentSavedConversation) {
-        guard canManageConversations, conversation.project == projectRoot else { return }
+        guard canManageConversations, conversation.project == projectRoot,
+              let current = savedConversations.first(where: { $0.id == conversation.id && $0.project == projectRoot }) else { return }
         persistMessages()
         conversationID = conversation.id
-        messages = conversation.messages
+        messages = current.messages
         draft = ""
         notice = nil
         statusLine = "Ready"
+    }
+
+    func toggleConversationPin(_ id: UUID) {
+        guard canManageConversations,
+              let index = savedConversations.firstIndex(where: { $0.id == id && $0.project == projectRoot }) else { return }
+        var updated = savedConversations
+        updated[index].pinnedAt = updated[index].isPinned ? nil : Date()
+        do {
+            if savesHistory { try workspace.agentHistoryStore.saveConversations(updated) }
+            savedConversations = updated
+            notice = nil
+        } catch { notice = "Couldn’t update this chat’s pin. Please try again." }
+    }
+
+    func deleteConversation(_ id: UUID) {
+        guard canManageConversations,
+              savedConversations.contains(where: { $0.id == id && $0.project == projectRoot }) else { return }
+        let updated = savedConversations.filter { !($0.id == id && $0.project == projectRoot) }
+        do {
+            // Commit the deletion before changing the visible session. A failed
+            // write leaves the chat available, and never touches project backups.
+            if savesHistory { try workspace.agentHistoryStore.saveConversations(updated) }
+            savedConversations = updated
+            notice = nil
+            if conversationID == id {
+                conversationID = UUID()
+                messages = []
+                draft = ""
+                statusLine = "Ready"
+            }
+        } catch { notice = "Couldn’t delete this chat. Please try again." }
     }
 
     func restore(_ point: AgentCheckpointInfo) {
@@ -400,10 +432,14 @@ final class AgentSession {
         // history row or evicting the conversation that preceded it.
         let hasRequest = messages.contains(where: { $0.role == .user })
         if hasRequest {
-            let record = AgentSavedConversation(id: conversationID, project: projectRoot, updatedAt: Date(), messages: Array(messages.suffix(100)))
+            let pinnedAt = savedConversations.first(where: { $0.id == conversationID })?.pinnedAt
+            let record = AgentSavedConversation(id: conversationID, project: projectRoot, updatedAt: Date(), messages: Array(messages.suffix(100)), pinnedAt: pinnedAt)
             if let index = savedConversations.firstIndex(where: { $0.id == conversationID }) { savedConversations[index] = record }
             else { savedConversations.append(record) }
-            let keep = Set(conversationHistory.prefix(20).map(\.id))
+            let history = conversationHistory
+            let protected = history.filter { $0.isPinned || $0.id == conversationID }
+            let unpinned = history.filter { !$0.isPinned && $0.id != conversationID }
+            let keep = Set((protected + unpinned.prefix(max(0, 20 - protected.count))).map(\.id))
             savedConversations.removeAll { $0.project == projectRoot && !keep.contains($0.id) }
         }
         do {

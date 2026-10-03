@@ -176,6 +176,79 @@ private struct AgentHistoryTests {
         try rejected { _ = try largeStore.capture(project: "", request: "Too large", selectedFile: "main.c") }
         try check(try String(contentsOf: largeRoot.appendingPathComponent("main.c"), encoding: .utf8) == "source", "Oversized capture altered source")
         print("PASS: oversized project fails before mutation")
+        try conversationManagement(parent: parent)
+    }
+
+    @MainActor private static func conversationManagement(parent: URL) throws {
+        let root = parent.appendingPathComponent("chat-management")
+        let suiteName = "chat-management-" + UUID().uuidString
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let workspace = LocalCWorkspace(defaults: defaults, directoryURL: root)
+        _ = workspace.agentWriteFile("project/main.c", contents: "int main(void) { return 0; }")
+        _ = workspace.agentSelectFile("project/main.c")
+        let store = workspace.agentHistoryStore
+        let older = AgentSavedConversation(id: UUID(), project: "project", updatedAt: Date(timeIntervalSince1970: 10), messages: [.init(role: .user, text: "Older chat")])
+        let newer = AgentSavedConversation(id: UUID(), project: "project", updatedAt: Date(timeIntervalSince1970: 20), messages: [.init(role: .user, text: "Newer chat")])
+        let other = AgentSavedConversation(id: UUID(), project: "other", updatedAt: Date(), messages: [.init(role: .user, text: "Another project")])
+        let data = try JSONEncoder().encode([older, newer, other])
+        try check(!String(decoding: data, as: UTF8.self).contains("pinnedAt"), "Legacy fixture contains pin field")
+        try store.saveConversations(JSONDecoder().decode([AgentSavedConversation].self, from: data))
+        let checkpoint = try workspace.makeAgentCheckpoint(project: "project", request: "Keep backup")
+        let original = try Data(contentsOf: workspace.currentFileURL)
+        let session = AgentSession(workspace: workspace, settings: AgentSettingsStore())
+        session.draft = "Unsent work"
+        session.toggleConversationPin(older.id)
+        try check(session.conversationHistory.first?.id == older.id && session.conversationHistory.first?.isPinned == true, "Older pin did not move to top")
+        try check(session.conversationID == newer.id && session.draft == "Unsent work", "Pin changed active conversation/draft")
+        try check(session.conversationHistory.first?.updatedAt == older.updatedAt, "Pin changed activity timestamp")
+        let reopened = AgentSession(workspace: workspace, settings: AgentSettingsStore())
+        try check(reopened.conversationHistory.first?.isPinned == true, "Pin did not survive restart")
+        reopened.openConversation(older)
+        try check(reopened.conversationHistory.first?.isPinned == true, "Saving messages dropped pin")
+        reopened.openConversation(newer)
+        reopened.toggleConversationPin(older.id)
+        try check(reopened.conversationHistory.first?.id == newer.id && !reopened.conversationHistory.contains(where: \.isPinned), "Unpin did not restore recency")
+        reopened.toggleConversationPin(other.id)
+        reopened.deleteConversation(other.id)
+        try check(try store.loadConversations().first(where: { $0.id == other.id }) == other, "History operation crossed project boundary")
+        reopened.draft = "Keep active draft"
+        reopened.deleteConversation(older.id)
+        try check(reopened.conversationID == newer.id && reopened.draft == "Keep active draft", "Deleting inactive chat disturbed active draft")
+        reopened.openConversation(older)
+        try check(reopened.conversationID == newer.id, "Stale row resurrected deleted chat")
+        reopened.toggleConversationPin(newer.id)
+        reopened.deleteConversation(newer.id)
+        try check(reopened.conversationHistory.isEmpty && reopened.messages.isEmpty && reopened.draft.isEmpty, "Deleting active last chat did not clear session")
+        let afterDelete = AgentSession(workspace: workspace, settings: AgentSettingsStore())
+        try check(afterDelete.conversationHistory.isEmpty && !afterDelete.messages.contains(where: { $0.role == .user }), "Deleted chat returned after restart")
+        try check(try Data(contentsOf: workspace.currentFileURL) == original, "Deleting chat changed project source")
+        try check(try store.checkpoint(id: checkpoint.id).id == checkpoint.id, "Deleting chat removed restore point")
+        print("PASS: agent legacy pins, order, persistence, unpin, project isolation, active/inactive deletion, stale row, restart, and backup preservation")
+
+        // Pinned chats and the active chat must survive the ordinary 20-chat cap.
+        let pinned = (0..<22).map { index in
+            AgentSavedConversation(id: UUID(), project: "project", updatedAt: Date(timeIntervalSince1970: Double(index)), messages: [.init(role: .user, text: "Pinned \(index)")], pinnedAt: Date(timeIntervalSince1970: Double(index)))
+        }
+        try store.saveConversations(pinned + [newer, other])
+        try store.selectConversation(newer.id, project: "project")
+        let retention = AgentSession(workspace: workspace, settings: AgentSettingsStore())
+        try check(retention.conversationHistory.filter(\.isPinned).count == 22 && retention.conversationHistory.contains(where: { $0.id == newer.id }), "Pruning dropped pins or active conversation")
+
+        // Failed writes must leave pin/delete state unchanged in memory.
+        let archive = store.metadataURL.appendingPathComponent("conversations.json")
+        let saved = try Data(contentsOf: archive)
+        try FileManager.default.removeItem(at: archive)
+        try FileManager.default.createDirectory(at: archive, withIntermediateDirectories: true)
+        try write("block replacement", archive.appendingPathComponent("blocker"))
+        let beforeFailure = retention.savedConversations
+        retention.toggleConversationPin(newer.id)
+        try check(retention.savedConversations == beforeFailure && retention.notice != nil, "Failed pin changed history")
+        retention.deleteConversation(newer.id)
+        try check(retention.savedConversations == beforeFailure && retention.conversationID == newer.id && retention.notice != nil, "Failed delete hid chat")
+        try FileManager.default.removeItem(at: archive)
+        try saved.write(to: archive)
+        print("PASS: pinned retention beyond cap and failed pin/delete persistence preserves visible history")
     }
 
     private static func write(_ text: String, _ url: URL) throws {

@@ -51,8 +51,15 @@ Metadata lives in a hidden sibling of each language workspace, outside the tree
 being restored. Thus a root rollback cannot overwrite its backups or history.
 Snapshots are JSON with byte data in atomically committed checkpoint folders;
 list rows read a separate small metadata file rather than loading source payloads. Saved
-conversations retain up to 100 messages each and the latest 20 conversations per
-project. The active chat selection persists too, including a fresh empty chat
+conversations retain up to 100 messages each and normally 20 conversations per
+project. Pinned conversations and the active chat are protected from pruning,
+even when that exceeds the limit. Pins sort first and persist across restart.
+Both Chat and Agent history offer a visible options menu, long-press menu, and
+swipes for Pin/Unpin and Delete. Deletion asks for confirmation. Deleting an agent
+conversation does not delete project files or restore points; deleting the active
+conversation clears its transcript/draft and leaves a fresh chat. Pin/delete
+storage failures leave the agent history unchanged and display a notice.
+The active chat selection persists too, including a fresh empty chat
 after rollback, so restarting does not revive stale tool context. Existing single-conversation files migrate when that project is opened;
 the old files remain untouched. Corrupt history is not overwritten, and new/open
 conversation actions are disabled when the archive cannot be read. Saving errors
@@ -69,6 +76,9 @@ and agent session under Swift 6 complete concurrency checking. Tests exercise:
   directory swap; unsafe paths, symlinks, malformed payloads, and storage failure.
 - New chat/history retention, scoped history, fresh model context after restore,
   corrupt archive preservation, root metadata isolation, and editor/disk mismatch.
+- Backward-compatible pin decoding, ordering, restart, unpin, protected retention,
+  active/inactive/last-chat deletion, stale-row rejection, project and restore-point
+  preservation, and failed pin/delete storage writes.
 
 Linux stubs replace iOS Python/JavaScript/Lua and the default inference/settings
 boundaries. Actual snapshot/filesystem/session operations run against temporary

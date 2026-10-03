@@ -40,6 +40,16 @@ struct AgentSavedConversation: Codable, Identifiable, Equatable {
     let project: String
     var updatedAt: Date
     var messages: [AgentChatMessage]
+    // Optional for archives created before pinning was available.
+    var pinnedAt: Date?
+    var isPinned: Bool { pinnedAt != nil }
+
+    static func historyOrder(_ lhs: Self, _ rhs: Self) -> Bool {
+        if lhs.isPinned != rhs.isPinned { return lhs.isPinned }
+        if let left = lhs.pinnedAt, let right = rhs.pinnedAt, left != right { return left > right }
+        if lhs.updatedAt != rhs.updatedAt { return lhs.updatedAt > rhs.updatedAt }
+        return lhs.id.uuidString < rhs.id.uuidString
+    }
 
     var title: String {
         let request = messages.first { $0.role == .user }?.text ?? "New chat"

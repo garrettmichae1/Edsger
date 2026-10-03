@@ -180,6 +180,7 @@ struct AgentConversationView: View {
     @State private var showsHistory = false
     @State private var showsRestorePoints = false
     @State private var pendingRestore: AgentCheckpointInfo?
+    @State private var pendingDelete: AgentSavedConversation?
 
     private var visibleMessages: [AgentChatMessage] {
         AgentTranscriptPresentation.visibleMessages(session.messages)
@@ -273,19 +274,60 @@ struct AgentConversationView: View {
                     Text("Your agent chats for this project will appear here.").foregroundStyle(.secondary)
                 }
                 ForEach(session.conversationHistory) { conversation in
-                    Button {
-                        session.openConversation(conversation)
-                        showsHistory = false
-                    } label: {
-                        HStack {
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text(conversation.title).foregroundStyle(.primary).lineLimit(2)
-                                Text(conversation.updatedAt, style: .date).font(.caption).foregroundStyle(.secondary)
+                    HStack(spacing: 0) {
+                        Button {
+                            session.openConversation(conversation)
+                            showsHistory = false
+                        } label: {
+                            HStack {
+                                if conversation.isPinned {
+                                    Image(systemName: "pin.fill").foregroundStyle(Color.blue)
+                                }
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text(conversation.title).foregroundStyle(.primary).lineLimit(2)
+                                    Text(conversation.updatedAt, style: .date).font(.caption).foregroundStyle(.secondary)
+                                }
+                                Spacer()
+                                if conversation.id == session.conversationID { Image(systemName: "checkmark") }
                             }
-                            Spacer()
-                            if conversation.id == session.conversationID { Image(systemName: "checkmark") }
+                            .contentShape(Rectangle())
                         }
+                        .buttonStyle(.plain)
+                        .accessibilityValue(conversation.isPinned ? "Pinned" : "")
+                        .accessibilityAction(named: conversation.isPinned ? "Unpin chat" : "Pin chat") {
+                            session.toggleConversationPin(conversation.id)
+                        }
+                        .accessibilityAction(named: "Delete chat") { pendingDelete = conversation }
+                        Menu {
+                            ConversationHistoryActions(isPinned: conversation.isPinned,
+                                                       pin: { session.toggleConversationPin(conversation.id) },
+                                                       delete: { pendingDelete = conversation })
+                        } label: {
+                            Image(systemName: "ellipsis").frame(width: 44, height: 44).contentShape(Rectangle())
+                        }
+                        .accessibilityLabel("Chat options for \(conversation.title)")
+                        .accessibilityIdentifier("agent-chat-options-\(conversation.id)")
                     }
+                    .disabled(!session.canManageConversations)
+                    .contextMenu {
+                        ConversationHistoryActions(isPinned: conversation.isPinned,
+                                                   pin: { session.toggleConversationPin(conversation.id) },
+                                                   delete: { pendingDelete = conversation })
+                    }
+                    .swipeActions(edge: .leading) {
+                        Button {
+                            session.toggleConversationPin(conversation.id)
+                        } label: {
+                            Label(conversation.isPinned ? "Unpin" : "Pin", systemImage: conversation.isPinned ? "pin.slash" : "pin")
+                        }
+                        .tint(Color.blue)
+                    }
+                    .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                        Button("Delete", systemImage: "trash", role: .destructive) { pendingDelete = conversation }
+                    }
+                }
+                if let notice = session.notice {
+                    Text(notice).font(.footnote).foregroundStyle(.secondary)
                 }
             }
             .navigationTitle("Agent chats")
@@ -293,6 +335,12 @@ struct AgentConversationView: View {
             .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { showsHistory = false } } }
             .safeAreaInset(edge: .bottom) {
                 Text(session.projectTitle).font(.footnote).foregroundStyle(.secondary).padding(10)
+            }
+            .alert("Delete agent chat?", isPresented: Binding(get: { pendingDelete != nil }, set: { if !$0 { pendingDelete = nil } }), presenting: pendingDelete) { conversation in
+                Button("Delete", role: .destructive) { session.deleteConversation(conversation.id); pendingDelete = nil }
+                Button("Cancel", role: .cancel) { pendingDelete = nil }
+            } message: { _ in
+                Text("This conversation will be permanently deleted. Your project files and restore points will be kept.")
             }
         }
     }
