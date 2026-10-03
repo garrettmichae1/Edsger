@@ -56,6 +56,37 @@ final class StoreScreenshots: XCTestCase {
         XCTAssertTrue(app.buttons["edsger-history"].waitForExistence(timeout: 5))
     }
 
+    func testIDEAppReorderingPersistsAndKeepsActions() {
+        app = XCUIApplication()
+        app.launchArguments = ["UITEST_STORE_SHOTS", "-lilc.selected.language", "c"]
+        app.launch()
+        app.buttons["IDE"].tap()
+        let settings = app.buttons["Settings"]
+        let newFile = app.buttons["home-new-file"]
+        XCTAssertTrue(settings.waitForExistence(timeout: 5))
+        let original = settings.frame.origin
+        settings.press(forDuration: 0.6, thenDragTo: newFile)
+        let done = app.buttons["home-arrange-done"]
+        XCTAssertTrue(done.waitForExistence(timeout: 5), "Holding an app should rearrange instead of opening it")
+        done.tap()
+        XCTAssertTrue(app.buttons["home-directory"].exists)
+        let settled = settings.frame.origin
+        XCTAssertNotEqual(original, settled, "The dragged icon must occupy a different grid slot")
+        app.terminate()
+        app.launch()
+        app.buttons["IDE"].tap()
+        XCTAssertTrue(settings.waitForExistence(timeout: 5))
+        XCTAssertEqual(settings.frame.minX, settled.x, accuracy: 2)
+        XCTAssertEqual(settings.frame.minY, settled.y, accuracy: 2)
+        XCTAssertFalse(done.exists)
+        app.buttons["home-directory"].tap()
+        XCTAssertTrue(app.staticTexts["C workspace"].waitForExistence(timeout: 5))
+        tapBack()
+        app.buttons["language-python"].tap()
+        app.buttons["home-directory"].tap()
+        XCTAssertTrue(app.staticTexts["Python workspace"].waitForExistence(timeout: 5))
+    }
+
     func testDirectoryAppFollowsSelectedLanguage() {
         app = XCUIApplication()
         app.launchArguments = ["UITEST_STORE_SHOTS"]

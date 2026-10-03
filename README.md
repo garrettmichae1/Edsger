@@ -63,6 +63,8 @@ xcodebuild -scheme lilC -destination 'platform=iOS Simulator,name=iPhone 17' bui
 | Web | Same learner in the browser at `/web/` |
 | Agent | On-device Qwen3.5-4B, available in the editor output panel |
 
+On the IDE home screen, hold any app icon and drag it to a new grid position. Tap **Done** to exit rearranging. Action and language icons share one saved layout across launches. See [IDE home layout](Docs/IDE_HOME_LAYOUT.md).
+
 Agent Mode and Syntax Color are on by default and can be switched off in Settings. Agent conversation history stays on the iPhone. See [local agent setup](Docs/LOCAL_AGENT.md) for model provenance and packaging.
 
 ## Legal

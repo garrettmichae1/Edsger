@@ -7,6 +7,8 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+        FAF000000000000000000001 = {isa = PBXBuildFile; fileRef = FAF000000000000000000002; };
+        FAF000000000000000000003 = {isa = PBXBuildFile; fileRef = FAF000000000000000000004; };
         FAE000000000000000000001 /* Mini model in Resources */ = {isa = PBXBuildFile; fileRef = FAE000000000000000000002 /* Mini model */; };
         FAC000000000000000000006 = {isa = PBXBuildFile; fileRef = FAD000000000000000000006; };
         FAC000000000000000000005 = {isa = PBXBuildFile; fileRef = FAD000000000000000000005; };
@@ -161,6 +163,8 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+        FAF000000000000000000002 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Domain/IDEHomeLayout.swift"; sourceTree = "<group>"; };
+        FAF000000000000000000004 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Presentation/IDEHomeGrid.swift"; sourceTree = "<group>"; };
         FAE000000000000000000002 /* Mini model */ = {isa = PBXFileReference; lastKnownFileType = file; path = lilC/Resources/Models/LFM2.5-1.2B-Instruct-Q4_K_M.gguf; sourceTree = SOURCE_ROOT; };
         FAD000000000000000000006 = {isa = PBXFileReference; lastKnownFileType = text; path = "Resources/LiquidAI-LICENSE.txt"; sourceTree = "<group>"; };
         FAD000000000000000000005 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Presentation/ChatModelPicker.swift"; sourceTree = "<group>"; };
@@ -364,6 +368,8 @@
                 FAD000000000000000000003,
                 FAD000000000000000000002,
                 FAD000000000000000000001,
+                FAF000000000000000000002,
+                FAF000000000000000000004,
                 F8C000000000000000000011,
                 F8C000000000000000000010,
                 F9C000000000000000000001,
@@ -705,6 +711,8 @@
                 FAC000000000000000000003,
                 FAC000000000000000000002,
                 FAC000000000000000000001,
+                FAF000000000000000000001,
+                FAF000000000000000000003,
                 F8B000000000000000000010,
                 F9B000000000000000000001,
                 F5B000000000000000000002,

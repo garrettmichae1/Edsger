@@ -17,6 +17,7 @@ struct ContentView: View {
         default: cWorkspace
         }
     }
+    @State private var homeLayout = IDEHomeLayoutStore()
     @State private var appearance = AppearanceStore.shared
     @State private var agentSettings = AgentSettingsStore.shared
     @State private var activeScreen: AppScreen = .learn
@@ -33,6 +34,7 @@ struct ContentView: View {
             case .home:
                 HomeScreen(
                     workspace: localWorkspace,
+                    layout: homeLayout,
                     chooseLanguage: { language in
                         guard language != localWorkspace.language else { return }
                         localWorkspace.stopLiveRun()
@@ -126,6 +128,9 @@ private enum AppScreen {
 
 private struct HomeScreen: View {
     let workspace: LocalCWorkspace
+    let layout: IDEHomeLayoutStore
+    @State private var isArranging = false
+    @Environment(\.scenePhase) private var scenePhase
     let chooseLanguage: (ProgrammingLanguage) -> Void
     let startLocal: () -> Void
     let openFiles: () -> Void
@@ -134,60 +139,76 @@ private struct HomeScreen: View {
     let openSettings: () -> Void
 
     var body: some View {
-        VStack(spacing: 0) {
-            ScrollView(showsIndicators: false) {
-                VStack(alignment: .leading, spacing: 28) {
-                    LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 16), count: 3), spacing: 20) {
-                        HomeActionButton(title: "New File", detail: "A single \(workspace.language.name) file", symbol: "plus", tint: .blue, accessibilityID: "home-new-file") {
-                            workspace.createStandaloneFile()
-                            startLocal()
-                        }
-                        HomeActionButton(title: "Directory", detail: "\(workspace.language.name) files and projects", symbol: "folder.fill", tint: .orange, accessibilityID: "home-directory", action: openFiles)
-                        HomeActionButton(title: "Delete", detail: "File or folder", symbol: "trash.fill", tint: .purple, accessibilityID: "Delete", action: deleteFile)
-                        HomeActionButton(title: "Editor", detail: workspace.currentFile.name, symbol: "chevron.left.forwardslash.chevron.right", tint: .green, accessibilityID: "home-editor", action: startLocal)
-                        HomeActionButton(title: "Chat", detail: "EDSGER", symbol: "bubble.left.and.bubble.right.fill", tint: .indigo, accessibilityID: "home-chat", action: openLearn)
-                        HomeActionButton(title: "Settings", detail: "App preferences", symbol: "gearshape.fill", tint: .gray, accessibilityID: "Settings", action: openSettings)
-                    }
-                    .padding(.vertical, 6)
-
-                    LanguagePicker(language: workspace.language, select: chooseLanguage)
+        IDEHomeGrid(apps: layout.apps, isArranging: $isArranging,
+                    content: tile, label: accessibilityLabel, selectedLanguage: workspace.language,
+                    select: activate, move: { app, destination in layout.move(app, to: destination) })
+            .overlay(alignment: .bottomTrailing) {
+                if isArranging {
+                    Button("Done") { isArranging = false }
+                        .font(.headline)
+                        .buttonStyle(.borderedProminent)
+                        .buttonBorderShape(.capsule)
+                        .controlSize(.large)
+                        .padding(20)
+                        .accessibilityIdentifier("home-arrange-done")
                 }
-                .padding(.horizontal, 20)
-                .padding(.top, 20)
-                .padding(.bottom, 24)
             }
-
-        }
-        .background(AppPalette.background)
-        .foregroundStyle(AppPalette.foreground)
-        .buttonStyle(.appHaptic)
+            .background(AppPalette.background)
+            .foregroundStyle(AppPalette.foreground)
+            .onChange(of: scenePhase) { _, phase in
+                if phase != .active { isArranging = false }
+            }
+            .onDisappear { isArranging = false }
     }
-}
 
-private struct LanguagePicker: View {
-    let language: ProgrammingLanguage
-    let select: (ProgrammingLanguage) -> Void
-    var body: some View {
-        LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 16), count: 3), spacing: 20) {
-            ForEach(ProgrammingLanguage.allCases) { item in
-                Button { select(item) } label: {
-                    VStack(spacing: 11) {
-                        LanguageAppIcon(language: item, selected: language == item)
-                        Text(item.name)
-                            .font(.system(size: 15, weight: .semibold))
-                            .foregroundStyle(AppPalette.foreground)
-                            .lineLimit(1)
-                            .minimumScaleFactor(0.75)
-                    }
-                    .frame(maxWidth: .infinity)
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.appHapticSelect)
-                .accessibilityLabel("\(item.name) workspace")
-                .accessibilityIdentifier("language-\(item.rawValue)")
-                .accessibilityAddTraits(language == item ? [.isSelected] : [])
-            }
+    private func activate(_ app: IDEHomeApp) {
+        if let language = app.language { chooseLanguage(language); return }
+        switch app {
+        case .newFile: workspace.createStandaloneFile(); startLocal()
+        case .directory: openFiles()
+        case .delete: deleteFile()
+        case .editor: startLocal()
+        case .chat: openLearn()
+        case .settings: openSettings()
+        default: break
         }
+    }
+
+    private func accessibilityLabel(_ app: IDEHomeApp) -> String {
+        if let language = app.language { return "\(language.name) workspace" }
+        switch app {
+        case .newFile: return "New file, A single \(workspace.language.name) file"
+        case .directory: return "Directory, \(workspace.language.name) files and projects"
+        case .delete: return "Delete, File or folder"
+        case .editor: return "Editor, " + workspace.currentFile.name
+        case .chat: return "Chat, EDSGER"
+        case .settings: return "Settings, App preferences"
+        default: return app.title
+        }
+    }
+
+    private func tile(_ app: IDEHomeApp) -> AnyView {
+        if let language = app.language {
+            return AnyView(VStack(spacing: 11) {
+                LanguageAppIcon(language: language, selected: workspace.language == language)
+                Text(language.name)
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(AppPalette.foreground)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.75)
+            }.frame(maxWidth: .infinity))
+        }
+        let symbol: String
+        let tint: Color
+        switch app {
+        case .newFile: symbol = "plus"; tint = .blue
+        case .directory: symbol = "folder.fill"; tint = .orange
+        case .delete: symbol = "trash.fill"; tint = .purple
+        case .editor: symbol = "chevron.left.forwardslash.chevron.right"; tint = .green
+        case .chat: symbol = "bubble.left.and.bubble.right.fill"; tint = .indigo
+        default: symbol = "gearshape.fill"; tint = .gray
+        }
+        return AnyView(HomeActionIcon(title: app.title, symbol: symbol, tint: tint))
     }
 }
 
@@ -240,54 +261,46 @@ private struct LanguageAppIcon: View {
     }
 }
 
-/// Home-only glossy tiles, with the existing actions and accessibility identifiers.
-private struct HomeActionButton: View {
+/// Existing glossy artwork; navigation and accessible actions belong to the grid cell.
+private struct HomeActionIcon: View {
     let title: String
-    let detail: String
     let symbol: String
     let tint: Color
-    let accessibilityID: String
-    let action: () -> Void
 
     var body: some View {
-        Button(action: action) {
-            VStack(spacing: 11) {
-                ZStack {
-                    RoundedRectangle(cornerRadius: 20, style: .continuous)
-                        .fill(LinearGradient(colors: [tint.opacity(0.75), tint, tint.mix(with: .black, by: 0.28)], startPoint: .top, endPoint: .bottom))
-                    // A curved glass reflection recalls the early iPhone home screen.
-                    Ellipse()
-                        .fill(LinearGradient(colors: [.white.opacity(0.65), .white.opacity(0.16)], startPoint: .top, endPoint: .bottom))
-                        .frame(width: 136, height: 82)
-                        .offset(y: -43)
-                    Image(systemName: symbol)
-                        .font(.system(size: symbol == "plus" ? 37 : 32, weight: .bold))
-                        .foregroundStyle(.white)
-                        .shadow(color: .black.opacity(0.3), radius: 1, y: 2)
-                }
-                .frame(width: 82, height: 82)
-                .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
-                .overlay {
-                    RoundedRectangle(cornerRadius: 20, style: .continuous)
-                        .strokeBorder(tint.mix(with: .black, by: 0.4), lineWidth: 1)
-                    RoundedRectangle(cornerRadius: 19, style: .continuous)
-                        .strokeBorder(LinearGradient(colors: [.white.opacity(0.85), .white.opacity(0.05)], startPoint: .top, endPoint: .bottom), lineWidth: 1)
-                        .padding(1)
-                }
-                .shadow(color: .black.opacity(0.24), radius: 1, y: 2)
-                .shadow(color: tint.opacity(0.16), radius: 5, y: 3)
-
-                Text(title)
-                    .font(.system(size: 15, weight: .semibold))
-                    .foregroundStyle(AppPalette.foreground)
-                    .multilineTextAlignment(.center)
+        VStack(spacing: 11) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 20, style: .continuous)
+                    .fill(LinearGradient(colors: [tint.opacity(0.75), tint, tint.mix(with: .black, by: 0.28)], startPoint: .top, endPoint: .bottom))
+                // A curved glass reflection recalls the early iPhone home screen.
+                Ellipse()
+                    .fill(LinearGradient(colors: [.white.opacity(0.65), .white.opacity(0.16)], startPoint: .top, endPoint: .bottom))
+                    .frame(width: 136, height: 82)
+                    .offset(y: -43)
+                Image(systemName: symbol)
+                    .font(.system(size: symbol == "plus" ? 37 : 32, weight: .bold))
+                    .foregroundStyle(.white)
+                    .shadow(color: .black.opacity(0.3), radius: 1, y: 2)
             }
-            .frame(maxWidth: .infinity)
-            .contentShape(Rectangle())
+            .frame(width: 82, height: 82)
+            .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: 20, style: .continuous)
+                    .strokeBorder(tint.mix(with: .black, by: 0.4), lineWidth: 1)
+                RoundedRectangle(cornerRadius: 19, style: .continuous)
+                    .strokeBorder(LinearGradient(colors: [.white.opacity(0.85), .white.opacity(0.05)], startPoint: .top, endPoint: .bottom), lineWidth: 1)
+                    .padding(1)
+            }
+            .shadow(color: .black.opacity(0.24), radius: 1, y: 2)
+            .shadow(color: tint.opacity(0.16), radius: 5, y: 3)
+
+            Text(title)
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(AppPalette.foreground)
+                .multilineTextAlignment(.center)
         }
-        .buttonStyle(.appHaptic)
-        .accessibilityLabel("\(title == "New File" ? "New file" : title), \(detail)")
-        .accessibilityIdentifier(accessibilityID)
+        .frame(maxWidth: .infinity)
+        .contentShape(Rectangle())
     }
 }
 
