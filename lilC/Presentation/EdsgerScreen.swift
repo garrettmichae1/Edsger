@@ -82,14 +82,10 @@ struct ConversationTranscript<Content: View>: View {
     }
 }
 
-enum EdsgerSection: String, CaseIterable { case chat = "Chat", courses = "Courses" }
-
-struct EdsgerScreen<Courses: View>: View {
+struct EdsgerScreen: View {
     @Bindable var session: TutorSession
-    @Binding var section: EdsgerSection
     let openHome: () -> Void
     let openFiles: () -> Void
-    @ViewBuilder let courses: () -> Courses
     @Environment(\.colorScheme) private var scheme
     @FocusState private var composerFocused: Bool
     @State private var showsHistory = false
@@ -102,12 +98,8 @@ struct EdsgerScreen<Courses: View>: View {
     var body: some View {
         VStack(spacing: 0) {
             header
-            if section == .courses {
-                courses()
-            } else {
-                transcript
-                composer
-            }
+            transcript
+            composer
         }
         .background(background)
         .foregroundStyle(Color.primary)
@@ -117,9 +109,6 @@ struct EdsgerScreen<Courses: View>: View {
         .sheet(isPresented: $showsHistory) { history }
         .sheet(isPresented: $showsInfo) {
             EdsgerInfoSheet(background: background, surface: surface, selection: selection)
-        }
-        .onChange(of: section) { _, value in
-            if value == .courses { composerFocused = false }
         }
         .onDisappear { session.stop(); session.flushDrafts() }
     }
@@ -140,24 +129,13 @@ struct EdsgerScreen<Courses: View>: View {
             .accessibilityLabel("Chat history")
             .accessibilityIdentifier("edsger-history")
             Spacer(minLength: 0)
-            HStack(spacing: 0) {
-                ForEach(EdsgerSection.allCases, id: \.self) { item in
-                    Button { section = item } label: {
-                        Text(item.rawValue)
-                            .font(.system(size: 16, weight: .semibold))
-                            .padding(.horizontal, 17)
-                            .frame(height: 42)
-                            .background(section == item ? selection : .clear, in: Capsule())
-                    }
-                    .accessibilityIdentifier("edsger-" + item.rawValue.lowercased())
-                    .accessibilityAddTraits(section == item ? [.isSelected] : [])
-                }
-            }
-            .padding(4)
-            .background(surface, in: Capsule())
+            Text("EDSGER")
+                .font(.system(size: 18, weight: .semibold))
+                .accessibilityAddTraits(.isHeader)
+                .accessibilityIdentifier("edsger-title")
             Spacer(minLength: 0)
             Button {
-                session.newConversation(); section = .chat; composerFocused = true
+                session.newConversation(); composerFocused = true
             } label: {
                 EdsgerChatGlyph()
                     .stroke(style: StrokeStyle(lineWidth: 2.5, lineCap: .round, lineJoin: .round))
@@ -344,7 +322,7 @@ struct EdsgerScreen<Courses: View>: View {
 
                 ForEach(session.conversations.filter { historySearch.isEmpty || $0.title.localizedCaseInsensitiveContains(historySearch) || session.draft(for: $0.id).localizedCaseInsensitiveContains(historySearch) || $0.messages.contains { $0.text.localizedCaseInsensitiveContains(historySearch) } }) { chat in
                     Button {
-                        session.select(chat.id); section = .chat; showsHistory = false
+                        session.select(chat.id); showsHistory = false
                     } label: {
                         HStack(spacing: 14) {
                             Image(systemName: "bubble.left")

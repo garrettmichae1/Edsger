@@ -22,10 +22,6 @@ struct ContentView: View {
     @State private var linuxCourse = LinuxCourseStore.shared
     @State private var activeScreen: AppScreen = .learn
     @State private var tutor = TutorSession()
-    @State private var learnSection: EdsgerSection = .chat
-    @State private var activeQuizID: String?
-    @State private var activeLinuxModuleID: String?
-    @State private var quizStartInReview = false
     @State private var editorReturn: AppScreen = .home
     @State private var filesReturn: AppScreen = .home
     @Environment(\.requestReview) private var requestReview
@@ -55,7 +51,6 @@ struct ContentView: View {
                         activeScreen = .files
                     },
                     openLearn: {
-                        learnSection = .chat
                         activeScreen = .learn
                     },
                     deleteFile: {
@@ -65,43 +60,11 @@ struct ContentView: View {
                     openSettings: { activeScreen = .settings }
                 )
             case .learn:
-                EdsgerScreen(session: tutor, section: $learnSection, openHome: { activeScreen = .home }, openFiles: {
+                EdsgerScreen(session: tutor, openHome: { activeScreen = .home }, openFiles: {
                     filesReturn = .learn
                     localWorkspace.browsePath = ""
                     activeScreen = .files
-                }) {
-                CoursesScreen(
-                    workspace: localWorkspace,
-                    openHome: { activeScreen = .home },
-                    openFiles: {
-                        filesReturn = .learn
-                        localWorkspace.browsePath = ""
-                        activeScreen = .files
-                    },
-                    openLesson: { lesson in
-                        editorReturn = .learn
-                        localWorkspace.openLesson(lesson)
-                        activeScreen = .local
-                    },
-                    openQuiz: { quiz, review in
-                        activeQuizID = quiz.id
-                        quizStartInReview = review
-                        activeScreen = .quiz
-                    },
-                    linuxCourse: linuxCourse,
-                    openLinuxModule: { module in
-                        guard linuxCourse.isOwned else { return }
-                        activeLinuxModuleID = module.id
-                        activeScreen = .linuxStudy
-                    },
-                    unlockLinux: {
-                        Task { await linuxCourse.purchase() }
-                    },
-                    restoreLinux: {
-                        Task { await linuxCourse.restore() }
-                    }
-                )
-                }
+                })
                 .onAppear { AgentSession.stopActive() }
             case .files:
                 FilesScreen(workspace: localWorkspace, title: nil, primaryActionTitle: "OPEN", allowsCreate: true) { file in
@@ -132,37 +95,7 @@ struct ContentView: View {
                 LocalModeScreen(workspace: localWorkspace, agentSettings: agentSettings) {
                     activeScreen = editorReturn
                 }
-            case .quiz:
-                if let id = activeQuizID, let quiz = QuizLookup.quiz(id: id, linuxOwned: linuxCourse.isOwned) {
-                    QuizScreen(
-                        quiz: quiz,
-                        progress: localWorkspace.quizProgress,
-                        startInReview: quizStartInReview,
-                        back: {
-                            activeScreen = .learn
-                            activeQuizID = nil
-                        }
-                    )
-                } else {
-                    Color.clear.onAppear { activeScreen = .learn }
-                }
-            case .linuxStudy:
-                if let id = activeLinuxModuleID, linuxCourse.isOwned, let module = LinuxCourseCatalog.module(id: id) {
-                    LinuxStudyScreen(
-                        module: module,
-                        back: {
-                            activeScreen = .learn
-                            activeLinuxModuleID = nil
-                        },
-                        takeQuiz: {
-                            activeQuizID = module.quizId
-                            quizStartInReview = false
-                            activeScreen = .quiz
-                        }
-                    )
-                } else {
-                    Color.clear.onAppear { activeScreen = .learn }
-                }
+
             }
         }
         .background(AppPalette.background)
@@ -194,8 +127,6 @@ private enum AppScreen {
     case deletePicker
     case settings
     case local
-    case quiz
-    case linuxStudy
 }
 
 private struct HomeScreen: View {
@@ -311,84 +242,6 @@ private struct LanguageAppIcon: View {
         }
         .shadow(color: .black.opacity(0.24), radius: 1, y: 2)
         .shadow(color: tint.opacity(selected ? 0.42 : 0.16), radius: selected ? 9 : 5, y: selected ? 0 : 3)
-    }
-}
-
-private struct CoursesScreen: View {
-    let workspace: LocalCWorkspace
-    let openHome: () -> Void
-    let openFiles: () -> Void
-    let openLesson: (FirstHourLesson) -> Void
-    let openQuiz: (CQuiz, Bool) -> Void
-    let linuxCourse: LinuxCourseStore
-    let openLinuxModule: (LinuxCourseModule) -> Void
-    let unlockLinux: () -> Void
-    let restoreLinux: () -> Void
-
-    var body: some View {
-        VStack(spacing: 0) {
-            ScrollView(showsIndicators: false) {
-                VStack(alignment: .leading, spacing: 28) {
-                    Text("Courses")
-                        .font(.system(size: 28, weight: .semibold))
-                        .foregroundStyle(AppPalette.foreground)
-
-                    if workspace.language == .c {
-                    LessonCardDeck(
-                        title: "Lessons",
-                        lessons: FirstHourCurriculum.firstHour,
-                        progress: workspace.lessonProgress.state,
-                        open: openLesson
-                    )
-                    LessonCardDeck(
-                        title: "Challenges",
-                        lessons: FirstHourCurriculum.challenges,
-                        progress: workspace.lessonProgress.state,
-                        open: openLesson
-                    )
-                    if !CQuizCatalog.quizzes.isEmpty {
-                        QuizCardDeck(
-                            title: CQuizCatalog.title,
-                            quizzes: CQuizCatalog.quizzes,
-                            progress: workspace.quizProgress,
-                            open: openQuiz
-                        )
-                    }
-                    } else {
-                        VStack(alignment: .leading, spacing: 12) {
-                            Text(">>> hello, \(workspace.language.name)").font(.system(.title3, design: .monospaced))
-                            Text("Create a .\(workspace.language.fileExtension) file from IDE, then press RUN. Start with the example, variables, and functions.")
-                            Text(workspace.language.runtimeExplanation)
-                            Text("Each language has its own projects and files.").foregroundStyle(AppPalette.silver)
-                        }
-                        .padding(18)
-                        .background(AppPalette.card, in: RoundedRectangle(cornerRadius: 14))
-                    }
-                    if linuxCourse.isOwned {
-                        LinuxModuleDeck(
-                            modules: LinuxCourseCatalog.modules,
-                            progress: workspace.quizProgress,
-                            open: openLinuxModule
-                        )
-                    } else {
-                        LinuxCoursePaywallCard(
-                            course: LinuxCourseCatalog.course,
-                            store: linuxCourse,
-                            restore: restoreLinux,
-                            unlock: unlockLinux
-                        )
-                    }
-                }
-                .padding(.horizontal, 20)
-                .padding(.top, 20)
-                .padding(.bottom, 24)
-            }
-
-
-        }
-        .background(AppPalette.background)
-        .foregroundStyle(AppPalette.foreground)
-        .buttonStyle(.appHaptic)
     }
 }
 

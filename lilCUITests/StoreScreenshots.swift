@@ -25,7 +25,7 @@ final class StoreScreenshots: XCTestCase {
         capture("directory-python")
     }
 
-    func testEdsgerChatAndCoursesNavigation() {
+    func testEdsgerChatAndIDENavigation() {
         app = XCUIApplication()
         app.launchArguments = ["UITEST_STORE_SHOTS", "-lilc.appearance.colorway", "light", "-lilc.selected.language", "c"]
         app.launch()
@@ -34,16 +34,8 @@ final class StoreScreenshots: XCTestCase {
         XCTAssertTrue(app.buttons["home-editor"].waitForExistence(timeout: 5))
         app.buttons["home-chat"].tap()
         capture("edsger-empty")
-        app.buttons["edsger-courses"].tap()
-        XCTAssertTrue(app.staticTexts["Lessons"].waitForExistence(timeout: 5))
-        let lesson = app.buttons.matching(NSPredicate(format: "label CONTAINS 'Lesson 1 of 20'")).firstMatch
-        XCTAssertTrue(lesson.exists)
-        lesson.tap()
-        XCTAssertTrue(app.buttons["RUN"].waitForExistence(timeout: 5))
-        tapBack()
-        app.buttons["IDE"].tap()
-        app.buttons["home-chat"].tap()
-        XCTAssertTrue(app.textFields["edsger-composer"].waitForExistence(timeout: 5) || app.textViews["edsger-composer"].exists)
+        XCTAssertTrue(app.staticTexts["edsger-title"].exists)
+        XCTAssertFalse(app.buttons["edsger-courses"].exists)
         app.buttons["edsger-history"].tap()
         XCTAssertTrue(app.navigationBars["EDSGER"].waitForExistence(timeout: 5))
         app.navigationBars["EDSGER"].buttons["Done"].tap()
@@ -202,25 +194,13 @@ final class StoreScreenshots: XCTestCase {
 
         XCTAssertTrue(app.buttons["home-chat"].waitForExistence(timeout: 4), app.debugDescription)
         app.buttons["home-chat"].tap()
-        app.buttons["edsger-courses"].tap()
-        XCTAssertTrue(app.staticTexts["Lessons"].waitForExistence(timeout: 8), app.debugDescription)
-        XCTAssertTrue(app.staticTexts["Challenges"].waitForExistence(timeout: 4), app.debugDescription)
-
-        let helloCard = app.buttons.matching(NSPredicate(format: "label CONTAINS 'Lesson 1 of 20'")).firstMatch
-        XCTAssertTrue(helloCard.waitForExistence(timeout: 6), app.debugDescription)
-        helloCard.tap()
+        XCTAssertTrue(app.staticTexts["edsger-title"].waitForExistence(timeout: 5), app.debugDescription)
+        capture("02-chat")
+        openIDE()
+        createCFile()
 
         let run = app.buttons["RUN"]
         XCTAssertTrue(run.waitForExistence(timeout: 8), app.debugDescription)
-        XCTAssertTrue(
-            (app.textViews.firstMatch.value as? String)?.contains("???") == true
-                || app.staticTexts.matching(NSPredicate(format: "label CONTAINS '???'")).firstMatch.waitForExistence(timeout: 4),
-            app.debugDescription
-        )
-        dismissKeyboard()
-        sleep(1)
-        capture("02-lesson-blank")
-
         replaceEditor(with: Self.helloSolution)
         dismissKeyboard()
         XCTAssertTrue(run.waitForExistence(timeout: 5))
@@ -247,8 +227,6 @@ final class StoreScreenshots: XCTestCase {
 
         tapBack()
         sleep(1)
-        XCTAssertTrue(app.buttons["IDE"].waitForExistence(timeout: 4), app.debugDescription)
-        app.buttons["IDE"].tap()
         let settings = app.buttons["Settings"]
         XCTAssertTrue(settings.waitForExistence(timeout: 6), app.debugDescription)
         settings.tap()
@@ -282,11 +260,8 @@ final class StoreScreenshots: XCTestCase {
         app.launchArguments.append("UITEST_STORE_SHOTS")
         app.launch()
         XCTAssertTrue(app.wait(for: .runningForeground, timeout: 15))
-        app.buttons["edsger-courses"].tap()
-
-        let helloCard = app.buttons.matching(NSPredicate(format: "label CONTAINS 'Lesson 1 of 20'")).firstMatch
-        XCTAssertTrue(helloCard.waitForExistence(timeout: 8), app.debugDescription)
-        helloCard.tap()
+        openIDE()
+        createCFile()
 
         let run = app.buttons["RUN"]
         XCTAssertTrue(run.waitForExistence(timeout: 8), app.debugDescription)
@@ -303,11 +278,8 @@ final class StoreScreenshots: XCTestCase {
         app.launchArguments.append("UITEST_STORE_SHOTS")
         app.launch()
         XCTAssertTrue(app.wait(for: .runningForeground, timeout: 15))
-        app.buttons["edsger-courses"].tap()
-
-        let helloCard = app.buttons.matching(NSPredicate(format: "label CONTAINS 'Lesson 1 of 20'")).firstMatch
-        XCTAssertTrue(helloCard.waitForExistence(timeout: 8), app.debugDescription)
-        helloCard.tap()
+        openIDE()
+        createCFile()
 
         let run = app.buttons["RUN"]
         XCTAssertTrue(run.waitForExistence(timeout: 8), app.debugDescription)
@@ -316,6 +288,18 @@ final class StoreScreenshots: XCTestCase {
         XCTAssertTrue(run.waitForExistence(timeout: 5))
         run.tap()
         assertStdinSitsAboveKeyboard()
+    }
+
+    private func createCFile() {
+        let language = app.buttons["language-c"]
+        XCTAssertTrue(language.waitForExistence(timeout: 5), app.debugDescription)
+        if !language.isHittable { app.scrollViews.firstMatch.swipeUp() }
+        language.tap()
+        let create = app.buttons["home-new-file"]
+        XCTAssertTrue(create.waitForExistence(timeout: 5), app.debugDescription)
+        if !create.isHittable { app.scrollViews.firstMatch.swipeDown() }
+        create.tap()
+        XCTAssertTrue(app.textViews["code-editor"].waitForExistence(timeout: 5), app.debugDescription)
     }
 
     private func openIDE() {
