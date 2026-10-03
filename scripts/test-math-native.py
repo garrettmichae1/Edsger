@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build/run the production bridge with host Python headers. Requires a compiler and pinned SymPy.
+"""Build/run the production bridge with host Python headers and the shipped math packages.
 This checks C lifecycle behavior; it does not replace an iOS device build/test.
 """
 import os
@@ -9,11 +9,19 @@ import subprocess
 import sys
 import sysconfig
 import tempfile
-import sympy
+import runpy
 
 root = Path(__file__).resolve().parents[1]
 with tempfile.TemporaryDirectory(prefix='edsger-math-native-') as directory:
     work = Path(directory)
+    packages = work / 'math-packages'
+    runpy.run_path(str(root / 'scripts/bundle-math-packages.py'))['bundle_math_packages'](packages)
+    # Model the extension absent from the iPhone bundle, even on a desktop
+    # where _ctypes is installed. This must stay absent throughout cold/warm
+    # math interpreter creation; do not accidentally test desktop SymPy.
+    bootstrap = work / 'math_bootstrap.py'
+    bootstrap.write_text("import sys\nsys.modules['_ctypes'] = None\n" +
+                         (root / 'lilC/Infrastructure/math_bootstrap.py').read_text())
     (work / 'Python').mkdir()
     (work / 'Python/Python.h').write_text('#include <Python.h>\n')
     script = work / 'main.py'
@@ -35,6 +43,15 @@ with tempfile.TemporaryDirectory(prefix='edsger-math-native-') as directory:
                *shlex.split(sysconfig.get_config_var('LIBS') or ''), *shlex.split(sysconfig.get_config_var('SYSLIBS') or ''),
                '-lpthread', '-o', str(binary)]
     subprocess.run(command, check=True)
-    subprocess.run([str(binary), sys.base_prefix, str(Path(sympy.__file__).parent.parent),
-                    str(root / 'lilC/Infrastructure/math_bootstrap.py'), str(root / 'lilC/Infrastructure/python_bootstrap.py'),
-                    str(script), str(work), str(slow_bootstrap)], check=True, timeout=45)
+    args = [str(binary), sys.base_prefix, str(packages), str(bootstrap),
+            str(root / 'lilC/Infrastructure/python_bootstrap.py'), str(script), str(work), str(slow_bootstrap)]
+    for order in ([], ['ide-first']):
+        subprocess.run([*args, *order], check=True, timeout=60)
+    # Exercise every portable calculation/domain regression with the exact
+    # packaged library and unavailable FFI, instead of an installed SymPy.
+    engine = str(root / 'scripts/test-math-engine.py')
+    subprocess.run([sys.executable, '-c',
+                    "import sys, runpy; sys.path.insert(0, sys.argv[1]); "
+                    "sys.modules['_ctypes'] = None; "
+                    "script = sys.argv[2]; sys.argv = [script]; runpy.run_path(script, run_name='__main__')",
+                    str(packages), engine], check=True, timeout=60)

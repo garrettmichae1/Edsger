@@ -31,6 +31,12 @@ static void success(void) {
     lilc_python_destroy(job);
 }
 static void integral_work(void) {
+    const char *simple = "{\"operation\":\"integrate\",\"expression\":\"x^2\",\"lower\":\"0\",\"upper\":\"1\"}";
+    lilc_python_job *simple_job = lilc_python_create(); assert(simple_job);
+    captured[0] = 0;
+    assert(lilc_python_calculate(simple_job, home, math_bootstrap, packages, simple, 8, output, NULL) == 0);
+    assert(strstr(captured, "\"exact\": \"1/3\""));
+    lilc_python_destroy(simple_job);
     const char *worked = "{\"operation\":\"integrate\",\"expression\":\"x^2*ln(1+x)\",\"lower\":\"0\",\"upper\":\"1\",\"include_work\":true}";
     lilc_python_job *job = lilc_python_create(); assert(job);
     captured[0] = 0;
@@ -52,9 +58,21 @@ static void *math_on_worker(void *arg) { (void)arg; success(); return NULL; }
 static void *cancel_cold_math(void *arg) {
     int status = calculate(arg, 8); assert(status == 2); return NULL;
 }
+static void ide_round_trip(void) {
+    pthread_t worker;
+    atomic_store(&waiting, 0);
+    lilc_python_job *ide_job = lilc_python_create(); assert(ide_job);
+    pthread_create(&worker, NULL, ide, ide_job);
+    for (int i = 0; i < 5000 && !atomic_load(&waiting); i++) usleep(1000);
+    assert(atomic_load(&waiting));
+    lilc_python_job *job = lilc_python_create(); assert(job);
+    assert(calculate(job, 8) == 3); lilc_python_destroy(job);
+    lilc_python_input(ide_job, "done\n"); pthread_join(worker, NULL); lilc_python_destroy(ide_job);
+}
 int main(int argc, char **argv) {
-    assert(argc == 8);
+    assert(argc == 8 || argc == 9);
     home = argv[1]; packages = argv[2]; math_bootstrap = argv[3]; ide_bootstrap = argv[4]; script = argv[5]; root = argv[6];
+    if (argc == 9) ide_round_trip();
     // Slow startup exceeds the execution budget but must not time out the calculation.
     const char *production_bootstrap = math_bootstrap;
     math_bootstrap = argv[7];
@@ -78,12 +96,7 @@ int main(int argc, char **argv) {
     pthread_create(&worker, NULL, cancel_cold_math, job);
     usleep(2000); lilc_python_stop(job); pthread_join(worker, NULL); lilc_python_destroy(job);
     success();
-    lilc_python_job *ide_job = lilc_python_create();
-    pthread_create(&worker, NULL, ide, ide_job);
-    for (int i = 0; i < 5000 && !atomic_load(&waiting); i++) usleep(1000);
-    assert(atomic_load(&waiting));
-    job = lilc_python_create(); assert(calculate(job, 8) == 3); lilc_python_destroy(job);
-    lilc_python_input(ide_job, "done\n"); pthread_join(worker, NULL); lilc_python_destroy(ide_job);
+    ide_round_trip();
     success();
     puts("Native bridge checks passed: cold/warm, cross-thread, deadline, cancellation, IDE isolation/busy, recovery.");
     return 0;
