@@ -287,7 +287,7 @@ final class AgentSession {
         let folders = workspace.agentListFoldersSummary(in: projectRoot)
         let deletes = settings.safeguardsOn ? "OFF (cannot delete)" : "ON (may delete files and folders)"
         return """
-        You are the lilC agent. You can operate this iPhone IDE for its user.
+        You are Edsger, the coding agent. You can operate this iPhone IDE for its user.
         Language: \(workspace.language.name)
         \(workspace.language.agentRules)
         Current file (project-relative): \(current)
@@ -365,7 +365,7 @@ final class AgentSession {
     }
 
     private static let toolSpecs: [[String: Any]] = [
-        function("list_files", "List source files in lilC."),
+        function("list_files", "List source files in the project."),
         function("list_folders", "List project folders."),
         function("read_file", "Read a file.", ["path": stringProp], ["path"]),
         function("write_file", "Create or overwrite a source file for the selected language (including tests).", [

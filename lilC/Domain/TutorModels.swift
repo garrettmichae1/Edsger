@@ -78,6 +78,9 @@ struct TranscriptScrollState {
         if isNearBottom { hasUnreadContent = false }
     }
     mutating func endInteraction() {
+        // Programmatic scrolling and viewport resizing also finish in idle.
+        // Only a real gesture may change the user's follow preference here.
+        guard isInteracting else { return }
         isInteracting = false
         followsLatest = isNearBottom
         if followsLatest { hasUnreadContent = false }

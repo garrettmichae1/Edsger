@@ -23,6 +23,7 @@ struct ConversationTranscript<Content: View>: View {
                     Color.clear.frame(height: 1).id("transcript-bottom")
                 }
             }
+            .defaultScrollAnchor(.bottom, for: .initialOffset)
             .scrollDismissesKeyboard(.interactively)
             .onScrollGeometryChange(for: GeometrySnapshot.self) { geometry in
                 GeometrySnapshot(

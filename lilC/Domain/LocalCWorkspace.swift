@@ -239,7 +239,7 @@ final class LocalCWorkspace {
             return currentFile.name
         }
         if currentProjectPath.isEmpty {
-            return "lilC"
+            return "Edsger"
         }
         return URL(fileURLWithPath: currentProjectPath).lastPathComponent
     }

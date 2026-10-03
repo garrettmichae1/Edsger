@@ -1231,7 +1231,7 @@ private struct LocalModeScreen: View {
                     if selectedPanel == .agent {
                         if let agentSession {
                             AgentConversationView(session: agentSession)
-                                .frame(minHeight: 220)
+                                .frame(minHeight: 0, maxHeight: .infinity)
                         }
                     } else {
                         outputBody
@@ -1244,7 +1244,7 @@ private struct LocalModeScreen: View {
             .frame(maxHeight: outputCoversEditor ? .infinity : nil, alignment: .top)
             .fixedSize(
                 horizontal: false,
-                vertical: workspace.isRunning && outputExpanded && !outputCoversEditor
+                vertical: selectedPanel == .output && workspace.isRunning && outputExpanded && !outputCoversEditor
             )
             .layoutPriority(RunningConsoleLayout.consoleLayoutPriority(
                 isRunning: workspace.isRunning,
