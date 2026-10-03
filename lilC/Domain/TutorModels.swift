@@ -11,6 +11,17 @@ struct TutorConversation: Identifiable, Codable, Equatable, Sendable {
     var id = UUID()
     var messages: [TutorMessage] = []
     var updatedAt = Date()
+    // Optional so conversation files written before pinning still decode unchanged.
+    var pinnedAt: Date?
+    var isPinned: Bool { pinnedAt != nil }
+
+    static func historyOrder(_ lhs: Self, _ rhs: Self) -> Bool {
+        if lhs.isPinned != rhs.isPinned { return lhs.isPinned }
+        if let left = lhs.pinnedAt, let right = rhs.pinnedAt, left != right { return left > right }
+        if lhs.updatedAt != rhs.updatedAt { return lhs.updatedAt > rhs.updatedAt }
+        return lhs.id.uuidString < rhs.id.uuidString
+    }
+
     var title: String {
         let first = messages.first { $0.role == .user }?.text ?? "New chat"
         return String(first.replacingOccurrences(of: "\n", with: " ").prefix(70))

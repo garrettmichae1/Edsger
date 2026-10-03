@@ -46,7 +46,7 @@ final class TutorSession {
         self.draftsURL = self.storageURL.deletingPathExtension().appendingPathExtension("drafts.json")
         let loaded = (try? Data(contentsOf: self.storageURL)).flatMap { try? JSONDecoder().decode([TutorConversation].self, from: $0) } ?? []
         let savedDrafts = (try? Data(contentsOf: self.draftsURL)).flatMap { try? JSONDecoder().decode(DraftState.self, from: $0) }
-        let initial = loaded.isEmpty ? [TutorConversation()] : loaded
+        let initial = loaded.isEmpty ? [TutorConversation()] : loaded.sorted(by: TutorConversation.historyOrder)
         conversations = initial
         selectedID = savedDrafts.flatMap { state in initial.contains { $0.id == state.selectedID } ? state.selectedID : nil } ?? initial[0].id
         let validIDs = Set(initial.map { $0.id.uuidString })
@@ -57,7 +57,7 @@ final class TutorSession {
 
     func newConversation() {
         stop()
-        if let empty = conversations.first(where: { $0.messages.isEmpty && draft(for: $0.id).isEmpty }) { selectedID = empty.id }
+        if let empty = conversations.first(where: { !$0.isPinned && $0.messages.isEmpty && draft(for: $0.id).isEmpty }) { selectedID = empty.id }
         else { let chat = TutorConversation(); conversations.insert(chat, at: 0); selectedID = chat.id }
         draftStateDirty = true
         errorMessage = nil; notice = nil
@@ -76,6 +76,11 @@ final class TutorSession {
         draftStateDirty = true
         if conversations.isEmpty { conversations = [TutorConversation()] }
         if !conversations.contains(where: { $0.id == selectedID }) { selectedID = conversations[0].id }
+        save()
+    }
+    func togglePin(_ id: UUID) {
+        guard let index = conversations.firstIndex(where: { $0.id == id }) else { return }
+        conversations[index].pinnedAt = conversations[index].isPinned ? nil : Date()
         save()
     }
     func send() {
@@ -166,13 +171,13 @@ final class TutorSession {
     }
 
     private func save() {
-        conversations.sort { $0.updatedAt > $1.updatedAt }
-        // Retain active/unfinished chats even when pruning old completed history.
+        conversations.sort(by: TutorConversation.historyOrder)
+        // Retain pinned, active, and unfinished chats when pruning old completed history.
         if conversations.count > 100 {
-            let protected = conversations.filter { $0.id == selectedID || !draft(for: $0.id).isEmpty }
+            let protected = conversations.filter { $0.isPinned || $0.id == selectedID || !draft(for: $0.id).isEmpty }
             let protectedIDs = Set(protected.map(\.id))
             let remaining = conversations.filter { !protectedIDs.contains($0.id) }
-            conversations = (protected + remaining.prefix(max(0, 100 - protected.count))).sorted { $0.updatedAt > $1.updatedAt }
+            conversations = (protected + remaining.prefix(max(0, 100 - protected.count))).sorted(by: TutorConversation.historyOrder)
         }
         do {
             try FileManager.default.createDirectory(at: storageURL.deletingLastPathComponent(), withIntermediateDirectories: true)

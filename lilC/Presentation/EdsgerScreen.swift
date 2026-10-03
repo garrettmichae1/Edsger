@@ -87,6 +87,7 @@ struct EdsgerScreen: View {
     let openHome: () -> Void
     let openFiles: () -> Void
     @Environment(\.colorScheme) private var scheme
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @FocusState private var composerFocused: Bool
     @State private var showsHistory = false
     @State private var showsInfo = false
@@ -303,7 +304,7 @@ struct EdsgerScreen: View {
             List {
                 VStack(alignment: .leading, spacing: 24) {
                     VStack(alignment: .leading, spacing: 8) {
-                        Text("Recent conversations")
+                        Text("Your conversations")
                             .font(.system(size: 30, weight: .semibold))
                             .tracking(-0.8)
                         Text("Pick up where you left off.")
@@ -325,11 +326,11 @@ struct EdsgerScreen: View {
                         session.select(chat.id); showsHistory = false
                     } label: {
                         HStack(spacing: 14) {
-                            Image(systemName: "bubble.left")
+                            Image(systemName: chat.isPinned ? "pin.fill" : "bubble.left")
                                 .font(.system(size: 18, weight: .medium))
-                                .foregroundStyle(.secondary)
+                                .foregroundStyle(chat.isPinned ? Color.blue : Color.secondary)
                                 .frame(width: 44, height: 44)
-                                .background(selection, in: Circle())
+                                .background(chat.isPinned ? Color.blue.opacity(0.10) : selection, in: Circle())
                             VStack(alignment: .leading, spacing: 7) {
                                 if !session.draft(for: chat.id).isEmpty {
                                     Label("Draft", systemImage: "pencil")
@@ -360,10 +361,27 @@ struct EdsgerScreen: View {
                         .shadow(color: .black.opacity(scheme == .dark ? 0 : 0.04), radius: 12, y: 4)
                         .contentShape(RoundedRectangle(cornerRadius: 26))
                     }
+                    .accessibilityValue(chat.isPinned ? "Pinned" : "")
+                    .accessibilityAction(named: chat.isPinned ? "Unpin chat" : "Pin chat") {
+                        toggleHistoryPin(chat.id)
+                    }
+                    .contextMenu {
+                        Button(chat.isPinned ? "Unpin" : "Pin", systemImage: chat.isPinned ? "pin.slash" : "pin") {
+                            toggleHistoryPin(chat.id)
+                        }
+                    }
                     .listRowInsets(EdgeInsets(top: 5, leading: 16, bottom: 5, trailing: 16))
                     .listRowBackground(Color.clear)
                     .listRowSeparator(.hidden)
                     .swipeActions { Button("Delete", role: .destructive) { session.delete(chat.id) } }
+                    .swipeActions(edge: .leading) {
+                        Button {
+                            toggleHistoryPin(chat.id)
+                        } label: {
+                            Label(chat.isPinned ? "Unpin" : "Pin", systemImage: chat.isPinned ? "pin.slash" : "pin")
+                        }
+                        .tint(Color.blue)
+                    }
                 }
             }
             .buttonStyle(.plain)
@@ -385,6 +403,13 @@ struct EdsgerScreen: View {
         }
         .presentationDragIndicator(.visible)
         .presentationCornerRadius(32)
+    }
+
+    private func toggleHistoryPin(_ id: UUID) {
+        if reduceMotion { session.togglePin(id) }
+        else {
+            withAnimation(.easeInOut(duration: 0.2)) { session.togglePin(id) }
+        }
     }
 
     private func historyShortcut(_ title: String, systemImage: String) -> some View {
