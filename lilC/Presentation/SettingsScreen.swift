@@ -262,7 +262,7 @@ struct SettingsScreen: View {
     private var aboutSection: some View {
         settingsGroup("About Edsger") {
             Button { showsTour = true } label: {
-                navigationRow("Take the tour", symbol: "rectangle.stack")
+                navigationRow("Why Edsger", symbol: "rectangle.stack")
             }
             .accessibilityIdentifier("settings.tour")
             if let url = LegalURLs.writeReviewURL() {

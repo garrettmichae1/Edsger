@@ -540,7 +540,7 @@ private struct EdsgerInfoSheet: View {
                     .background(surface, in: RoundedRectangle(cornerRadius: 26))
                     Button { showsTour = true } label: {
                         HStack {
-                            Text("Take the Edsger tour")
+                            Text("Why Edsger")
                             Spacer()
                             Image(systemName: "arrow.right")
                         }

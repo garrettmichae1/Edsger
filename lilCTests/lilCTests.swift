@@ -428,7 +428,6 @@ struct lilCTests {
         let store = OnboardingStore(defaults: suite)
         #expect(store.hasCompleted == false)
         #expect(store.needsOnboarding)
-        #expect(OnboardingCopy.pageCount == 4)
     }
 
     @MainActor
@@ -865,35 +864,23 @@ struct lilCTests {
         #expect(texts.contains("char"))
     }
 
-    @Test func onboardingPagesHaveStableIdentityAndPlainASCIIArt() {
-        let pages = OnboardingCopy.pages
-        #expect(pages.map(\.id) == ["privacy", "chat", "ide", "agent"])
-        #expect(Set(pages.map(\.id)).count == pages.count)
-        for page in pages {
-            #expect(page.artwork.unicodeScalars.allSatisfy(\.isASCII))
-            #expect(Set(page.features.map(\.id)).count == page.features.count)
-            #expect(page.artwork.split(separator: "\n").map(\.count).max()! <= 24)
-        }
-    }
-
     @MainActor
     @Test func onboardingViewRendersInLightAndDark() {
         let previous = AppearanceStore.shared.colorWay
         defer { AppearanceStore.shared.colorWay = previous }
         for way in AppColorWay.allCases {
             AppearanceStore.shared.colorWay = way
-            for index in OnboardingCopy.pages.indices {
+            for replay in [false, true] {
                 for size in [CGSize(width: 320, height: 568), CGSize(width: 393, height: 852), CGSize(width: 1024, height: 768)] {
                     for textSize in [DynamicTypeSize.large, .accessibility3] {
-                        let view = OnboardingView(initialPage: index, finish: {})
+                        let view = OnboardingView(isReplay: replay, finish: {})
                             .environment(\.dynamicTypeSize, textSize)
                             .frame(width: size.width, height: size.height)
-                            .background(AppPalette.background)
                             .lilCPreferredScheme(way)
                         let renderer = ImageRenderer(content: view)
                         renderer.scale = 1
                         let image = renderer.uiImage
-                        #expect(image != nil, "Page \(index) should render in \(way.title), \(size), \(textSize)")
+                        #expect(image != nil, "Introduction should render in \(way.title), \(size), \(textSize), replay=\(replay)")
                         #expect(image?.size == size)
                     }
                 }
