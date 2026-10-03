@@ -45,6 +45,12 @@ struct MathCalculation: Codable, Sendable {
         guard ok, let input, !input.isEmpty, let latex, !latex.isEmpty, let exact, !exact.isEmpty else { return nil }
         return "**\(request.label)** · Calculated on device\n\nInterpreted input:\n\\[\(input)\\]\n\nResult:\n\\[\(latex)\\]\n\n\(note ?? "")"
     }
+
+    // Recognize the app's successful result format, never use its text as calculator input.
+    static func isAnswer(_ text: String) -> Bool {
+        text.range(of: #"^\*\*[^*\n]+\*\* · Calculated on device\n\nInterpreted input:\n\\\["#,
+                   options: .regularExpression) != nil && text.contains("\n\nResult:\n\\[")
+    }
 }
 
 protocol MathCalculating: Sendable {
@@ -82,7 +88,7 @@ enum MathExplanationStyle: Equatable {
     var instructions: String {
         switch self {
         case .answerOnly: "Return only the calculator result."
-        case .brief: "Describe the method in two to four short sentences, normally under 100 words. Omit intermediate evaluation and do not repeat the supplied result. A full derivation is only needed when explicitly requested."
+        case .brief: "Describe the method in two to four short sentences of prose, normally under 100 words. Do not write or evaluate intermediate equations, give numerical approximations, or repeat the supplied result. Leave worked calculations for an explicit request for steps."
         case .steps: "Give one focused derivation, normally three to six compact steps and under 180 words. Expand only if the user explicitly requests more detail. Honor a requested method when you can explain it reliably."
         }
     }
@@ -101,14 +107,29 @@ struct CalculatingTutorClient: TutorCompleting {
     func reply(messages: [TutorMessage], onStatus: @escaping GenerationStatusHandler,
                onUpdate: @escaping @Sendable (String) -> Void) async throws -> String {
         try Task.checkCancellation()
-        guard let question = messages.last(where: { $0.role == .user }), MathIntent.isCandidate(messages) else {
+        guard let question = messages.last(where: { $0.role == .user }) else {
             return try await tutor.reply(messages: messages, onStatus: onStatus, onUpdate: onUpdate)
         }
+        let followsCalculation = messages.last?.role == .user && MathIntent.isExplanationFollowup(question.text) &&
+            messages.dropLast().last.map { $0.role == .assistant && MathCalculation.isAnswer($0.text) } == true
+        let calculationMessages: [TutorMessage]
+        if followsCalculation {
+            guard let recovered = MathIntent.priorCalculationMessages(messages) else {
+                return publish("Which calculation would you like explained? Please send its expression and operation again.", onUpdate)
+            }
+            calculationMessages = recovered
+        } else {
+            guard MathIntent.isCandidate(messages) else {
+                return try await tutor.reply(messages: messages, onStatus: onStatus, onUpdate: onUpdate)
+            }
+            calculationMessages = messages
+        }
+        let calculationQuestion = calculationMessages.last(where: { $0.role == .user }) ?? question
         let explanationStyle = MathExplanationStyle.requested(in: question.text)
         let plan: MathPlan
         do {
-            if let request = MathIntent.directArithmetic(question.text) { plan = .calculate(request) }
-            else { plan = try await planner.mathPlan(messages: messages, onStatus: onStatus) }
+            if let request = MathIntent.directArithmetic(calculationQuestion.text) { plan = .calculate(request) }
+            else { plan = try await planner.mathPlan(messages: calculationMessages, onStatus: onStatus) }
         } catch {
             try propagateCancellation(error)
             return publish("I couldn't interpret that calculation reliably. Please try one calculation at a time, with its expression or equation and the operation you want.", onUpdate)
@@ -116,6 +137,9 @@ struct CalculatingTutorClient: TutorCompleting {
         try Task.checkCancellation()
         switch plan {
         case .notCalculation:
+            if followsCalculation {
+                return publish("I couldn't recover that calculation reliably. Please send its expression and operation again.", onUpdate)
+            }
             return try await tutor.reply(messages: messages, onStatus: onStatus, onUpdate: onUpdate)
         case .clarify(let message), .unsupported(let message):
             return publish(message, onUpdate)
@@ -138,14 +162,16 @@ struct CalculatingTutorClient: TutorCompleting {
             // Answer-only requests stop here: no explanatory inference or model switch.
             guard explanationStyle != .answerOnly else { return calculated }
             var context = messages
+            let recoveredRequest = followsCalculation ? "\nCalculation request: \(calculationQuestion.text)" : ""
             context.append(TutorMessage(role: .user, text: """
-            Original user request: \(question.text)
+            Original user request: \(question.text)\(recoveredRequest)
             The app's calculator interpreted the request as \(request.label).
             Input: \(result.input ?? request.expression)
             Calculated result: \(result.exact ?? "")
             Conditions: \(result.note ?? "")
-            Explain how to reach this exact answer using mathematical relationships. \(explanationStyle.instructions)
+            \(explanationStyle == .brief ? "Describe the method; the answer is already displayed." : "Explain how to reach this exact answer using mathematical relationships.") \(explanationStyle.instructions)
             Use one coherent method, with no introduction or unsolicited follow-up question. The explanation is AI-generated, not verified by the calculator. Do not replace or contradict the supplied result. If the interpretation differs from the user's question or you cannot explain reliable steps, say so briefly.
+            \(explanationStyle == .brief ? "Your reply must be only a plain-English method overview in two to four sentences. No equations, numbers, calculations, or worked steps." : "")
             """))
             let prefix = calculated + "\n\n**Explanation** · AI-generated\n\n"
             do {

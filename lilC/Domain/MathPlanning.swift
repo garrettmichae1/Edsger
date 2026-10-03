@@ -59,9 +59,34 @@ enum MathIntent {
     static func isCandidate(_ messages: [TutorMessage]) -> Bool {
         guard let last = messages.last(where: { $0.role == .user }) else { return false }
         if isCandidate(last.text) { return true }
-        let followup = last.text.range(of: #"(?i)\b(it|that|this|same|those|instead|again|now|answer|result|sample|population|degrees|radians|use)\b"#, options: .regularExpression) != nil ||
-            last.text.range(of: #"(?i)^\s*(please\s+)?(explain(\s+(briefly|more))?|why|show\s+(me\s+)?(the\s+)?(steps|work|working|derivation)|step[\s-]+by[\s-]+step)(\s+please)?[.!?\s]*$"#, options: .regularExpression) != nil
+        let followup = last.text.range(of: #"(?i)\b(it|that|this|same|those|instead|again|now|answer|result|sample|population|degrees|radians|use)\b"#, options: .regularExpression) != nil || isExplanationFollowup(last.text)
         return followup && messages.dropLast().suffix(6).contains { $0.role == .user && isCandidate($0.text) }
+    }
+
+    static func isExplanationFollowup(_ text: String) -> Bool {
+        text.range(of: #"(?i)^\s*(please\s+)?(explain(\s+(briefly|more|that|it|(the\s+)?(answer|result)))?|why|how\s+did\s+you\s+get\s+(that|this)|show\s+(me\s+)?(the\s+)?(steps|work|working|derivation)|step[\s-]+by[\s-]+step)(\s+please)?[.!?\s]*$"#, options: .regularExpression) != nil
+    }
+
+    /// Replay only a contiguous, recent calculation/explanation exchange. Planning ends at
+    /// the original request so a bare "Explain" cannot become ordinary chat, and large old
+    /// explanations cannot crowd its input out of the planner's bounded context.
+    static func priorCalculationMessages(_ messages: [TutorMessage]) -> [TutorMessage]? {
+        guard messages.last?.role == .user, let latest = messages.last,
+              isExplanationFollowup(latest.text) else { return nil }
+        let lowerBound = max(0, messages.count - 7)
+        var assistantIndex = messages.count - 2
+        while assistantIndex - 1 >= lowerBound {
+            let assistant = messages[assistantIndex], user = messages[assistantIndex - 1]
+            guard assistant.role == .assistant, MathCalculation.isAnswer(assistant.text),
+                  user.role == .user else { return nil }
+            if !isExplanationFollowup(user.text) {
+                let recovered = Array(messages.prefix(assistantIndex))
+                guard isCandidate(recovered) else { return nil }
+                return recovered
+            }
+            assistantIndex -= 2
+        }
+        return nil
     }
 
     static func isCandidate(_ text: String) -> Bool {

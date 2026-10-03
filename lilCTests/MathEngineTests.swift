@@ -87,14 +87,93 @@ import Testing
     }
 
     @Test func shortStepFollowupUsesCalculatedPath() async throws {
-        let tutor = MathTestTutor(), planner = MathTestPlanner(.calculate(.init(operation: "solve", expression: "x=4")))
+        let request = MathRequest(operation: "solve", expression: "x=4")
+        let tutor = MathTestTutor(), planner = MathTestPlanner(.calculate(request))
         let client = CalculatingTutorClient(tutor: tutor, planner: planner, calculator: MathTestCalculator())
         let reply = try await client.reply(messages: [.init(role: .user, text: "Solve x=4"),
-            .init(role: .assistant, text: "Calculated on device: x=4"), .init(role: .user, text: "Show the steps")]) { _ in }
+            .init(role: .assistant, text: MathCalculation(ok: true, input: "x=4", latex: "4", exact: "4").answer(for: request)!),
+            .init(role: .user, text: "Show the steps")]) { _ in }
         #expect(await planner.calls == 1)
+        #expect(await planner.lastMessages.map(\.text) == ["Solve x=4"])
         #expect(await tutor.calls == 1)
         #expect(reply.contains("Calculated on device") && reply.contains("AI-generated"))
         #expect(await tutor.lastMessages.last?.text.contains("three to six compact steps") == true)
+    }
+
+    @Test func repeatedExplanationReplaysOriginalRequestWithoutOldReasoning() async throws {
+        let request = MathRequest(operation: "integrate", expression: "x^2*ln(1+x)", lower: "0", upper: "1")
+        let card = MathCalculation(ok: true, input: "x^2*ln(1+x)", latex: "2*log(2)/3-5/18", exact: "2*log(2)/3-5/18").answer(for: request)!
+        let question = "Integrate x^2*ln(1+x) from 0 to 1"
+        let planner = MathTestPlanner(.calculate(request)), tutor = MathTestFocusedTutor(), calculator = MathTestCalculator()
+        let client = CalculatingTutorClient(tutor: tutor, planner: planner, calculator: calculator)
+        for followup in ["Explain briefly.", "Show the steps.", "Explain the result"] {
+            let messages: [TutorMessage] = [.init(role: .user, text: question), .init(role: .assistant, text: card),
+                .init(role: .user, text: "Explain"), .init(role: .assistant, text: card + String(repeating: "OLD_SPECULATION ", count: 800)),
+                .init(role: .user, text: followup)]
+            let reply = try await client.reply(messages: messages) { _ in }
+            #expect(await planner.lastMessages.map(\.text) == [question])
+            #expect(await tutor.normalCalls == 0)
+            #expect(await tutor.messages.count == 1)
+            #expect(await tutor.messages.last?.text.contains("Calculation request: " + question) == true)
+            #expect(await tutor.messages.last?.text.contains("OLD_SPECULATION") == false)
+            #expect(reply.contains("Calculated on device") && reply.contains("AI-generated"))
+        }
+        #expect(await calculator.requests == [request, request, request])
+    }
+
+    @Test func arithmeticExplanationReusesFastPath() async throws {
+        let request = MathRequest(operation: "evaluate", expression: "2+2")
+        let card = MathCalculation(ok: true, input: "2+2", latex: "4", exact: "4").answer(for: request)!
+        let planner = MathTestPlanner(.notCalculation), calculator = MathTestCalculator(), tutor = MathTestFocusedTutor()
+        let client = CalculatingTutorClient(tutor: tutor, planner: planner, calculator: calculator)
+        _ = try await client.reply(messages: [.init(role: .user, text: "2+2"), .init(role: .assistant, text: card),
+            .init(role: .user, text: "Explain briefly")]) { _ in }
+        #expect(await planner.calls == 0)
+        #expect(await calculator.requests == [request])
+        #expect(await tutor.normalCalls == 0)
+    }
+
+    @Test func explanationReplayPreservesClarificationContext() async throws {
+        let request = MathRequest(operation: "sample_variance", expression: "[1,2,3]")
+        let card = MathCalculation(ok: true, input: "[1,2,3]", latex: "1", exact: "1").answer(for: request)!
+        let original: [TutorMessage] = [.init(role: .user, text: "Find variance of [1,2,3]"),
+            .init(role: .assistant, text: "Sample or population?"), .init(role: .user, text: "Sample")]
+        let planner = MathTestPlanner(.calculate(request)), tutor = MathTestFocusedTutor(), calculator = MathTestCalculator()
+        let client = CalculatingTutorClient(tutor: tutor, planner: planner, calculator: calculator)
+        _ = try await client.reply(messages: original + [.init(role: .assistant, text: card),
+            .init(role: .user, text: "Explain briefly")]) { _ in }
+        #expect(await planner.lastMessages.map(\.text) == original.map(\.text))
+        #expect(await calculator.requests == [request])
+        #expect(await tutor.normalCalls == 0)
+    }
+
+    @Test func explanationReplayDoesNotGuessOrCrossUnrelatedMessages() async throws {
+        let request = MathRequest(operation: "solve", expression: "x=4")
+        let card = MathCalculation(ok: true, input: "x=4", latex: "4", exact: "4").answer(for: request)!
+        let original: [TutorMessage] = [.init(role: .user, text: "Solve x=4"), .init(role: .assistant, text: card)]
+        #expect(MathIntent.priorCalculationMessages(original + [.init(role: .user, text: "Explain photosynthesis")]) == nil)
+        #expect(MathIntent.priorCalculationMessages(original + [.init(role: .user, text: "Explain 3+3")]) == nil)
+        #expect(MathIntent.priorCalculationMessages(original + [.init(role: .user, text: "Hello"),
+            .init(role: .assistant, text: "Hello"), .init(role: .user, text: "Explain")]) == nil)
+        #expect(MathIntent.priorCalculationMessages([.init(role: .user, text: "Solve x=4"),
+            .init(role: .assistant, text: "**Calculation unavailable**"), .init(role: .user, text: "Explain")]) == nil)
+        let tutor = MathTestFocusedTutor(), planner = MathTestPlanner(.notCalculation), calculator = MathTestCalculator()
+        let client = CalculatingTutorClient(tutor: tutor, planner: planner, calculator: calculator)
+        for messages in [[.init(role: .assistant, text: card), .init(role: .user, text: "Explain")],
+                         original + [.init(role: .user, text: "Explain")]] as [[TutorMessage]] {
+            let reply = try await client.reply(messages: messages) { _ in }
+            #expect(reply.contains("expression and operation again"))
+        }
+        var tooOld = original
+        for _ in 0..<3 { tooOld += [.init(role: .user, text: "Explain"), .init(role: .assistant, text: card)] }
+        #expect(MathIntent.priorCalculationMessages(tooOld + [.init(role: .user, text: "Explain")]) == nil)
+        #expect(await tutor.normalCalls == 0)
+        #expect(await calculator.requests.isEmpty)
+        #expect(try await client.reply(messages: original + [.init(role: .user, text: "Explain photosynthesis")]) { _ in } == "Ordinary tutor")
+        #expect(await tutor.normalCalls == 1)
+        _ = try await client.reply(messages: original + [.init(role: .user, text: "Explain 3+3")]) { _ in }
+        #expect(await planner.lastMessages.last?.text == "Explain 3+3")
+        #expect(await calculator.requests.isEmpty)
     }
 
     @Test func focusedExplanationExcludesEarlierSpeculationAndPreservesFailureSemantics() async throws {
@@ -219,9 +298,10 @@ private actor MathTestPlanner: MathPlanning {
     let plan: MathPlan
     let failure: MathTestError?
     private(set) var calls = 0
+    private(set) var lastMessages: [TutorMessage] = []
     init(_ plan: MathPlan, failure: MathTestError? = nil) { self.plan = plan; self.failure = failure }
     func mathPlan(messages: [TutorMessage]) async throws -> MathPlan {
-        calls += 1; try throwMathTestError(failure); return plan
+        calls += 1; lastMessages = messages; try throwMathTestError(failure); return plan
     }
 }
 private actor MathTestCalculator: MathCalculating {

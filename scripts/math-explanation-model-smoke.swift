@@ -33,6 +33,7 @@ private struct HostMathCalculator: MathCalculating {
 private actor CountingTutor: MathExplanationCompleting {
     let base: ModelBoundChatClient
     private(set) var calls = 0
+    private(set) var ordinaryCalls = 0
     init(base: ModelBoundChatClient) { self.base = base }
     func reply(messages: [TutorMessage], onUpdate: @escaping @Sendable (String) -> Void) async throws -> String {
         try await reply(messages: messages, onStatus: { _ in }, onUpdate: onUpdate)
@@ -40,6 +41,7 @@ private actor CountingTutor: MathExplanationCompleting {
     func reply(messages: [TutorMessage], onStatus: @escaping GenerationStatusHandler,
                onUpdate: @escaping @Sendable (String) -> Void) async throws -> String {
         calls += 1
+        ordinaryCalls += 1
         return try await base.reply(messages: messages, onStatus: onStatus, onUpdate: onUpdate)
     }
     func explainCalculation(messages: [TutorMessage], onStatus: @escaping GenerationStatusHandler,
@@ -66,10 +68,13 @@ private actor CountingTutor: MathExplanationCompleting {
             let bound = ModelBoundChatClient(model: model, engine: engine)
             let tutor = CountingTutor(base: bound)
             let client = CalculatingTutorClient(tutor: tutor, planner: bound, calculator: calculator)
-            for suffix in ["", " Explain briefly.", " Show integration by parts in at most six compact steps."] {
+            var thread: [TutorMessage] = []
+            for suffix in ["", "Explain briefly.", "Show the steps."] {
+                thread.append(.init(role: .user, text: suffix.isEmpty ? baseQuestion : suffix))
                 let before = await tutor.calls
                 let start = ContinuousClock().now
-                let reply = try await client.reply(messages: [.init(role: .user, text: baseQuestion + suffix)], onUpdate: { _ in })
+                let reply = try await client.reply(messages: thread, onUpdate: { _ in })
+                thread.append(.init(role: .assistant, text: reply))
                 try require(reply.contains("Calculated on device") && reply.contains(#"\log"#) && reply.contains(#"\frac{5}{18}"#), "Correct calculator result: \(reply)")
                 let calls = await tutor.calls - before
                 if suffix.isEmpty {
@@ -77,14 +82,18 @@ private actor CountingTutor: MathExplanationCompleting {
                     try require(await engine.loadedChoice == .standard, "Default result switched to another model")
                     print("PASS \(model.rawValue) answer-only: zero explanatory calls, total=\(start.duration(to: .now))")
                 } else {
-                    try require(calls == 1 && reply.contains("**Explanation** · AI-generated"), "Requested explanation routing")
+                    let ordinaryCalls = await tutor.ordinaryCalls
+                    try require(calls == 1 && reply.contains("**Explanation** · AI-generated") && ordinaryCalls == 0, "Requested explanation routing")
                     try require(await engine.loadedChoice == .standard, "Requested math explanation must reuse Standard")
                     let explanation = reply.components(separatedBy: "**Explanation** · AI-generated\n\n").last ?? ""
                     let wordCount = explanation.split(whereSeparator: \.isWhitespace).count
                     print("EXPLANATION \(model.rawValue)\(suffix): words=\(wordCount)\n\(explanation)\nEND EXPLANATION")
                     try require(wordCount <= (suffix.contains("briefly") ? 160 : 260), "Explanation exceeded smoke length tolerance: \(wordCount)")
                     try require(!explanation.contains("37/180") && !explanation.contains(#"\frac{37}{180}"#), "Known conflicting approximation")
-                    if suffix.contains("parts") {
+                    if suffix.contains("briefly") {
+                        try require(!explanation.contains("5/18") && !explanation.contains(#"\frac{5}{18}"#), "Brief method repeated the result in a worked calculation")
+                    }
+                    if suffix.contains("steps") {
                         let compact = explanation.filter { !$0.isWhitespace }
                         try require(compact.contains(#"\frac{x^3}{3}"#) || compact.contains(#"\frac{x^{3}}{3}"#) || compact.contains("x^3/3"), "Example antiderivative in the requested derivation")
                         try require(!explanation.lowercased().contains("taylor"), "Exact derivation switched to a series")
