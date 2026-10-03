@@ -62,6 +62,8 @@ jobs:
           python3 scripts/fetch-math-assets.py
       - name: Compile the iPhone application and BYOK unit tests
         run: xcodebuild -project lilC.xcodeproj -scheme lilC -configuration Debug -destination 'generic/platform=iOS' -derivedDataPath /tmp/edsger-byok-derived CODE_SIGNING_ALLOWED=NO build-for-testing -only-testing:lilCTests/BYOKTests
+      - name: Build the existing pinned llama simulator slice
+        run: bash scripts/build-llama-simulator.sh
       - name: Execute bundled math regression on an iPhone simulator
         run: |
           SIMULATOR_ID=$(xcrun simctl list devices available -j | python3 -c 'import json,sys; devices=json.load(sys.stdin)["devices"]; print(next(d["udid"] for group in devices.values() for d in group if d.get("isAvailable") and d["name"].startswith("iPhone")))')
