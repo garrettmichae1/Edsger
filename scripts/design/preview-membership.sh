@@ -79,7 +79,7 @@ struct PreviewScroll: UIViewRepresentable {
                 .preferredColorScheme(arguments.contains("--dark") ? .dark : .light)
                 .environment(\.dynamicTypeSize, arguments.contains("--large") ? .accessibility3 : .large)
                 .overlay {
-                    if arguments.contains("--plans") { PreviewScroll(offset: 700).allowsHitTesting(false) }
+                    if arguments.contains("--plans") { PreviewScroll(offset: 500).allowsHitTesting(false) }
                 }
         }
     }

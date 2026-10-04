@@ -8,17 +8,25 @@ struct MembershipScreen: View {
     let back: () -> Void
     @State private var mobile = MobileAgentStore.shared
     @State private var selectedPlan: EdsgerMembership = .pro
+    @State private var hasSelectedPlan = false
     @State private var showsCloudPrivacy = false
     @Environment(\.colorScheme) private var scheme
     @Environment(\.dynamicTypeSize) private var typeSize
     @ScaledMetric(relativeTo: .largeTitle) private var headlineSize = 42
-    private let accent = Color(red: 0.08, green: 0.36, blue: 0.98)
+    private let actionBlue = Color(red: 0.08, green: 0.36, blue: 0.98)
+    private var accent: Color { scheme == .dark ? Color(red: 0.40, green: 0.65, blue: 1) : actionBlue }
     private var background: Color { scheme == .dark ? Color(white: 0.055) : Color(white: 0.985) }
     private var surface: Color { scheme == .dark ? Color(white: 0.10) : .white }
     private var currentPlan: EdsgerMembership? { settings.isSubscribed ? settings.membership : nil }
     private var canPurchase: Bool {
         MobileAgentConfiguration.isEnabled && !settings.isPurchasing && currentPlan != selectedPlan && settings.products[selectedPlan.rawValue] != nil
     }
+    @MainActor init(settings: AgentSettingsStore, back: @escaping () -> Void) {
+        self.settings = settings
+        self.back = back
+        _selectedPlan = State(initialValue: settings.isSubscribed ? (settings.membership ?? .pro) : .pro)
+    }
+
     private func price(_ plan: EdsgerMembership) -> String {
         settings.products[plan.rawValue]?.displayPrice ?? "US$\(plan.monthlyUSD)"
     }
@@ -47,9 +55,11 @@ struct MembershipScreen: View {
         .sheet(isPresented: $showsCloudPrivacy) {
             DijkstraPrivacyScreen(settings: settings) { showsCloudPrivacy = false }
         }
+        .onChange(of: settings.membership) { _, plan in
+            if let plan, !hasSelectedPlan { selectedPlan = plan }
+        }
         .task {
             await settings.loadStore()
-            if let currentPlan { selectedPlan = currentPlan }
             await mobile.refresh()
         }
     }
@@ -119,6 +129,10 @@ struct MembershipScreen: View {
             let layout = typeSize.isAccessibilitySize
                 ? AnyLayout(VStackLayout(spacing: 12)) : AnyLayout(HStackLayout(alignment: .top, spacing: 12))
             layout { ForEach(EdsgerMembership.allCases) { plan in planCard(plan) } }
+            if EdsgerMembership.allCases.contains(where: { settings.products[$0.rawValue] == nil }) {
+                Text("Prices shown before Apple options load are planned US prices.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
             Text("Dijkstra in Chat and IDE. OpenAI and Claude BYOK. Included in both plans.")
                 .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
         }
@@ -127,6 +141,7 @@ struct MembershipScreen: View {
     private func planCard(_ plan: EdsgerMembership) -> some View {
         let selected = selectedPlan == plan
         return Button {
+            hasSelectedPlan = true
             selectedPlan = plan
             AppHaptics.tap()
         } label: {
@@ -197,10 +212,11 @@ struct MembershipScreen: View {
                 Text("Your allowance works across Chat and Agent IDE.").font(.subheadline).foregroundStyle(.secondary)
             }
             if !settings.sharingConsent {
-                Button("Set up Dijkstra") { showsCloudPrivacy = true }.font(.subheadline.weight(.semibold))
+                Button("Set up Dijkstra") { showsCloudPrivacy = true }
+                    .font(.subheadline.weight(.semibold)).foregroundStyle(accent)
             }
             Link("Manage subscription", destination: URL(string: "https://apps.apple.com/account/subscriptions")!)
-                .font(.subheadline)
+                .font(.subheadline).foregroundStyle(accent)
         }.padding(18).frame(maxWidth: .infinity, alignment: .leading)
             .background(surface, in: RoundedRectangle(cornerRadius: 22))
     }
@@ -221,7 +237,7 @@ struct MembershipScreen: View {
             }
             Button { showsCloudPrivacy = true } label: {
                 Label("Cloud privacy & permissions", systemImage: "hand.raised")
-            }.frame(minHeight: 44).accessibilityIdentifier("membership.cloud-privacy")
+            }.foregroundStyle(accent).frame(minHeight: 44).accessibilityIdentifier("membership.cloud-privacy")
         }
         .font(.subheadline).foregroundStyle(.secondary)
         .padding(18).background(surface, in: RoundedRectangle(cornerRadius: 22))
@@ -230,7 +246,7 @@ struct MembershipScreen: View {
     private var legalFooter: some View {
         VStack(alignment: .leading, spacing: 12) {
             Button("Restore purchases") { Task { await settings.restore(); await mobile.refresh() } }
-                .disabled(settings.isPurchasing).frame(minHeight: 44)
+                .disabled(settings.isPurchasing).foregroundStyle(accent).frame(minHeight: 44)
                 .accessibilityIdentifier("membership.restore")
             if let message = settings.storeMessage ?? mobile.notice {
                 Text(message).font(.caption).accessibilityIdentifier("membership.message")
@@ -243,7 +259,7 @@ struct MembershipScreen: View {
                 Link("Privacy", destination: LegalURLs.privacy)
                 Link("Terms", destination: LegalURLs.terms)
                 Link("Apple EULA", destination: URL(string: "https://www.apple.com/legal/internet-services/itunes/dev/stdeula/")!)
-            }
+            }.foregroundStyle(accent)
         }.font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
     }
 
@@ -258,13 +274,13 @@ struct MembershipScreen: View {
                 Task { await settings.purchase(selectedPlan); await mobile.refresh() }
             } label: {
                 HStack(spacing: 10) {
-                    if settings.isPurchasing { ProgressView().tint(.white) }
+                    if settings.isPurchasing { ProgressView().tint(accent) }
                     Text(purchaseTitle).font(.headline).fixedSize(horizontal: false, vertical: true)
                     if canPurchase { Image(systemName: "arrow.right").font(.subheadline.weight(.semibold)) }
                 }.frame(maxWidth: .infinity).padding(.vertical, 17)
             }
-            .buttonStyle(.plain).foregroundStyle(.white)
-            .background(canPurchase ? accent : Color.secondary.opacity(0.5), in: RoundedRectangle(cornerRadius: 18))
+            .buttonStyle(.plain).foregroundStyle(canPurchase ? Color.white : Color.primary.opacity(0.65))
+            .background(canPurchase ? actionBlue : Color.primary.opacity(0.07), in: RoundedRectangle(cornerRadius: 18))
             .disabled(!canPurchase).accessibilityIdentifier("membership.purchase")
             if MobileAgentConfiguration.isEnabled && settings.products[selectedPlan.rawValue] == nil {
                 Button("Reload membership options") { Task { await settings.loadStore() } }
