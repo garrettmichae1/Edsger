@@ -24,6 +24,7 @@ struct ContentView: View {
     @State private var tutor = TutorSession()
     @State private var editorReturn: AppScreen = .home
     @State private var filesReturn: AppScreen = .home
+    @State private var settingsReturn: AppScreen = .home
     @Environment(\.requestReview) private var requestReview
     @Environment(\.scenePhase) private var scenePhase
 
@@ -58,10 +59,13 @@ struct ContentView: View {
                         localWorkspace.browsePath = ""
                         activeScreen = .deletePicker
                     },
-                    openSettings: { activeScreen = .settings }
+                    openSettings: { settingsReturn = .home; activeScreen = .settings }
                 )
             case .learn:
-                EdsgerScreen(session: tutor, openHome: { activeScreen = .home }, openFiles: {
+                EdsgerScreen(session: tutor, openHome: { activeScreen = .home }, openSettings: {
+                    settingsReturn = .learn
+                    activeScreen = .settings
+                }, openFiles: {
                     filesReturn = .learn
                     localWorkspace.browsePath = ""
                     activeScreen = .files
@@ -89,7 +93,7 @@ struct ContentView: View {
                     appearance: appearance,
                     agentSettings: agentSettings
                 ) {
-                    activeScreen = .home
+                    activeScreen = settingsReturn
                 }
             case .local:
                 LocalModeScreen(workspace: localWorkspace, agentSettings: agentSettings) {

@@ -4,7 +4,6 @@ import SwiftUI
 struct ChatModelPicker: View {
     @State private var models = ChatModelStore.shared
     @State private var providers = BYOKStore.shared
-    @State private var showsBYOK = false
     @State private var showsMembership = false
     @State private var mobile = MobileAgentStore.shared
     private var title: String { providers.effectiveChatChoice.map(providers.title) ?? (mobile.usesCloudForChat ? MobileAgentConfiguration.title : models.selected.title) }
@@ -32,8 +31,6 @@ struct ChatModelPicker: View {
                     Button(providers.title(choice)) { providers.selectChat(choice) }
                 }
             }
-            Divider()
-            Button(providers.canUsePremium ? "Manage API keys…" : "Unlock BYOK · Pro…") { showsBYOK = true }
         } label: {
             HStack(spacing: 6) {
                 Text(title).lineLimit(1)
@@ -49,7 +46,6 @@ struct ChatModelPicker: View {
         .accessibilityHint("Choose a model")
         .accessibilityIdentifier("edsger-model-picker")
         .task { await models.refresh() }
-        .sheet(isPresented: $showsBYOK) { BYOKSettingsScreen { showsBYOK = false } }
         .sheet(isPresented: $showsMembership) { MembershipScreen(settings: .shared) { showsMembership = false } }
     }
 }

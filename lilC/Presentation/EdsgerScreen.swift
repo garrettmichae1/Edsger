@@ -86,6 +86,7 @@ struct ConversationTranscript<Content: View>: View {
 struct EdsgerScreen: View {
     @Bindable var session: TutorSession
     let openHome: () -> Void
+    let openSettings: () -> Void
     let openFiles: () -> Void
     @Environment(\.colorScheme) private var scheme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -95,6 +96,20 @@ struct EdsgerScreen: View {
     @State private var models = ChatModelStore.shared
     @State private var historySearch = ""
     @State private var pendingDelete: TutorConversation?
+    @State private var studyTopics = Array(Self.studySubjects.shuffled().prefix(5))
+    private static let studySubjects = [
+        "C", "Python", "JavaScript", "Lua", "Physics", "Mathematics",
+        "Algebra", "Linear Algebra", "Calculus", "Statistics", "Probability",
+        "Geometry", "Trigonometry", "Discrete Mathematics", "Differential Equations",
+        "Data Structures", "Algorithms", "Operating Systems", "Databases",
+        "Computer Architecture", "Compilers", "Computer Networks", "Cybersecurity",
+        "Software Engineering", "Web Development", "Machine Learning",
+        "Artificial Intelligence", "Java", "Swift", "C++", "Rust", "SQL",
+        "HTML and CSS", "Git", "Chemistry", "Biology", "Astronomy",
+        "Earth Science", "Environmental Science", "Neuroscience", "Psychology",
+        "Philosophy", "Logic", "Economics", "World History", "Political Science",
+        "Sociology", "Literature", "Creative Writing", "Music Theory"
+    ]
     private var background: Color { scheme == .dark ? Color(white: 0.055) : .white }
     private var surface: Color { scheme == .dark ? Color(white: 0.11) : Color(white: 0.985) }
     private var selection: Color { scheme == .dark ? Color(white: 0.19) : Color(white: 0.93) }
@@ -114,6 +129,8 @@ struct EdsgerScreen: View {
             ChatFilesSheet(selectedID: session.pendingDocument?.id) { session.attach($0) }
         }
         .task { await models.refresh() }
+        .onAppear { refreshStudyTopics() }
+        .onChange(of: session.selectedID) { _, _ in refreshStudyTopics() }
         .onDisappear { session.stop(); session.flushDrafts() }
     }
 
@@ -257,7 +274,7 @@ struct EdsgerScreen: View {
                               send: { session.send() }, stop: { session.stop() }) {
                 Button("Files", systemImage: "paperclip") { composerFocused = false; showsChatFiles = true }
                 Divider()
-                ForEach(["C", "Python", "JavaScript", "Lua", "Physics", "Mathematics"], id: \.self) { topic in
+                ForEach(studyTopics, id: \.self) { topic in
                     Button("Study " + topic) {
                         session.draft = "Help me learn \(topic). Start by asking what I already know."
                         composerFocused = true
@@ -302,8 +319,14 @@ struct EdsgerScreen: View {
                             .font(.system(size: 16))
                             .foregroundStyle(.secondary)
                     }
-                    Button { showsHistory = false; session.stop(); openHome() } label: {
-                        historyShortcut("IDE", systemImage: "house")
+                    HStack(spacing: 12) {
+                        Button { showsHistory = false; session.stop(); openHome() } label: {
+                            historyShortcut("IDE", systemImage: "house")
+                        }
+                        Button { showsHistory = false; session.stop(); openSettings() } label: {
+                            historyShortcut("Settings", systemImage: "gearshape")
+                        }
+                        .accessibilityIdentifier("edsger-history-settings")
                     }
                 }
                 .padding(.top, 12)
@@ -414,6 +437,10 @@ struct EdsgerScreen: View {
         }
         .presentationDragIndicator(.visible)
         .presentationCornerRadius(32)
+    }
+
+    private func refreshStudyTopics() {
+        studyTopics = Array(Self.studySubjects.shuffled().prefix(5))
     }
 
     private func toggleHistoryPin(_ id: UUID) {
