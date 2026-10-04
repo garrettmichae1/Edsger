@@ -519,6 +519,7 @@ struct EdsgerComposerBar<Additions: View>: View {
         .buttonStyle(.plain)
         .foregroundStyle(Color.primary)
         .padding(6)
+        .fixedSize(horizontal: false, vertical: true)
         .background(scheme == .dark ? Color(white: 0.11) : Color(white: 0.985),
                     in: RoundedRectangle(cornerRadius: 28, style: .continuous))
         .overlay {
