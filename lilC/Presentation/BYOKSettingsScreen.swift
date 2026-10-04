@@ -4,6 +4,7 @@ struct BYOKSettingsScreen: View {
     let back: () -> Void
     @Environment(\.colorScheme) private var scheme
     @State private var store = BYOKStore.shared
+    @State private var showsMembership = false
     private var background: Color { scheme == .dark ? Color(white: 0.055) : .white }
     private var surface: Color { scheme == .dark ? Color(white: 0.11) : Color(white: 0.985) }
 
@@ -25,8 +26,24 @@ struct BYOKSettingsScreen: View {
                         Text("Bring your own OpenAI or Claude API key. Choose a model for Chat or let it work on your IDE projects.")
                             .foregroundStyle(.secondary)
                     }.padding(.top, 8)
+                    if !store.canUsePremium {
+                        VStack(alignment: .leading, spacing: 14) {
+                            Label("INCLUDED WITH PRO", systemImage: "sparkles")
+                                .font(.caption.weight(.bold)).foregroundStyle(.blue)
+                            Text("Your favorite AI. A real coding workspace.").font(.title3.weight(.bold))
+                            Text("Unlock OpenAI and Claude models in Chat and Agent IDE with either Pro plan. Your provider bills API usage separately from Edsger.")
+                                .font(.subheadline).foregroundStyle(.secondary)
+                            Button("Explore Edsger Pro") { showsMembership = true }
+                                .buttonStyle(.borderedProminent).frame(minHeight: 44)
+                                .accessibilityIdentifier("byok.unlock-pro")
+                            Text("Already subscribed? Restore purchases on the Pro page. Saved keys stay on this device; you can revoke sharing or remove them below.")
+                                .font(.caption).foregroundStyle(.secondary)
+                        }.padding(20).background(surface, in: RoundedRectangle(cornerRadius: 24))
+                    }
                     ForEach(BYOKProvider.allCases) { provider in
-                        BYOKProviderCard(provider: provider, store: store)
+                        if store.canUsePremium || store.configurations[provider.rawValue] != nil {
+                            BYOKProviderCard(provider: provider, store: store)
+                        }
                     }
                     VStack(alignment: .leading, spacing: 10) {
                         Text("How it works").font(.headline)
@@ -40,6 +57,10 @@ struct BYOKSettingsScreen: View {
             }
         }.background(background.ignoresSafeArea()).foregroundStyle(Color.primary).tint(.blue)
         .accessibilityIdentifier("byok.root")
+        .sheet(isPresented: $showsMembership) {
+            MembershipScreen(settings: .shared) { showsMembership = false }
+        }
+        .task { await AgentSettingsStore.shared.refreshEntitlements() }
     }
 }
 
@@ -70,11 +91,12 @@ private struct BYOKProviderCard: View {
                 .textInputAutocapitalization(.never).autocorrectionDisabled()
                 .textContentType(.password).privacySensitive()
                 .padding(12).background(Color.primary.opacity(0.035), in: RoundedRectangle(cornerRadius: 12))
-                .disabled(!store.canConfigure)
+                .disabled(!store.canConfigure || !store.canUsePremium)
                 .accessibilityIdentifier("byok." + provider.rawValue + ".key")
             Toggle(isOn: $consent) {
                 Text("Allow sharing with " + provider.title).font(.subheadline.weight(.medium))
             }
+            .disabled(!store.canUsePremium && !consent)
             .onChange(of: consent) { _, value in
                 if !value { pendingTask?.cancel() }
                 if configured { store.setConsent(value, provider: provider) }
@@ -86,18 +108,18 @@ private struct BYOKProviderCard: View {
                 if !models.contains(where: { $0.id == modelID }) { modelID = models.first?.id ?? "" }
                 status = "Choose a model, then test and save."
             } }
-                .disabled(!store.canConfigure || !consent || (!configured && draftKey.isEmpty))
+                .disabled(!store.canConfigure || !store.canUsePremium || !consent || (!configured && draftKey.isEmpty))
                 .accessibilityIdentifier("byok." + provider.rawValue + ".load")
             if !models.isEmpty {
                 Picker("Model", selection: $modelID) {
                     ForEach(models) { model in Text(model.name).tag(model.id) }
-                }.pickerStyle(.menu).disabled(!store.canConfigure)
+                }.pickerStyle(.menu).disabled(!store.canConfigure || !store.canUsePremium)
                     .accessibilityIdentifier("byok." + provider.rawValue + ".model")
                 Button("Test & save") { start {
                     try await store.save(provider: provider, draftKey: draftKey, modelID: modelID, models: models, consent: consent)
                     draftKey = ""; status = "Saved. This model passed the agent tool test."
                 } }
-                .buttonStyle(.borderedProminent).disabled(!store.canConfigure || !consent || modelID.isEmpty)
+                .buttonStyle(.borderedProminent).disabled(!store.canConfigure || !store.canUsePremium || !consent || modelID.isEmpty)
                 .accessibilityIdentifier("byok." + provider.rawValue + ".save")
             }
             if let config = store.configurations[provider.rawValue] {
@@ -106,7 +128,7 @@ private struct BYOKProviderCard: View {
                 ViewThatFits {
                     HStack(spacing: 14) { defaultsButtons(config) }
                     VStack(alignment: .leading, spacing: 14) { defaultsButtons(config) }
-                }.font(.subheadline).disabled(!store.canConfigure || !consent)
+                }.font(.subheadline).disabled(!store.canConfigure || !store.canUsePremium || !consent)
                 Button("Remove key", role: .destructive) { confirmRemove = true }.font(.subheadline).disabled(!store.canConfigure)
             }
             if pendingTask != nil { ProgressView("Checking connection…").font(.caption) }
@@ -114,6 +136,9 @@ private struct BYOKProviderCard: View {
         }.padding(18).background(surface, in: RoundedRectangle(cornerRadius: 24))
         .overlay(RoundedRectangle(cornerRadius: 24).stroke(Color.primary.opacity(0.06)))
         .task { if let config = store.configurations[provider.rawValue] { models = config.models; modelID = config.modelID; consent = config.sharingConsent } }
+        .onChange(of: store.canUsePremium) { _, allowed in
+            if !allowed { pendingTask?.cancel(); draftKey = "" }
+        }
         .onChange(of: scenePhase) { _, phase in if phase != .active { pendingTask?.cancel(); draftKey = "" } }
         .onDisappear { pendingTask?.cancel(); draftKey = "" }
         .alert("Remove " + provider.title + " key?", isPresented: $confirmRemove) {
@@ -158,7 +183,7 @@ struct AgentModelPicker: View {
                 Button(providers.title(choice)) { session.selectModel(choice) }
             }
             Divider()
-            Button("Manage API keys…") { showsBYOK = true }
+            Button(providers.canUsePremium ? "Manage API keys…" : "Unlock BYOK · Pro…") { showsBYOK = true }
         } label: {
             HStack(spacing: 5) {
                 Text(session.modelTitle).lineLimit(1)

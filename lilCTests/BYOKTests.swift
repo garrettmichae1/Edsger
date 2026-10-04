@@ -19,12 +19,21 @@ private actor FixtureConnection: BYOKConnecting {
     var started = false
     var pending: CheckedContinuation<Void, Never>?
     var completeCount = 0
+    var modelCount = 0
+    var pauseCompletion = false
+    var completionStarted = false
+    var completionPending: CheckedContinuation<Void, Never>?
+    func configureCompletion(pause: Bool) { pauseCompletion = pause }
+    func releaseCompletion() { completionPending?.resume(); completionPending = nil }
     var replies: [AgentCompletion] = []
     var requests: [Data] = []
     func enqueue(_ replies: [AgentCompletion]) { self.replies = replies }
     func configure(reject: Bool = false, pause: Bool = false) { rejectVerification = reject; pauseVerification = pause }
     func release() { pending?.resume(); pending = nil }
-    func models(provider: BYOKProvider, key: String) async throws -> [BYOKModel] { [.init(id: "gpt-4.1-mini", name: "Mini")] }
+    func models(provider: BYOKProvider, key: String) async throws -> [BYOKModel] {
+        modelCount += 1
+        return [.init(id: "gpt-4.1-mini", name: "Mini")]
+    }
     func verify(choice: BYOKChoice, key: String) async throws {
         started = true
         if pauseVerification { await withCheckedContinuation { pending = $0 } }
@@ -32,6 +41,8 @@ private actor FixtureConnection: BYOKConnecting {
     }
     func complete(choice: BYOKChoice, key: String, messagesJSON: Data, toolsJSON: Data) async throws -> AgentCompletion {
         completeCount += 1; requests.append(messagesJSON)
+        completionStarted = true
+        if pauseCompletion { await withCheckedContinuation { completionPending = $0 } }
         return replies.isEmpty ? .init(assistantText: "Done", toolCalls: []) : replies.removeFirst()
     }
 }
@@ -63,10 +74,93 @@ struct BYOKTests {
     private var choice: BYOKChoice { .init(provider: .openai, modelID: models[0].id) }
     private func defaults() -> UserDefaults { UserDefaults(suiteName: "byok.tests." + UUID().uuidString)! }
 
+    @Test func freeAccessCannotConfigureOrSelectPaidModels() async throws {
+        let credentials = MemoryCredentials(), connection = FixtureConnection()
+        let store = BYOKStore(defaults: defaults(), credentials: credentials, connection: connection,
+                              premiumAccess: { false }, premiumRevision: { 0 })
+        await #expect(throws: BYOKError.premiumRequired) {
+            _ = try await store.loadModels(provider: .openai, draftKey: secret, consent: true)
+        }
+        await #expect(throws: BYOKError.premiumRequired) {
+            try await store.save(provider: .openai, draftKey: secret, modelID: choice.modelID, models: models, consent: true)
+        }
+        store.selectChat(choice); store.selectAgentDefault(choice)
+        store.selectAgent(choice, language: .python, project: "test")
+        #expect(store.chatChoice == nil && store.agentDefault == nil)
+        #expect(store.agentChoice(language: .python, project: "test") == nil)
+        #expect(store.choices.isEmpty)
+        #expect(await connection.modelCount == 0)
+        #expect(!(await connection.started))
+        #expect(try credentials.read(.openai) == nil)
+        // Free local runs and explicit local selections remain available.
+        try store.beginRun(); store.endRun(); store.selectChat(nil)
+        #expect(store.canConfigure)
+    }
+    @Test func expiredMembershipKeepsKeysButUsesLocalAndBlocksBoundRequests() async throws {
+        var paid = true
+        let credentials = MemoryCredentials(), connection = FixtureConnection()
+        let store = BYOKStore(defaults: defaults(), credentials: credentials, connection: connection,
+                              premiumAccess: { paid }, premiumRevision: { 0 })
+        try await store.save(provider: .openai, draftKey: secret, modelID: choice.modelID, models: models, consent: true)
+        store.selectChat(choice); store.selectAgentDefault(choice)
+        let bound = try store.client(for: choice)
+        paid = false
+        #expect(store.effectiveChatChoice == nil)
+        #expect(store.agentChoice(language: .python, project: "test") == nil)
+        #expect(store.chatChoice == choice && store.agentDefault == choice)
+        #expect(try credentials.read(.openai) == secret)
+        await #expect(throws: BYOKError.premiumRequired) {
+            _ = try await bound.complete(messagesJSON: Data("[]".utf8), toolsJSON: Data("[]".utf8))
+        }
+        #expect(await connection.completeCount == 0)
+        store.setConsent(false, provider: .openai)
+        store.setConsent(true, provider: .openai)
+        #expect(store.configurations["openai"]?.sharingConsent == false)
+        try store.remove(.openai)
+        #expect(try credentials.read(.openai) == nil)
+    }
+    @Test func lossOfProDuringVerificationCannotSaveCredentials() async throws {
+        var paid = true
+        let credentials = MemoryCredentials(), connection = FixtureConnection()
+        let store = BYOKStore(defaults: defaults(), credentials: credentials, connection: connection,
+                              premiumAccess: { paid }, premiumRevision: { 0 })
+        await connection.configure(pause: true)
+        let task = Task { try await store.save(provider: .openai, draftKey: secret, modelID: choice.modelID, models: models, consent: true) }
+        while !(await connection.started) { await Task.yield() }
+        paid = false
+        await connection.release()
+        await #expect(throws: BYOKError.premiumRequired) { try await task.value }
+        #expect(try credentials.read(.openai) == nil)
+        #expect(store.configurations.isEmpty)
+    }
+    @Test func revokedAccessCannotReleaseCloudToolsEvenAfterRestoration() async throws {
+        var revision = 0
+        let credentials = MemoryCredentials(), connection = FixtureConnection()
+        let store = BYOKStore(defaults: defaults(), credentials: credentials, connection: connection,
+                              premiumAccess: { true }, premiumRevision: { revision })
+        try await store.save(provider: .openai, draftKey: secret, modelID: choice.modelID, models: models, consent: true)
+        let bound = try store.client(for: choice)
+        await connection.configureCompletion(pause: true)
+        await connection.enqueue([.init(assistantText: "", toolCalls: [.init(id: "x", name: "write_file", argumentsJSON: "{}")])])
+        let task = Task { try await bound.complete(messagesJSON: Data("[]".utf8), toolsJSON: Data("[]".utf8)) }
+        while !(await connection.completionStarted) { await Task.yield() }
+        revision += 1 // Entitlement changed while the provider was responding.
+        await connection.releaseCompletion()
+        await #expect(throws: BYOKError.premiumRequired) { _ = try await task.value }
+        #expect(await connection.completeCount == 1)
+    }
+    @Test func membershipExpirationAndRevocationFailClosed() {
+        let now = Date(timeIntervalSince1970: 1_000)
+        #expect(MembershipAccess.isActive(expiration: now.addingTimeInterval(1), revocation: nil, upgraded: false, now: now))
+        #expect(!MembershipAccess.isActive(expiration: now, revocation: nil, upgraded: false, now: now))
+        #expect(!MembershipAccess.isActive(expiration: nil, revocation: nil, upgraded: false, now: now))
+        #expect(!MembershipAccess.isActive(expiration: now.addingTimeInterval(1), revocation: now, upgraded: false, now: now))
+        #expect(!MembershipAccess.isActive(expiration: now.addingTimeInterval(1), revocation: nil, upgraded: true, now: now))
+    }
     @Test func keysNeverAppearInPersistedMetadataAndProjectChoicesSurviveReload() async throws {
         let defaults = defaults(), credentials = MemoryCredentials(), connection = FixtureConnection()
         defer { for key in defaults.dictionaryRepresentation().keys where key.hasPrefix("edsger.byok") { defaults.removeObject(forKey: key) } }
-        let store = BYOKStore(defaults: defaults, credentials: credentials, connection: connection)
+        let store = BYOKStore(defaults: defaults, credentials: credentials, connection: connection, premiumAccess: { true }, premiumRevision: { 0 })
         try await store.save(provider: .openai, draftKey: secret, modelID: choice.modelID, models: models, consent: true)
         store.selectChat(choice); store.selectAgentDefault(choice)
         store.selectAgent(nil, language: .python, project: "local-project")
@@ -75,7 +169,7 @@ struct BYOKTests {
             #expect(!(String(describing: value).contains(secret)))
             if let data = value as? Data { #expect(!String(decoding: data, as: UTF8.self).contains(secret)) }
         }
-        let restored = BYOKStore(defaults: defaults, credentials: credentials, connection: connection)
+        let restored = BYOKStore(defaults: defaults, credentials: credentials, connection: connection, premiumAccess: { true }, premiumRevision: { 0 })
         #expect(restored.chatChoice == choice)
         #expect(restored.agentChoice(language: .python, project: "local-project") == nil)
         #expect(restored.agentChoice(language: .c, project: "cloud-project") == choice)
@@ -83,7 +177,7 @@ struct BYOKTests {
     }
     @Test func oneProviderCanOfferMultipleVerifiedModelsWithDistinctPickerIDs() async throws {
         let credentials = MemoryCredentials(), connection = FixtureConnection()
-        let store = BYOKStore(defaults: defaults(), credentials: credentials, connection: connection)
+        let store = BYOKStore(defaults: defaults(), credentials: credentials, connection: connection, premiumAccess: { true }, premiumRevision: { 0 })
         let catalog = models + [.init(id: "gpt-4.1", name: "Standard")]
         try await store.save(provider: .openai, draftKey: secret, modelID: catalog[0].id, models: catalog, consent: true)
         #expect(store.choices.count == 1)
@@ -95,7 +189,7 @@ struct BYOKTests {
     }
     @Test func failedReplacementPreservesWorkingCredentialAndModel() async throws {
         let credentials = MemoryCredentials(), connection = FixtureConnection()
-        let store = BYOKStore(defaults: defaults(), credentials: credentials, connection: connection)
+        let store = BYOKStore(defaults: defaults(), credentials: credentials, connection: connection, premiumAccess: { true }, premiumRevision: { 0 })
         try await store.save(provider: .openai, draftKey: secret, modelID: choice.modelID, models: models, consent: true)
         await connection.configure(reject: true)
         await #expect(throws: BYOKError.providerCode("invalid_key")) {
@@ -107,7 +201,7 @@ struct BYOKTests {
     }
     @Test func consentCannotBeRestoredByAnInFlightVerification() async throws {
         let credentials = MemoryCredentials(), connection = FixtureConnection()
-        let store = BYOKStore(defaults: defaults(), credentials: credentials, connection: connection)
+        let store = BYOKStore(defaults: defaults(), credentials: credentials, connection: connection, premiumAccess: { true }, premiumRevision: { 0 })
         await connection.configure(pause: true)
         let saving = Task { try await store.save(provider: .openai, draftKey: secret, modelID: choice.modelID, models: models, consent: true) }
         while !(await connection.started) { await Task.yield() }
@@ -119,7 +213,7 @@ struct BYOKTests {
     }
     @Test func boundClientChecksConsentForEveryRequestAndRemovalDoesNotFallback() async throws {
         let credentials = MemoryCredentials(), connection = FixtureConnection()
-        let store = BYOKStore(defaults: defaults(), credentials: credentials, connection: connection)
+        let store = BYOKStore(defaults: defaults(), credentials: credentials, connection: connection, premiumAccess: { true }, premiumRevision: { 0 })
         try await store.save(provider: .openai, draftKey: secret, modelID: choice.modelID, models: models, consent: true)
         store.selectChat(choice)
         let client = try store.client(for: choice)
@@ -132,7 +226,7 @@ struct BYOKTests {
     }
     @Test func runningTasksLockConfigurationButAllowConsentWithdrawal() async throws {
         let connection = FixtureConnection(), credentials = MemoryCredentials()
-        let store = BYOKStore(defaults: defaults(), credentials: credentials, connection: connection)
+        let store = BYOKStore(defaults: defaults(), credentials: credentials, connection: connection, premiumAccess: { true }, premiumRevision: { 0 })
         try await store.save(provider: .openai, draftKey: secret, modelID: choice.modelID, models: models, consent: true)
         store.selectChat(choice); try store.beginRun()
         #expect(!store.canConfigure)
@@ -196,7 +290,7 @@ struct BYOKTests {
 
     @Test func providerAgentUsesScopedWorkspaceAndSymPyWithPairedResults() async throws {
         let credentials = MemoryCredentials(), connection = FixtureConnection(), defaults = defaults()
-        let store = BYOKStore(defaults: defaults, credentials: credentials, connection: connection)
+        let store = BYOKStore(defaults: defaults, credentials: credentials, connection: connection, premiumAccess: { true }, premiumRevision: { 0 })
         try await store.save(provider: .openai, draftKey: secret, modelID: choice.modelID, models: models, consent: true)
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }
@@ -244,7 +338,7 @@ struct BYOKTests {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }
         let credentials = MemoryCredentials(), connection = FixtureConnection(), defaults = defaults()
-        let store = BYOKStore(defaults: defaults, credentials: credentials, connection: connection)
+        let store = BYOKStore(defaults: defaults, credentials: credentials, connection: connection, premiumAccess: { true }, premiumRevision: { 0 })
         try await store.save(provider: .openai, draftKey: secret, modelID: choice.modelID, models: models, consent: true)
         let workspace = LocalCWorkspace(defaults: defaults, directoryURL: root)
         let original = "int main(void) { return 0; }\n"

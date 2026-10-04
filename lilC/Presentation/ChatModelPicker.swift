@@ -7,7 +7,7 @@ struct ChatModelPicker: View {
     @State private var showsBYOK = false
     @State private var showsMembership = false
     @State private var mobile = MobileAgentStore.shared
-    private var title: String { providers.chatChoice.map(providers.title) ?? (mobile.usesCloudForChat ? MobileAgentConfiguration.title : models.selected.title) }
+    private var title: String { providers.effectiveChatChoice.map(providers.title) ?? (mobile.usesCloudForChat ? MobileAgentConfiguration.title : models.selected.title) }
 
     var body: some View {
         Menu {
@@ -33,7 +33,7 @@ struct ChatModelPicker: View {
                 }
             }
             Divider()
-            Button("Manage API keys…") { showsBYOK = true }
+            Button(providers.canUsePremium ? "Manage API keys…" : "Unlock BYOK · Pro…") { showsBYOK = true }
         } label: {
             HStack(spacing: 6) {
                 Text(title).lineLimit(1)

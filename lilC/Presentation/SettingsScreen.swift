@@ -197,6 +197,11 @@ struct SettingsScreen: View {
                 HStack {
                     rowLabel("BYOK", symbol: "key", detail: "Bring your own OpenAI or Claude models.")
                     Spacer()
+                    if !agentSettings.isSubscribed {
+                        Text("PRO").font(.caption2.weight(.bold)).foregroundStyle(.blue)
+                            .padding(.horizontal, 8).padding(.vertical, 5)
+                            .background(Color.blue.opacity(0.08), in: Capsule())
+                    }
                     Image(systemName: "chevron.right").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
                 }.padding(18).contentShape(Rectangle())
             }.buttonStyle(.plain).accessibilityIdentifier("settings.byok")
@@ -266,7 +271,11 @@ struct SettingsScreen: View {
     private var membershipSection: some View {
         settingsGroup("Membership") {
             Button { showsMembership = true } label: {
-                navigationRow("Dijkstra Super Fast 1.0", symbol: "bolt.fill")
+                HStack(spacing: 12) {
+                    rowLabel(agentSettings.isSubscribed ? (agentSettings.membership?.title ?? "Edsger Pro") : "Unlock Edsger Pro", symbol: "sparkles", detail: "Dijkstra in Chat and IDE. Your own models with BYOK.")
+                    Spacer(minLength: 0)
+                    Image(systemName: "chevron.right").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                }.padding(18).contentShape(Rectangle())
             }.accessibilityIdentifier("settings.membership")
         }
     }

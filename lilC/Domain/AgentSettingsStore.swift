@@ -2,7 +2,7 @@ import Foundation
 import Observation
 import StoreKit
 
-/// Gates the agentic product. The free editor always works with this store off.
+/// Verified paid access is separate from the free local editor and agents.
 @Observable
 @MainActor
 final class AgentSettingsStore {
@@ -37,7 +37,11 @@ final class AgentSettingsStore {
     private(set) var membership: EdsgerMembership?
     private(set) var membershipProof: String?
     var monthlyProduct: Product? { products[Self.monthlyProductID] }
-    var isSubscribed: Bool { membership != nil }
+    private var membershipExpiration: Date?
+    private(set) var premiumAccessVersion = 0
+    var isSubscribed: Bool {
+        membership != nil && MembershipAccess.isActive(expiration: membershipExpiration, revocation: nil, upgraded: false)
+    }
     private var transactionListener: Task<Void, Never>?
     var storeMessage: String?
     var isPurchasing = false
@@ -72,22 +76,25 @@ final class AgentSettingsStore {
     }
 
     func refreshEntitlements() async {
-        var selected: (EdsgerMembership, String)?
+        var selected: (EdsgerMembership, String, Date)?
         for await result in Transaction.currentEntitlements {
             guard case .verified(let transaction) = result,
                   let plan = EdsgerMembership(rawValue: transaction.productID),
-                  transaction.revocationDate == nil, !transaction.isUpgraded,
-                  let expiry = transaction.expirationDate, expiry > Date() else { continue }
+                  MembershipAccess.isActive(expiration: transaction.expirationDate, revocation: transaction.revocationDate, upgraded: transaction.isUpgraded),
+                  let expiry = transaction.expirationDate else { continue }
             if selected == nil || plan.allowanceNanoUSD > selected!.0.allowanceNanoUSD {
-                selected = (plan, result.jwsRepresentation)
+                selected = (plan, result.jwsRepresentation, expiry)
             }
         }
+        if membership != selected?.0 || membershipExpiration != selected?.2 { premiumAccessVersion += 1 }
         membership = selected?.0
         membershipProof = selected?.1
+        membershipExpiration = selected?.2
     }
 
     func purchase(_ plan: EdsgerMembership = .pro) async {
-        guard MobileAgentConfiguration.isEnabled, !isPurchasing else {
+        guard !isPurchasing else { return }
+        guard MobileAgentConfiguration.isEnabled else {
             storeMessage = "Dijkstra memberships are coming soon."; return
         }
         guard let product = products[plan.rawValue] else {
@@ -112,11 +119,15 @@ final class AgentSettingsStore {
     }
 
     func restore() async {
+        guard !isPurchasing else { return }
+        isPurchasing = true; storeMessage = nil
+        defer { isPurchasing = false }
         do {
             try await AppStore.sync()
             await refreshEntitlements()
+            storeMessage = isSubscribed ? "Your membership is restored." : "No active membership was found for this Apple account."
         } catch {
-            storeMessage = error.localizedDescription
+            storeMessage = "Purchases could not be restored. Try again later."
         }
     }
 

@@ -1,12 +1,29 @@
 # OpenAI and Claude BYOK (iPhone)
 
-Settings → BYOK accepts personal OpenAI and Anthropic API keys, loads the account's supported model catalog, and verifies a selected model with a non-mutating native tool round trip before saving. Chat and Agent IDE have model selectors. No Pro gate, provider-credit sales or purchase link is introduced.
+Settings → BYOK accepts personal OpenAI and Anthropic API keys, loads the account's supported model catalog, and verifies a selected model with a non-mutating native tool round trip before saving. Chat and Agent IDE have model selectors. An active Apple-verified Edsger Pro or Pro Plus membership is required to configure or use BYOK. API usage remains billed separately by the chosen provider.
+
+## Pro launch and sales page
+
+Create these **auto-renewable, one-month** products in a single App Store Connect subscription group. Disable Family Sharing; the funded ledger uses one original transaction identity.
+
+| Product ID | Display name | US monthly price | Included monthly AI allowance | Service level |
+| --- | --- | --- | --- | --- |
+| `lilc.pro.monthly` | Edsger Pro | $10 | US$5 | 2 |
+| `lilc.pro.plus.monthly` | Edsger Pro Plus | $25 | US$15 | 1 (higher) |
+
+Both plans include Dijkstra and BYOK. Plus increases the included allowance, not permissions or tool capabilities. StoreKit's localized `displayPrice` is used for real purchases; preview prices are labeled planned US prices. Allowance is shared between Chat and IDE, not cash or an upstream invoice balance. Pro cancellation preserves local features and projects. Renewals, revocations and foregrounding refresh verified access. Credentials and selections survive expiration; withdrawal and removal never require payment. In-flight responses/configuration are reauthorized and cannot revive withdrawn permissions.
+
+`MembershipScreen` is the sales page; `DijkstraPrivacyScreen` is a separately opened consent screen. Purchasing never opts a user into sharing. The sales page does not identify the implementation provider. The privacy screen explicitly names DeepSeek, discloses sent content and keeps permission optional. Publish and validate Edsger's own downstream-processing privacy policy before launch; a provider's consumer policy does not replace it.
+
+Use the Xcode light/dark/large-text previews, or `bash scripts/design/preview-membership.sh <output-directory>` on a Mac with an iPhone simulator. The latter compiles the **actual sales view** in an isolated fixture app and renders screenshots with fake commerce data, including ready-to-purchase and active-member states. No fixture source or disabled-gate override enters the Edsger app target, and no network request or purchase is made. CI stores native screenshots as `edsger-pro-native-previews`. These design fixtures do not validate real StoreKit purchases or entitlement authenticity.
+
+The production purchase and funded-agent launch flags remain off until backend deployment, real Apple sandbox/provider acceptance, public legal/privacy updates and physical-iPhone review. Configuring App Store products alone does not enable the service. Verify subscription upgrades/downgrades, renewal, cancellation/expiry, refund/revocation, pending purchases, restore across devices, and BYOK removal after expiration before release.
 
 ## Direct connection and credential boundary
 
 The iPhone connects **directly** to `https://api.openai.com/v1` or `https://api.anthropic.com/v1`. BYOK does not require an Edsger backend, Cloudflare deployment, relay salt, app authentication or shared quota. The old Worker BYOK route is retired with HTTP 410 without reading its request body or credentials; the old shared-pool/GitHub routes are also retired. Funded Dijkstra access uses a separate verified-membership ledger. There is no user-editable upstream URL, redirect following, account fallback or automatic provider retry.
 
-Only user-supplied personal keys are used. No Edsger developer key is embedded in the app. Keys are stored in device-only iOS Keychain entries accessible while unlocked; no iCloud synchronization. Preferences contain only model/catalog metadata, consent and selections. A failed key replacement preserves the working credential. Removing a key retains the model selection and produces a missing-key error instead of changing paying accounts. Draft fields clear on dismissal/backgrounding.
+Only user-supplied personal keys are used. No Edsger developer key is embedded in the app. Keys are stored in device-only iOS Keychain entries accessible while unlocked; no iCloud synchronization. Preferences contain only model/catalog metadata, consent and selections. A failed key replacement preserves the working credential. For an active member, removing a key retains the model selection and produces a missing-key error instead of changing paying accounts. Expired members use local AI; restoring a verified membership restores saved model choices without automatically authorizing withdrawn consent. Draft fields clear on dismissal/backgrounding.
 
 OpenAI's general security guidance warns against exposing API keys in client applications and recommends server-managed secrets. This deliberate personal-BYOK design keeps the owner's key in native Keychain storage and sends it only to that provider; it is not a claim of provider endorsement or protection against a compromised device. Developer-funded API access must use a separate server design. Do not put keys in source, prompts, diagnostic output or documentation.
 
@@ -14,7 +31,7 @@ OpenAI's general security guidance warns against exposing API keys in client app
 
 `BYOKProviderClient` and `BYOKNativeCodec` implement account catalogs, native request/response conversion, harmless verification, sanitized billing/permission errors and bounded non-streaming responses. OpenAI Responses uses `store:false` and encrypted reasoning continuation. Claude Messages uses native tool_use/tool_result and automatic tool choice, compatible with current always-thinking models. Signed Claude thinking is echoed unchanged within the active loop; historical thinking is stripped when a new task changes system/project context. Native state is reused only for the exact same provider and model and must match canonical tool IDs, names and arguments.
 
-Responses are bounded to 1 MiB, error bodies to 16 KiB, request bodies to 384 KiB, history to 180 messages, tools to 32 and returned calls to 8. The app validates an entire tool batch before actions, preserves call/result pairs, rejects unknown/truncated/duplicate calls and checks sharing consent before each model completion. Stop is cooperative and cannot retract a provider request or its billable usage. No monthly dollar budget is enforced by the app.
+Responses are bounded to 1 MiB, error bodies to 16 KiB, request bodies to 384 KiB, history to 180 messages, tools to 32 and returned calls to 8. The app validates an entire tool batch before actions, preserves call/result pairs, rejects unknown/truncated/duplicate calls and checks membership and sharing consent before each model completion and again before releasing the returned tool batch. Expired access hides paid model choices without deleting credentials or preferences; local models remain available. Removing a saved key and withdrawing consent remain available without a subscription. Stop is cooperative and cannot retract a provider request or its billable usage. No monthly dollar budget is enforced by the app.
 
 Agent IDE retains local project tools, checkpoints, read-before-edit checks, code execution, output, Stop and bounded SymPy calculations. Ordinary Chat retains document passages and math without project mutations. No provider-hosted browser, computer-use, shell, package installation or unrestricted Python tool is enabled. Incremental cloud text streaming is not included in this version.
 
@@ -41,7 +58,7 @@ Maintain `AgentRuntimeDocumentation` and increment its version when runtime bind
 
 Before shipping, enter separate owner-controlled test keys in the app and verify both provider catalogs, tool tests, create/edit/run/output, docs access, boundaries, rollback, Stop, missing/revoked keys, consent withdrawal and billing limits on a physical iPhone. OpenAI keys require models-read and Responses-write permission. Anthropic keys must permit the selected model and Messages API; identity-linked keys needing additional workspace credentials are not supported by this UI. There are no live provider keys in CI.
 
-Publish the updated privacy/terms pages at the app's existing URLs and verify the actual public pages. Match App Store Connect privacy answers to direct provider processing; the manifest does not submit them automatically. Provider accounts still link requests to users and providers have their own retention/abuse policies. BYOK remains ungated; the separately funded Dijkstra membership is documented in `services/agent-worker/README.md` and is disabled pending deployment/acceptance. App Store approval is not guaranteed by technical checks.
+Publish the updated privacy/terms pages at the app's existing URLs and verify the actual public pages. Match App Store Connect privacy answers to direct provider processing; the manifest does not submit them automatically. Provider accounts still link requests to users and providers have their own retention/abuse policies. BYOK now requires a verified, unexpired Pro membership; the separately funded Dijkstra membership is documented in `services/agent-worker/README.md` and is disabled pending deployment/acceptance. App Store approval is not guaranteed by technical checks.
 
 To add a provider, add explicit identity/host/credential handling, a reviewed native codec and catalog/probe tests. The Keychain, consent, model pickers, runtime documentation and scoped tool executor remain shared. Never route an unrecognized provider's key to another provider by default.
 

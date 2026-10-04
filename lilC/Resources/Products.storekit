@@ -49,7 +49,7 @@
           "introductoryOffer": null,
           "localizations": [
             {
-              "description": "Dijkstra for Chat and Agent IDE with $15 monthly AI allowance.",
+              "description": "Cloud agent + BYOK. US$15 monthly AI allowance.",
               "displayName": "Edsger Pro Plus",
               "locale": "en_US"
             }
@@ -71,7 +71,7 @@
           "introductoryOffer": null,
           "localizations": [
             {
-              "description": "Dijkstra for Chat and Agent IDE with $5 monthly AI allowance.",
+              "description": "Cloud agent + BYOK. US$5 monthly AI allowance.",
               "displayName": "Edsger Pro",
               "locale": "en_US"
             }
