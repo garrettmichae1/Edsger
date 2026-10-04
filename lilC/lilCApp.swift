@@ -10,11 +10,14 @@ struct lilCApp: App {
 
     var body: some Scene {
         WindowGroup {
-            Group {
+            ZStack {
+                ContentView()
+                    .allowsHitTesting(!onboarding.needsOnboarding)
+                    .accessibilityHidden(onboarding.needsOnboarding)
                 if onboarding.needsOnboarding {
                     OnboardingView { onboarding.complete() }
-                } else {
-                    ContentView()
+                        .transition(.opacity)
+                        .zIndex(1)
                 }
             }
             .lilCPreferredScheme(appearance.colorWay)

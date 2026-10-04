@@ -1,0 +1,22 @@
+name: Intro UI checks
+on:
+  push:
+    paths: ['lilC/Presentation/OnboardingView.swift', 'lilC/lilCApp.swift', '.github/workflows/intro-ui-checks.yml']
+  pull_request:
+    paths: ['lilC/Presentation/OnboardingView.swift', 'lilC/lilCApp.swift', '.github/workflows/intro-ui-checks.yml']
+permissions:
+  contents: read
+concurrency:
+  group: intro-ui-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  swift-ui:
+    runs-on: macos-15
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Parse changed UI and typecheck the native introduction
+        run: |
+          xcrun swiftc -frontend -parse lilC/lilCApp.swift lilC/Presentation/OnboardingView.swift
+          SDK_PATH=$(xcrun --sdk iphonesimulator --show-sdk-path)
+          xcrun swiftc -typecheck -swift-version 6 -target arm64-apple-ios18.0-simulator -sdk "$SDK_PATH" lilC/Presentation/OnboardingView.swift
