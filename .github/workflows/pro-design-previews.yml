@@ -1,0 +1,23 @@
+name: Pro design previews
+on:
+  pull_request:
+    paths: ['lilC/Presentation/MembershipScreen.swift', 'lilC/Domain/MobileAgent.swift', 'scripts/design/**', '.github/workflows/pro-design-previews.yml']
+permissions:
+  contents: read
+concurrency:
+  group: pro-design-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  native-previews:
+    runs-on: macos-15
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - name: Render actual SwiftUI sales page with isolated commerce fixtures
+        run: bash scripts/design/preview-membership.sh /tmp/edsger-pro-previews
+      - uses: actions/upload-artifact@v4
+        with:
+          name: edsger-pro-native-previews
+          path: /tmp/edsger-pro-previews/*.png
+          if-no-files-found: error
+          retention-days: 14
