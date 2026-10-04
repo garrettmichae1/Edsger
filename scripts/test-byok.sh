@@ -5,8 +5,8 @@ ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 TEST_DIR="$(mktemp -d)"
 trap 'rm -rf "$TEST_DIR"' EXIT
 mkdir -p "$TEST_DIR/Sources/BYOKCore" "$TEST_DIR/Tests/BYOKCoreTests"
-cp "$ROOT_DIR"/lilC/Domain/{BYOKModels,AgentModels,TutorModels,MathCalculation,MathPlanning}.swift "$TEST_DIR/Sources/BYOKCore/"
-cp "$ROOT_DIR"/lilC/Infrastructure/{BYOKClient,ProviderKeychain}.swift "$TEST_DIR/Sources/BYOKCore/"
+cp "$ROOT_DIR"/lilC/Domain/{BYOKModels,AgentModels,TutorModels,MathCalculation,MathPlanning,MobileAgent}.swift "$TEST_DIR/Sources/BYOKCore/"
+cp "$ROOT_DIR"/lilC/Infrastructure/{BYOKClient,ProviderKeychain,MobileAgentClient}.swift "$TEST_DIR/Sources/BYOKCore/"
 cp "$ROOT_DIR/lilC/Application/BYOKStore.swift" "$TEST_DIR/Sources/BYOKCore/"
 # This enum bridges only the unrelated IDE workspace dependency for host tests.
 cat > "$TEST_DIR/Sources/BYOKCore/HostLanguage.swift" <<'SWIFT'

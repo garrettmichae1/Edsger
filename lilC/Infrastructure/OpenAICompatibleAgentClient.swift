@@ -72,12 +72,14 @@ struct OpenAICompatibleAgentClient: AgentCompleting {
 }
 
 enum AgentEntitlement {
-    static let monthlyProductID = "lilc.agent.monthly"
+    static let monthlyProductID = EdsgerMembership.pro.rawValue
 
     static func transactionJWS() async -> String? {
         for await result in Transaction.currentEntitlements {
             if case .verified(let transaction) = result,
-               transaction.productID == monthlyProductID {
+               EdsgerMembership(rawValue: transaction.productID) != nil,
+               transaction.revocationDate == nil, !transaction.isUpgraded,
+               let expires = transaction.expirationDate, expires > Date() {
                 if #available(iOS 18.0, *) {
                     return result.jwsRepresentation
                 }

@@ -7,6 +7,10 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+        FD2000000000000000000004 = {isa = PBXBuildFile; fileRef = FD1000000000000000000004; };
+        FD2000000000000000000003 = {isa = PBXBuildFile; fileRef = FD1000000000000000000003; };
+        FD2000000000000000000002 = {isa = PBXBuildFile; fileRef = FD1000000000000000000002; };
+        FD2000000000000000000001 = {isa = PBXBuildFile; fileRef = FD1000000000000000000001; };
         FB1000000000000000000007 = {isa = PBXBuildFile; fileRef = FB2000000000000000000007; };
         FB1000000000000000000006 = {isa = PBXBuildFile; productRef = FB3000000000000000000001; };
         FB1000000000000000000005 = {isa = PBXBuildFile; fileRef = FB2000000000000000000005; };
@@ -176,6 +180,10 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+        FD1000000000000000000004 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Presentation/MembershipScreen.swift"; sourceTree = "<group>"; };
+        FD1000000000000000000003 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Application/MobileAgentStore.swift"; sourceTree = "<group>"; };
+        FD1000000000000000000002 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Infrastructure/MobileAgentClient.swift"; sourceTree = "<group>"; };
+        FD1000000000000000000001 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Domain/MobileAgent.swift"; sourceTree = "<group>"; };
         FB2000000000000000000007 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatDocumentPDFTests.swift; sourceTree = "<group>"; };
         FB2000000000000000000005 = {isa = PBXFileReference; lastKnownFileType = text; path = "Resources/ZIPFoundation-LICENSE.txt"; sourceTree = "<group>"; };
         FB2000000000000000000004 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Presentation/ChatFilesSheet.swift"; sourceTree = "<group>"; };
@@ -388,6 +396,10 @@
 		100000000000000000000702 /* lilC */ = {
 			isa = PBXGroup;
 			children = (
+                FD1000000000000000000001,
+                FD1000000000000000000002,
+                FD1000000000000000000003,
+                FD1000000000000000000004,
                 FCB000000000000000000005,
                 FCB000000000000000000004,
                 FCB000000000000000000003,
@@ -749,6 +761,10 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+                FD2000000000000000000001,
+                FD2000000000000000000002,
+                FD2000000000000000000003,
+                FD2000000000000000000004,
                 FCC000000000000000000005,
                 FCC000000000000000000004,
                 FCC000000000000000000003,

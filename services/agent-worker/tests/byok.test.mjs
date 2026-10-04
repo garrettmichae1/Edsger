@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 const dir = await mkdtemp(join(tmpdir(), 'edsger-retired-byok-'));
 const file = join(dir, 'worker.mjs');
-await build({ entryPoints: ['src/index.ts'], outfile: file, bundle: true, platform: 'node', format: 'esm' });
+await build({ entryPoints: ['src/index.ts'], outfile: file, bundle: true, platform: 'node', format: 'esm', banner: { js: "import { createRequire } from 'node:module'; const require = createRequire(import.meta.url);" } });
 const { default: worker } = await import(file);
 for (const provider of ['openai', 'anthropic']) for (const action of ['models', 'verify', 'completions']) {
   test(`retired ${provider}/${action} never reads personal credentials or uses worker bindings`, async () => {

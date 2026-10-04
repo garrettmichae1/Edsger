@@ -4,7 +4,7 @@ Settings → BYOK accepts personal OpenAI and Anthropic API keys, loads the acco
 
 ## Direct connection and credential boundary
 
-The iPhone connects **directly** to `https://api.openai.com/v1` or `https://api.anthropic.com/v1`. BYOK does not require an Edsger backend, Cloudflare deployment, relay salt, app authentication or shared quota. The old Worker BYOK route is retired with HTTP 410 without reading its request body or credentials; the existing shared-pool/GitHub routes are separate. There is no user-editable upstream URL, redirect following, account fallback or automatic provider retry.
+The iPhone connects **directly** to `https://api.openai.com/v1` or `https://api.anthropic.com/v1`. BYOK does not require an Edsger backend, Cloudflare deployment, relay salt, app authentication or shared quota. The old Worker BYOK route is retired with HTTP 410 without reading its request body or credentials; the old shared-pool/GitHub routes are also retired. Funded Dijkstra access uses a separate verified-membership ledger. There is no user-editable upstream URL, redirect following, account fallback or automatic provider retry.
 
 Only user-supplied personal keys are used. No Edsger developer key is embedded in the app. Keys are stored in device-only iOS Keychain entries accessible while unlocked; no iCloud synchronization. Preferences contain only model/catalog metadata, consent and selections. A failed key replacement preserves the working credential. Removing a key retains the model selection and produces a missing-key error instead of changing paying accounts. Draft fields clear on dismissal/backgrounding.
 
@@ -41,7 +41,7 @@ Maintain `AgentRuntimeDocumentation` and increment its version when runtime bind
 
 Before shipping, enter separate owner-controlled test keys in the app and verify both provider catalogs, tool tests, create/edit/run/output, docs access, boundaries, rollback, Stop, missing/revoked keys, consent withdrawal and billing limits on a physical iPhone. OpenAI keys require models-read and Responses-write permission. Anthropic keys must permit the selected model and Messages API; identity-linked keys needing additional workspace credentials are not supported by this UI. There are no live provider keys in CI.
 
-Publish the updated privacy/terms pages at the app's existing URLs and verify the actual public pages. Match App Store Connect privacy answers to direct provider processing; the manifest does not submit them automatically. Provider accounts still link requests to users and providers have their own retention/abuse policies. There are no Pro gates yet; later purchases/entitlements are separate work. App Store approval is not guaranteed by technical checks.
+Publish the updated privacy/terms pages at the app's existing URLs and verify the actual public pages. Match App Store Connect privacy answers to direct provider processing; the manifest does not submit them automatically. Provider accounts still link requests to users and providers have their own retention/abuse policies. BYOK remains ungated; the separately funded Dijkstra membership is documented in `services/agent-worker/README.md` and is disabled pending deployment/acceptance. App Store approval is not guaranteed by technical checks.
 
 To add a provider, add explicit identity/host/credential handling, a reviewed native codec and catalog/probe tests. The Keychain, consent, model pickers, runtime documentation and scoped tool executor remain shared. Never route an unrecognized provider's key to another provider by default.
 

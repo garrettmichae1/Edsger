@@ -21,6 +21,10 @@ struct lilCApp: App {
             .onReceive(NotificationCenter.default.publisher(for: UIApplication.didReceiveMemoryWarningNotification)) { _ in
                 LocalAgentClient.shared.handleMemoryPressure()
             }
+            .task {
+                await AgentSettingsStore.shared.loadStore()
+                await MobileAgentStore.shared.refresh()
+            }
             .onAppear {
                 _ = SoftwareKeyboard.shared
                 AppHaptics.prepare()

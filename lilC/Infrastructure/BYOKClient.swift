@@ -311,7 +311,7 @@ struct BYOKAgentClient: AgentCompleting {
 }
 
 struct BYOKChatClient: MathExplanationCompleting, MathPlanning {
-    let agent: BYOKAgentClient
+    let agent: any AgentCompleting
     func reply(messages: [TutorMessage], onUpdate: @escaping @Sendable (String) -> Void) async throws -> String {
         try await reply(messages: messages, onStatus: { _ in }, onUpdate: onUpdate)
     }

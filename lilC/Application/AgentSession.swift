@@ -49,13 +49,23 @@ final class AgentSession {
     private var inferenceStatusID: UUID?
     private let client: (any AgentCompleting)?
     private let providers = BYOKStore.shared
+    private let mobile = MobileAgentStore.shared
     private let savesHistory: Bool
 
     var modelChoice: BYOKChoice? { providers.agentChoice(language: workspace.language, project: workspace.currentProjectPath) }
-    var modelTitle: String { modelChoice.map(providers.title) ?? "Edsger 1.0" }
+    var modelTitle: String {
+        if let choice = modelChoice { return providers.title(choice) }
+        return mobile.usesCloud(language: workspace.language, project: workspace.currentProjectPath) ? MobileAgentConfiguration.title : "Edsger 1.0"
+    }
+    func selectFlagship() {
+        guard !isThinking else { return }
+        providers.selectAgent(nil, language: workspace.language, project: workspace.currentProjectPath)
+        mobile.selectAgent(.flagship, language: workspace.language, project: workspace.currentProjectPath)
+    }
     func selectModel(_ choice: BYOKChoice?) {
         guard !isThinking else { return }
         providers.selectAgent(choice, language: workspace.language, project: workspace.currentProjectPath)
+        if choice == nil { mobile.selectAgent(.local, language: workspace.language, project: workspace.currentProjectPath) }
     }
 
     func waitUntilIdle() async { await runTask?.value }
@@ -221,8 +231,10 @@ final class AgentSession {
         do {
             if let client { selectedClient = client }
             else if let choice = modelChoice { selectedClient = try providers.client(for: choice) }
+            else if mobile.usesCloud(language: workspace.language, project: workspace.currentProjectPath) { selectedClient = mobile.client() }
             else { selectedClient = LocalAgentClient.shared }
             try providers.beginRun()
+            mobile.beginRun()
         } catch { notice = error.localizedDescription; return }
         notice = historyWritable ? nil : "History is unavailable. This request won’t be saved."
         draft = ""
@@ -231,6 +243,7 @@ final class AgentSession {
             messages.append(AgentChatMessage(role: .assistant, text: clarification))
             statusLine = "Ready"
             providers.endRun()
+            mobile.endRun()
             return
         }
         isThinking = true
@@ -243,6 +256,7 @@ final class AgentSession {
     private func loop(id: UUID, client: any AgentCompleting) async {
         defer {
             providers.endRun()
+            mobile.endRun()
             // A cancelled task must finish its checkpoint bookkeeping before
             // a later task gets a new checkpoint ID.
             if runID == id { isThinking = false; inferenceStatusID = nil; finishCheckpoint() }
@@ -384,7 +398,8 @@ final class AgentSession {
                 return
             }
             messages.append(AgentChatMessage(role: .assistant, text: error.localizedDescription))
-            statusLine = "Error"
+            // Never replay a partially executed tool loop on a different model.
+            statusLine = (error as? MobileAgentError)?.usesLocalNext == true ? "Ready" : "Error"
         }
     }
 
