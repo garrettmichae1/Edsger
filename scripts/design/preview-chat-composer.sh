@@ -104,6 +104,8 @@ PY
 xcrun simctl boot "$DEVICE_ID" || true
 xcrun simctl bootstatus "$DEVICE_ID" -b
 xcrun simctl status_bar "$DEVICE_ID" override --time '9:41' --batteryState charged --batteryLevel 100
+# Suppress the simulator’s first-use QuickPath introduction for the keyboard render.
+xcrun simctl spawn "$DEVICE_ID" defaults write com.apple.keyboard.preferences DidShowContinuousPathIntroduction -bool true
 xcrun simctl install "$DEVICE_ID" "$PREVIEW_DIR/ComposerPreview.app"
 for STATE in light dark multiline large-text responding keyboard; do
     set --

@@ -495,6 +495,7 @@ struct EdsgerComposerBar<Additions: View>: View {
             TextField("Ask EDSGER", text: $draft, axis: .vertical)
                 .font(.body)
                 .lineLimit(1...6)
+                .fixedSize(horizontal: false, vertical: true)
                 .focused(focused)
                 .accessibilityLabel("Message EDSGER")
                 .accessibilityIdentifier("edsger-composer")
@@ -516,6 +517,7 @@ struct EdsgerComposerBar<Additions: View>: View {
             .accessibilityIdentifier("edsger-send")
         }
         .buttonStyle(.plain)
+        .foregroundStyle(Color.primary)
         .padding(6)
         .background(scheme == .dark ? Color(white: 0.11) : Color(white: 0.985),
                     in: RoundedRectangle(cornerRadius: 28, style: .continuous))
