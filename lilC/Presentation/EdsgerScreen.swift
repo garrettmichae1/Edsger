@@ -91,7 +91,6 @@ struct EdsgerScreen: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @FocusState private var composerFocused: Bool
     @State private var showsHistory = false
-    @State private var showsInfo = false
     @State private var showsChatFiles = false
     @State private var models = ChatModelStore.shared
     @State private var historySearch = ""
@@ -104,21 +103,17 @@ struct EdsgerScreen: View {
         VStack(spacing: 0) {
             header
             transcript
-            composer
         }
         .background(background)
         .foregroundStyle(Color.primary)
         .safeAreaInset(edge: .bottom, spacing: 0) {
-            if !composerFocused { navigation }
+            composer
         }
         .sheet(isPresented: $showsHistory) { history }
         .sheet(isPresented: $showsChatFiles) {
             ChatFilesSheet(selectedID: session.pendingDocument?.id) { session.attach($0) }
         }
         .task { await models.refresh() }
-        .sheet(isPresented: $showsInfo) {
-            EdsgerInfoSheet(background: background, surface: surface, selection: selection)
-        }
         .onDisappear { session.stop(); session.flushDrafts() }
     }
 
@@ -233,107 +228,46 @@ struct EdsgerScreen: View {
     }
 
     private var composer: some View {
-        VStack(alignment: .leading, spacing: 15) {
+        VStack(alignment: .leading, spacing: 8) {
             if models.isChanging {
                 HStack(spacing: 10) {
                     ProgressView().controlSize(.small)
                     Text("Preparing model…").font(.footnote).foregroundStyle(.secondary)
                 }
+                .padding(.horizontal, 12)
             }
-            if session.messages.isEmpty {
-                HStack(spacing: 13) {
-                    Text("📚").font(.system(size: 23))
-                    Text("What would you like to learn?")
-                        .font(.system(size: 20, weight: .semibold))
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1).minimumScaleFactor(0.8)
+            if let document = session.pendingDocument ?? session.activeDocument {
+                ChatDocumentContextPill(document: document, isResponding: session.isResponding,
+                                        clear: { session.clearDocumentContext() })
+                    .padding(.horizontal, 12)
+            } else if session.canUndoDocumentContext, let notice = session.notice {
+                HStack(spacing: 12) {
+                    Text(notice).font(.footnote).foregroundStyle(.secondary)
+                    Button("Undo") { session.undoClearDocumentContext() }
+                        .font(.footnote.weight(.semibold))
+                        .frame(minWidth: 44, minHeight: 44)
+                        .accessibilityLabel("Undo clearing document context")
+                        .accessibilityIdentifier("edsger-undo-document-context")
                 }
-                .padding(.horizontal, 13)
-                .padding(.bottom, 8)
-                .accessibilityLabel("Ask EDSGER about coding or any academic subject")
+                .padding(.horizontal, 12)
             }
-            VStack(alignment: .leading, spacing: 16) {
-                if let document = session.pendingDocument ?? session.activeDocument {
-                    ChatDocumentContextPill(document: document, isResponding: session.isResponding,
-                                            clear: { session.clearDocumentContext() })
-                } else if session.canUndoDocumentContext, let notice = session.notice {
-                    HStack(spacing: 12) {
-                        Text(notice).font(.footnote).foregroundStyle(.secondary)
-                        Button("Undo") { session.undoClearDocumentContext() }
-                            .font(.footnote.weight(.semibold))
-                            .frame(minWidth: 44, minHeight: 44)
-                            .accessibilityLabel("Undo clearing document context")
-                            .accessibilityIdentifier("edsger-undo-document-context")
+            EdsgerComposerBar(draft: $session.draft, focused: $composerFocused,
+                              isResponding: session.isResponding,
+                              canSend: !models.isChanging && (!session.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || session.pendingDocument != nil),
+                              send: { session.send() }, stop: { session.stop() }) {
+                Button("Files", systemImage: "paperclip") { composerFocused = false; showsChatFiles = true }
+                Divider()
+                ForEach(["C", "Python", "JavaScript", "Lua", "Physics", "Mathematics"], id: \.self) { topic in
+                    Button("Study " + topic) {
+                        session.draft = "Help me learn \(topic). Start by asking what I already know."
+                        composerFocused = true
                     }
                 }
-                TextField("Ask EDSGER", text: $session.draft, prompt: Text("Ask EDSGER").fontWeight(.semibold).foregroundStyle(.secondary), axis: .vertical)
-                    .font(.system(size: 21))
-                    .lineLimit(1...6)
-                    .focused($composerFocused)
-                    .accessibilityIdentifier("edsger-composer")
-                    .padding(.horizontal, 4)
-                HStack {
-                    Menu {
-                        Button("Files", systemImage: "paperclip") { composerFocused = false; showsChatFiles = true }
-                        Divider()
-                        ForEach(["C", "Python", "JavaScript", "Lua", "Physics", "Mathematics"], id: \.self) { topic in
-                            Button("Study " + topic) {
-                                session.draft = "Help me learn \(topic). Start by asking what I already know."
-                                composerFocused = true
-                            }
-                        }
-                    } label: {
-                        Image(systemName: "plus").font(.system(size: 28, weight: .regular)).frame(width: 36, height: 40)
-                    }
-                    .accessibilityLabel("Add files or choose a study topic")
-                    .accessibilityIdentifier("edsger-add")
-                    Spacer()
-                    Button { composerFocused = false; showsHistory = true } label: {
-                        ZStack {
-                            Circle().trim(from: 0.10, to: 0.90).stroke(Color.blue, style: StrokeStyle(lineWidth: 2.5, lineCap: .round)).rotationEffect(.degrees(90)).frame(width: 27, height: 27)
-                            Image(systemName: "magnifyingglass").font(.system(size: 15, weight: .semibold)).offset(x: 2, y: 2)
-                        }.frame(width: 40, height: 40)
-                    }
-                    .accessibilityLabel("Search chats")
-                    Button {
-                        if session.isResponding { session.stop() }
-                        else { session.send() }
-                    } label: {
-                        Image(systemName: session.isResponding ? "stop.fill" : "arrow.up")
-                            .font(.system(size: session.isResponding ? 18 : 24, weight: .semibold))
-                            .foregroundStyle(.white)
-                            .frame(width: 44, height: 44)
-                            .background(Color.blue.opacity(session.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && session.pendingDocument == nil && !session.isResponding ? 0.45 : 1), in: Circle())
-                    }
-                    .disabled(!session.isResponding && (models.isChanging || (session.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && session.pendingDocument == nil)))
-                    .accessibilityLabel(session.isResponding ? "Stop EDSGER" : "Send to EDSGER")
-                    .accessibilityIdentifier("edsger-send")
-                }
-                .buttonStyle(.plain)
             }
-            .padding(16)
-            .background(surface, in: RoundedRectangle(cornerRadius: 30))
-            .overlay(RoundedRectangle(cornerRadius: 30).stroke(.white.opacity(scheme == .dark ? 0.08 : 1), lineWidth: 1))
-            .shadow(color: .black.opacity(scheme == .dark ? 0 : 0.09), radius: 22, y: 8)
         }
-        .padding(.horizontal, 13)
+        .padding(.horizontal, 16)
         .padding(.top, 8)
-        .padding(.bottom, 12)
-    }
-
-    private var navigation: some View {
-        HStack {
-            Button { session.stop(); openHome() } label: { Label("IDE", systemImage: "house") }
-            Spacer()
-            Text("EDSGER · Offline").font(.system(size: 11, weight: .medium)).foregroundStyle(.secondary)
-            Spacer()
-            Button { showsInfo = true } label: { Label("Info", systemImage: "info.circle") }
-                .accessibilityLabel("How lilC works offline")
-                .accessibilityIdentifier("edsger-info")
-        }
-        .font(.system(size: 12, weight: .medium))
-        .buttonStyle(.plain)
-        .padding(.horizontal, 24).padding(.vertical, 12)
+        .padding(.bottom, 8)
         .background(background)
     }
 
@@ -515,172 +449,6 @@ struct ConversationHistoryActions: View {
     }
 }
 
-private struct EdsgerInfoSheet: View {
-    let background: Color
-    let surface: Color
-    let selection: Color
-    @Environment(\.dismiss) private var dismiss
-    @Environment(\.colorScheme) private var scheme
-    @State private var mode: Mode = .chat
-    @State private var step = 0
-    @State private var showsTour = false
-
-    private enum Mode: String, CaseIterable {
-        case chat = "Chat", agent = "Agent"
-
-        var title: String { self == .chat ? "Learn through conversation." : "Build inside your IDE." }
-        var detail: String {
-            self == .chat
-                ? "Explore coding, math, science, and more with EDSGER. Ask follow-ups and work through ideas at your pace."
-                : "Ask the coding agent to read, create, and edit project files, run code, and inspect output in your IDE."
-        }
-        var steps: [String] { self == .chat ? ["Ask", "Explore", "Practice"] : ["Request", "Work", "Review"] }
-        var examples: [String] {
-            self == .chat
-                ? ["“Explain Python loops with a small example.”", "EDSGER explains in chat. Ask it to slow down, go deeper, or show another example.", "Try the example in the IDE. Chat can show code, but it cannot read, change, or run your files."]
-                : ["“Add input validation to this program.”", "The agent inspects project code and uses local tools to make changes and run supported code.", "Inspect the changes and output in your IDE. You can stop the agent; deletion is blocked while safeguards are on."]
-        }
-    }
-
-    var body: some View {
-        NavigationStack {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 26) {
-                    VStack(alignment: .leading, spacing: 14) {
-                        Image(systemName: "iphone.gen3.radiowaves.left.and.right")
-                            .font(.system(size: 26, weight: .medium))
-                            .foregroundStyle(Color.blue)
-                            .frame(width: 60, height: 60)
-                            .background(surface, in: Circle())
-                            .accessibilityHidden(true)
-                        Text("On your device.\nOn your terms.")
-                            .font(.system(size: 32, weight: .semibold))
-                            .tracking(-0.8)
-                            .fixedSize(horizontal: false, vertical: true)
-                        Text("The AI is built into Edsger. Chat and coding-agent replies are generated on your device, without sending prompts to a cloud AI service.")
-                            .font(.system(size: 16))
-                            .foregroundStyle(.secondary)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-
-                    VStack(alignment: .leading, spacing: 20) {
-                        HStack(spacing: 0) {
-                            ForEach(Mode.allCases, id: \.self) { item in
-                                Button { mode = item; step = 0 } label: {
-                                    Text(item.rawValue)
-                                        .font(.system(size: 16, weight: .semibold))
-                                        .frame(maxWidth: .infinity, minHeight: 44)
-                                        .background(mode == item ? selection : .clear, in: Capsule())
-                                }
-                                .accessibilityAddTraits(mode == item ? [.isSelected] : [])
-                                .accessibilityIdentifier("edsger-info-" + item.rawValue.lowercased())
-                            }
-                        }
-                        .padding(4)
-                        .background(background, in: Capsule())
-                        VStack(alignment: .leading, spacing: 9) {
-                            Text(mode.title).font(.system(size: 22, weight: .semibold))
-                            Text(mode.detail).font(.system(size: 16)).foregroundStyle(.secondary)
-                        }
-                        Text("TAP THROUGH AN EXAMPLE")
-                            .font(.system(size: 10, weight: .bold))
-                            .tracking(1)
-                            .foregroundStyle(.secondary)
-                        HStack(alignment: .top, spacing: 8) {
-                            ForEach(0..<3) { index in
-                                Button { step = index } label: {
-                                    VStack(spacing: 8) {
-                                        Text("\(index + 1)")
-                                            .font(.system(size: 14, weight: .semibold))
-                                            .foregroundStyle(step == index ? Color.white : Color.primary)
-                                            .frame(width: 36, height: 36)
-                                            .background(step == index ? Color.blue : selection, in: Circle())
-                                        Text(mode.steps[index])
-                                            .font(.system(size: 12, weight: .medium))
-                                    }
-                                    .frame(maxWidth: .infinity, minHeight: 64)
-                                    .contentShape(Rectangle())
-                                }
-                                .accessibilityLabel("Step \(index + 1): \(mode.steps[index])")
-                                .accessibilityAddTraits(step == index ? [.isSelected] : [])
-                            }
-                        }
-                        Text(mode.examples[step])
-                            .font(.system(size: 16))
-                            .fixedSize(horizontal: false, vertical: true)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding(16)
-                            .background(background, in: RoundedRectangle(cornerRadius: 20))
-                    }
-                    .padding(20)
-                    .background(surface, in: RoundedRectangle(cornerRadius: 30))
-                    .overlay(RoundedRectangle(cornerRadius: 30).stroke(.white.opacity(scheme == .dark ? 0.08 : 1)))
-                    .shadow(color: .black.opacity(scheme == .dark ? 0 : 0.06), radius: 18, y: 6)
-
-                    VStack(alignment: .leading, spacing: 0) {
-                        infoAnswer("What works without Wi-Fi?", text: "Once Edsger is installed, the bundled AI can answer in Chat and work on code in Agent mode without an internet connection or a separate model download. Math calculations and supported code execution are local too.")
-                        Divider().padding(.vertical, 16)
-                        infoAnswer("What makes this different?", text: "Edsger’s bundled models do the AI work on your device, without a cloud account or API key. Your conversations are saved locally, and the agent works with files in your IDE. You can optionally add OpenAI or Claude keys in Settings → BYOK. Dijkstra memberships add cloud AI for Chat and Agent IDE when available. BYOK sends context directly to your chosen provider; Dijkstra sends it through Edsger to DeepSeek. Both require internet and your explicit sharing consent. Device backups and files you choose to share follow your normal iOS settings.")
-                        Divider().padding(.vertical, 16)
-                        infoAnswer("What should I expect?", text: "Local AI can make mistakes and has no live web access. It is best used for focused questions and small coding tasks. Speed depends on your device and the size of the request; the first reply may take longer while the model loads.")
-                    }
-                    .padding(20)
-                    .background(surface, in: RoundedRectangle(cornerRadius: 26))
-                    Button { showsTour = true } label: {
-                        HStack {
-                            Text("Why Edsger")
-                            Spacer()
-                            Image(systemName: "arrow.right")
-                        }
-                        .font(.body.weight(.medium))
-                        .frame(minHeight: 44)
-                    }
-                    .accessibilityIdentifier("edsger-info-tour")
-                    Text("Your files live in the IDE. Open IDE from Chat to manage projects and code.")
-                        .font(.system(size: 13))
-                        .foregroundStyle(.secondary)
-                        .padding(.horizontal, 4)
-                }
-                .padding(.horizontal, 20)
-                .padding(.top, 20)
-                .padding(.bottom, 32)
-            }
-            .background(background)
-            .foregroundStyle(Color.primary)
-            .buttonStyle(.plain)
-            .navigationTitle("Made to work offline")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbarBackground(background, for: .navigationBar)
-            .toolbar {
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Done") { dismiss() }
-                        .font(.system(size: 15, weight: .semibold))
-                        .foregroundStyle(.primary)
-                }
-            }
-        }
-        .presentationDragIndicator(.visible)
-        .presentationCornerRadius(32)
-        .fullScreenCover(isPresented: $showsTour) {
-            OnboardingView(isReplay: true) { showsTour = false }
-        }
-    }
-
-    private func infoAnswer(_ title: String, text: String) -> some View {
-        DisclosureGroup {
-            Text(text)
-                .font(.system(size: 15))
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-                .padding(.top, 10)
-        } label: {
-            Text(title).font(.system(size: 16, weight: .semibold))
-                .padding(.vertical, 6)
-        }
-        .tint(.primary)
-    }
-}
-
 private struct EdsgerChatGlyph: Shape {
     func path(in rect: CGRect) -> Path {
         let center = CGPoint(x: rect.midX, y: rect.midY)
@@ -699,5 +467,62 @@ private struct EdsgerChatGlyph: Shape {
         path.addLine(to: CGPoint(x: rect.minX + 4, y: rect.maxY - 10))
         path.addArc(center: center, radius: r, startAngle: .degrees(155), endAngle: .degrees(195), clockwise: false)
         return path
+    }
+}
+
+/// A single row at rest; longer drafts grow to six lines before scrolling.
+struct EdsgerComposerBar<Additions: View>: View {
+    @Binding var draft: String
+    let focused: FocusState<Bool>.Binding
+    let isResponding: Bool
+    let canSend: Bool
+    let send: () -> Void
+    let stop: () -> Void
+    @ViewBuilder let additions: () -> Additions
+    @Environment(\.colorScheme) private var scheme
+
+    var body: some View {
+        HStack(alignment: .bottom, spacing: 8) {
+            Menu(content: additions) {
+                Image(systemName: "plus")
+                    .font(.system(size: 24, weight: .regular))
+                    .frame(width: 44, height: 44)
+                    .contentShape(Rectangle())
+            }
+            .accessibilityLabel("Add files or choose a study topic")
+            .accessibilityIdentifier("edsger-add")
+
+            TextField("Ask EDSGER", text: $draft, axis: .vertical)
+                .font(.body)
+                .lineLimit(1...6)
+                .focused(focused)
+                .accessibilityLabel("Message EDSGER")
+                .accessibilityIdentifier("edsger-composer")
+                .frame(minHeight: 44)
+                .padding(.vertical, 2)
+                .layoutPriority(1)
+
+            Button(action: isResponding ? stop : send) {
+                Image(systemName: isResponding ? "stop.fill" : "arrow.up")
+                    .font(.system(size: isResponding ? 15 : 20, weight: .semibold))
+                    .foregroundStyle(isResponding || canSend ? Color.white : Color.secondary)
+                    .frame(width: 40, height: 40)
+                    .background(isResponding ? Color.black : (canSend ? Color.blue : Color.secondary.opacity(0.12)), in: Circle())
+                    .frame(width: 44, height: 44)
+                    .contentShape(Rectangle())
+            }
+            .disabled(!isResponding && !canSend)
+            .accessibilityLabel(isResponding ? "Stop EDSGER" : "Send to EDSGER")
+            .accessibilityIdentifier("edsger-send")
+        }
+        .buttonStyle(.plain)
+        .padding(6)
+        .background(scheme == .dark ? Color(white: 0.11) : Color(white: 0.985),
+                    in: RoundedRectangle(cornerRadius: 28, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 28, style: .continuous)
+                .stroke(Color.primary.opacity(scheme == .dark ? 0.09 : 0.04), lineWidth: 1)
+        }
+        .shadow(color: .black.opacity(scheme == .dark ? 0 : 0.06), radius: 16, y: 4)
     }
 }

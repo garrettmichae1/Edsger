@@ -1,0 +1,23 @@
+name: Chat design previews
+on:
+  pull_request:
+    paths: ['lilC/Presentation/EdsgerScreen.swift', 'scripts/design/preview-chat-composer.sh', '.github/workflows/chat-design-previews.yml']
+permissions:
+  contents: read
+concurrency:
+  group: chat-design-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  native-previews:
+    runs-on: macos-15
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - name: Render actual SwiftUI composer with isolated chat fixtures
+        run: bash scripts/design/preview-chat-composer.sh /tmp/edsger-chat-previews
+      - uses: actions/upload-artifact@v4
+        with:
+          name: edsger-chat-native-previews
+          path: /tmp/edsger-chat-previews/*.png
+          if-no-files-found: error
+          retention-days: 14
