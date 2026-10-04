@@ -19,6 +19,8 @@ struct SelectedChatClient: DocumentTutorCompleting {
                             onUpdate: @escaping @Sendable (String) -> Void) async throws -> String {
         let providers = await BYOKStore.shared
         try await providers.beginRun()
+        let mobile = await MobileAgentStore.shared
+        await mobile.beginRun()
         do {
             let result: String
             if let choice = await providers.chatChoice {
@@ -26,13 +28,26 @@ struct SelectedChatClient: DocumentTutorCompleting {
                 let ordinary = CalculatingTutorClient(tutor: bound, planner: bound, calculator: LocalMathCalculator.shared)
                 let client = DocumentTutorClient(tutor: ordinary, documentTutor: bound, documents: ChatDocumentStore.shared)
                 result = try await client.replyWithDocuments(messages: messages, onStatus: onStatus, onSources: onSources, onUpdate: onUpdate)
+            } else if await mobile.usesCloudForChat {
+                do {
+                    let bound = BYOKChatClient(agent: await mobile.client())
+                    let ordinary = CalculatingTutorClient(tutor: bound, planner: bound, calculator: LocalMathCalculator.shared)
+                    let client = DocumentTutorClient(tutor: ordinary, documentTutor: bound, documents: ChatDocumentStore.shared)
+                    // Buffer cloud text until the entire read-only Chat turn succeeds.
+                    result = try await client.replyWithDocuments(messages: messages, onStatus: onStatus, onSources: onSources, onUpdate: { _ in })
+                    onUpdate(result)
+                } catch let error as MobileAgentError where error.usesLocalNext {
+                    result = try await localReply(messages: messages, onStatus: onStatus, onSources: onSources, onUpdate: onUpdate)
+                }
             } else {
                 result = try await localReply(messages: messages, onStatus: onStatus, onSources: onSources, onUpdate: onUpdate)
             }
             await providers.endRun()
+            await mobile.endRun()
             return result
         } catch {
             await providers.endRun()
+            await mobile.endRun()
             throw error
         }
     }

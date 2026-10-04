@@ -1,4 +1,13 @@
 export interface Env {
+  PAID_AGENT_ENABLED?: string;
+  DEEPSEEK_API_KEY?: string;
+  APPLE_ENVIRONMENT?: string;
+  APPLE_ROOT_CERTIFICATES?: string;
+  APPLE_ISSUER_ID?: string;
+  APPLE_KEY_ID?: string;
+  APPLE_PRIVATE_KEY?: string;
+  APPLE_APP_ID?: string;
+  MOBILE_AGENT_LEDGER: DurableObjectNamespace;
   OPENAI_API_KEY?: string;
   GROQ_API_KEY?: string;
   GOOGLE_API_KEY?: string;

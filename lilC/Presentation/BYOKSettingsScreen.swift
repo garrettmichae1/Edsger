@@ -144,8 +144,15 @@ struct AgentModelPicker: View {
     @Bindable var session: AgentSession
     @State private var providers = BYOKStore.shared
     @State private var showsBYOK = false
+    @State private var showsMembership = false
+    @State private var mobile = MobileAgentStore.shared
     var body: some View {
         Menu {
+            Button(MobileAgentConfiguration.title) {
+                if mobile.isEligible { session.selectFlagship(); Task { await mobile.refresh() } }
+                else { showsMembership = true }
+            }
+            Divider()
             Button("Edsger 1.0 · On device") { session.selectModel(nil) }
             ForEach(providers.choices) { choice in
                 Button(providers.title(choice)) { session.selectModel(choice) }
@@ -157,8 +164,9 @@ struct AgentModelPicker: View {
                 Text(session.modelTitle).lineLimit(1)
                 Image(systemName: "chevron.down").font(.caption2)
             }.font(.subheadline.weight(.medium)).frame(minHeight: 44)
-        }.disabled(session.isThinking || !providers.canConfigure)
+        }.disabled(session.isThinking || !providers.canConfigure || !mobile.canChange)
             .accessibilityLabel("Agent model: " + session.modelTitle).accessibilityIdentifier("agent-model-picker")
             .sheet(isPresented: $showsBYOK) { BYOKSettingsScreen { showsBYOK = false } }
+            .sheet(isPresented: $showsMembership) { MembershipScreen(settings: .shared) { showsMembership = false } }
     }
 }

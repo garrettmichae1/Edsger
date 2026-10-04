@@ -443,4 +443,72 @@ struct BYOKTests {
             #expect(throws: BYOKError.invalidKey) { _ = try BYOKSecretValidation.clean(secret) }
         }
     }
+    private var mobileSnapshot: [String: Any] {
+        ["remainingNanoUSD": "4999000000", "limitNanoUSD": "5000000000",
+         "renewsAt": 2_000_000_000_000 as Int64, "available": true, "rateCard": "fixture-v1"]
+    }
+    private func mobileFixture() -> MobileAgentClient {
+        let config = URLSessionConfiguration.ephemeral
+        config.protocolClasses = [FixtureURLProtocol.self]
+        return MobileAgentClient(configuration: config, authorize: { "apple-signed-fixture-proof" })
+    }
+    @Test func membershipBudgetsAreExactAndDoNotGrantLegacySubscription() {
+        #expect(EdsgerMembership.pro.monthlyUSD == 10)
+        #expect(EdsgerMembership.pro.allowanceNanoUSD == 5_000_000_000)
+        #expect(EdsgerMembership.plus.monthlyUSD == 25)
+        #expect(EdsgerMembership.plus.allowanceNanoUSD == 15_000_000_000)
+        #expect(EdsgerMembership(rawValue: "lilc.agent.monthly") == nil)
+        #expect(MobileAgentConfiguration.isEnabled == false)
+    }
+    @Test func flagshipEndpointIsExactHTTPSAndRejectsWorkersWildcardsOrURLCredentials() {
+        for raw in ["http://api.lilc.app/v1/mobile-agent", "https://attacker.workers.dev/v1/mobile-agent", "https://api.lilc.app.attacker.example/v1/mobile-agent", "https://key@api.lilc.app/v1/mobile-agent", "https://api.lilc.app:444/v1/mobile-agent", "https://api.lilc.app/v1/mobile-agent?redirect=bad"] {
+            #expect(throws: MobileAgentError.unavailable) { try MobileAgentEndpoint.validate(URL(string: raw)!, allowedHosts: ["api.lilc.app"]) }
+        }
+    }
+    @Test func flagshipUsesOnlyAppleProofAndReturnsValidatedFileTools() async throws {
+        let reply: [String: Any] = ["allowance": mobileSnapshot, "completion": ["assistantText": "Creating file", "toolCalls": [["id": "file1", "name": "write_file", "argumentsJSON": #"{"path":"hello.py","contents":"print(1)"}"#]]]]
+        let data = try JSONSerialization.data(withJSONObject: reply)
+        FixtureURLProtocol.fixture.set { request in
+            #expect(request.url?.absoluteString == "https://api.lilc.app/v1/mobile-agent/completions")
+            #expect(request.value(forHTTPHeaderField: "X-Apple-Transaction-JWS") == "apple-signed-fixture-proof")
+            #expect(request.value(forHTTPHeaderField: "X-Edsger-AI-Consent") == "v1")
+            #expect(UUID(uuidString: request.value(forHTTPHeaderField: "X-Edsger-Request-ID") ?? "") != nil)
+            #expect(request.value(forHTTPHeaderField: "Authorization") == nil)
+            #expect(request.value(forHTTPHeaderField: "X-LilC-GitHub") == nil)
+            return (200, data)
+        }
+        let result = try await mobileFixture().complete(messagesJSON: Data(#"[{"role":"user","content":"Create a file"}]"#.utf8), toolsJSON: JSONSerialization.data(withJSONObject: AgentToolRegistry.specifications))
+        #expect(result.toolCalls.first?.name == "write_file")
+        #expect(result.continuationJSON == nil)
+    }
+    @Test func flagshipRejectsEntireBatchWhenAnyToolEscapesWorkspace() async throws {
+        let reply: [String: Any] = ["allowance": mobileSnapshot, "completion": ["assistantText": "", "toolCalls": [
+            ["id": "ok", "name": "write_file", "argumentsJSON": #"{"path":"ok.py","contents":"print(1)"}"#],
+            ["id": "bad", "name": "write_file", "argumentsJSON": #"{"path":"../secret.py","contents":"bad"}"#]]]]
+        let data = try JSONSerialization.data(withJSONObject: reply)
+        FixtureURLProtocol.fixture.set { _ in (200, data) }
+        await #expect(throws: (any Error).self) {
+            _ = try await mobileFixture().complete(messagesJSON: Data(#"[{"role":"user","content":"Create a file"}]"#.utf8), toolsJSON: JSONSerialization.data(withJSONObject: AgentToolRegistry.specifications))
+        }
+    }
+    @Test func flagshipQuotaAndRateLimitsAreDistinctFromInvalidResponses() async throws {
+        for (code, failure) in [("allowance_exhausted", MobileAgentError.exhausted), ("rate_limited", MobileAgentError.rateLimited), ("membership_required", MobileAgentError.membershipRequired)] {
+            let data = try JSONSerialization.data(withJSONObject: ["error": code, "allowance": mobileSnapshot])
+            FixtureURLProtocol.fixture.set { _ in (429, data) }
+            await #expect(throws: failure) {
+                _ = try await mobileFixture().complete(messagesJSON: Data(#"[{"role":"user","content":"Hi"}]"#.utf8), toolsJSON: Data("[]".utf8))
+            }
+        }
+        #expect(MobileAgentError.exhausted.usesLocalNext)
+        #expect(!MobileAgentError.invalidResponse.usesLocalNext)
+    }
+    @Test func flagshipNeverSendsWithoutFreshAuthorization() async throws {
+        FixtureURLProtocol.fixture.set { _ in Issue.record("No unauthorized request may be sent"); return (500, Data()) }
+        let config = URLSessionConfiguration.ephemeral; config.protocolClasses = [FixtureURLProtocol.self]
+        let client = MobileAgentClient(configuration: config, authorize: { throw MobileAgentError.consentRequired })
+        await #expect(throws: MobileAgentError.consentRequired) {
+            _ = try await client.complete(messagesJSON: Data(#"[{"role":"user","content":"Hi"}]"#.utf8), toolsJSON: Data("[]".utf8))
+        }
+    }
+
 }

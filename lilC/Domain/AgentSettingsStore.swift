@@ -7,11 +7,12 @@ import StoreKit
 @MainActor
 final class AgentSettingsStore {
     static let shared = AgentSettingsStore()
-    static let monthlyProductID = "lilc.agent.monthly"
+    static let monthlyProductID = EdsgerMembership.pro.rawValue
 
     private let defaults: UserDefaults
     private let enabledKey = "lilc.agent.enabled"
-    private let consentKey = "lilc.agent.shareConsent"
+    // Old generic cloud consent never authorizes this newly introduced provider.
+    private let consentKey = "edsger.mobile.sharingConsent.v1"
     private let safeguardsKey = "lilc.agent.safeguards"
 
     var agentsEnabled: Bool {
@@ -19,8 +20,12 @@ final class AgentSettingsStore {
     }
 
     /// Guideline 5.1.2(i): explicit permission before sending prompts/code to third-party AI.
+    private(set) var sharingConsentVersion = 0
     var sharingConsent: Bool {
-        didSet { defaults.set(sharingConsent, forKey: consentKey) }
+        didSet {
+            if sharingConsent != oldValue { sharingConsentVersion += 1 }
+            defaults.set(sharingConsent, forKey: consentKey)
+        }
     }
 
     /// Optional protection for users who want to block agent deletion.
@@ -28,8 +33,12 @@ final class AgentSettingsStore {
         didSet { defaults.set(safeguardsOn, forKey: safeguardsKey) }
     }
 
-    var monthlyProduct: Product?
-    var isSubscribed = false
+    private(set) var products: [String: Product] = [:]
+    private(set) var membership: EdsgerMembership?
+    private(set) var membershipProof: String?
+    var monthlyProduct: Product? { products[Self.monthlyProductID] }
+    var isSubscribed: Bool { membership != nil }
+    private var transactionListener: Task<Void, Never>?
     var storeMessage: String?
     var isPurchasing = false
 
@@ -54,54 +63,52 @@ final class AgentSettingsStore {
     }
 
     func loadStore() async {
-        do {
-            let products = try await Product.products(for: [Self.monthlyProductID])
-            monthlyProduct = products.first
-        } catch {
-            storeMessage = "Store products are not in App Store Connect yet. The paywall is ready for product \(Self.monthlyProductID)."
-        }
-        await refreshEntitlements()
         listenForTransactions()
+        do {
+            let found = try await Product.products(for: EdsgerMembership.allCases.map(\.rawValue))
+            products = Dictionary(uniqueKeysWithValues: found.map { ($0.id, $0) })
+        } catch { storeMessage = "Membership options could not be loaded. Try again later." }
+        await refreshEntitlements()
     }
 
     func refreshEntitlements() async {
-        var entitled = false
+        var selected: (EdsgerMembership, String)?
         for await result in Transaction.currentEntitlements {
-            if case .verified(let transaction) = result, transaction.productID == Self.monthlyProductID {
-                entitled = transaction.revocationDate == nil
+            guard case .verified(let transaction) = result,
+                  let plan = EdsgerMembership(rawValue: transaction.productID),
+                  transaction.revocationDate == nil, !transaction.isUpgraded,
+                  let expiry = transaction.expirationDate, expiry > Date() else { continue }
+            if selected == nil || plan.allowanceNanoUSD > selected!.0.allowanceNanoUSD {
+                selected = (plan, result.jwsRepresentation)
             }
         }
-        #if DEBUG
-        if defaults.bool(forKey: "lilc.agent.debugUnlock") {
-            entitled = true
-        }
-        #endif
-        isSubscribed = entitled
+        membership = selected?.0
+        membershipProof = selected?.1
     }
 
-    func purchase() async {
-        guard let monthlyProduct else {
-            storeMessage = "Create an auto-renewable subscription in App Store Connect with product ID \(Self.monthlyProductID)."
-            return
+    func purchase(_ plan: EdsgerMembership = .pro) async {
+        guard MobileAgentConfiguration.isEnabled, !isPurchasing else {
+            storeMessage = "Dijkstra memberships are coming soon."; return
         }
-        isPurchasing = true
+        guard let product = products[plan.rawValue] else {
+            storeMessage = "This membership is unavailable right now. Try again later."; return
+        }
+        isPurchasing = true; storeMessage = nil
         defer { isPurchasing = false }
         do {
-            let result = try await monthlyProduct.purchase()
-            switch result {
+            switch try await product.purchase() {
             case .success(let verification):
-                if case .verified(let transaction) = verification {
-                    await transaction.finish()
+                guard case .verified(let transaction) = verification else {
+                    storeMessage = "Apple could not verify this purchase. Try Restore purchases."; return
                 }
+                await transaction.finish()
                 await refreshEntitlements()
-            case .userCancelled, .pending:
-                break
-            @unknown default:
-                break
+                await MobileAgentStore.shared.refresh()
+            case .userCancelled: break
+            case .pending: storeMessage = "Your purchase is awaiting approval."
+            @unknown default: break
             }
-        } catch {
-            storeMessage = error.localizedDescription
-        }
+        } catch { storeMessage = "The purchase could not finish. Try again later." }
     }
 
     func restore() async {
@@ -118,9 +125,16 @@ final class AgentSettingsStore {
     }
 
     private func listenForTransactions() {
-        Task { [weak self] in
-            for await _ in Transaction.updates {
-                await self?.refreshEntitlements()
+        guard transactionListener == nil else { return }
+        transactionListener = Task { [weak self] in
+            for await result in Transaction.updates {
+                if Task.isCancelled { return }
+                if case .verified(let transaction) = result,
+                   EdsgerMembership(rawValue: transaction.productID) != nil {
+                    await self?.refreshEntitlements()
+                    await transaction.finish()
+                    await MobileAgentStore.shared.refresh()
+                }
             }
         }
     }

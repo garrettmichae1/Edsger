@@ -12,6 +12,7 @@ struct SettingsScreen: View {
     @State private var confirmEraseAll = false
     @State private var showsTour = false
     @State private var showsBYOK = false
+    @State private var showsMembership = false
 
     // Match the quiet surfaces used by Chat and its Info sheet.
     private var background: Color { scheme == .dark ? Color(white: 0.055) : .white }
@@ -31,6 +32,7 @@ struct SettingsScreen: View {
                 VStack(alignment: .leading, spacing: 28) {
                     appearanceSection
                     modelsSection
+                    membershipSection
                     editorSection
                     if AgentRuntimeConfig.surfacesVisibleInThisRelease {
                         agentSection
@@ -66,6 +68,10 @@ struct SettingsScreen: View {
         }
         .fullScreenCover(isPresented: $showsBYOK) {
             BYOKSettingsScreen { showsBYOK = false }
+                .lilCPreferredScheme(appearance.colorWay)
+        }
+        .fullScreenCover(isPresented: $showsMembership) {
+            MembershipScreen(settings: agentSettings) { showsMembership = false }
                 .lilCPreferredScheme(appearance.colorWay)
         }
         .alert("Erase \(workspace.language.name) workspace?", isPresented: $confirmEraseAll) {
@@ -254,6 +260,14 @@ struct SettingsScreen: View {
                 .padding(18)
                 .accessibilityIdentifier("settings.agent-safeguards")
             }
+        }
+    }
+
+    private var membershipSection: some View {
+        settingsGroup("Membership") {
+            Button { showsMembership = true } label: {
+                navigationRow("Dijkstra Super Fast 1.0", symbol: "bolt.fill")
+            }.accessibilityIdentifier("settings.membership")
         }
     }
 
