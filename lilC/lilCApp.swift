@@ -5,6 +5,7 @@ import UIKit
 struct lilCApp: App {
     @State private var appearance = AppearanceStore.shared
     @State private var onboarding = OnboardingStore.shared
+    @Environment(\.scenePhase) private var scenePhase
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some Scene {
@@ -24,6 +25,14 @@ struct lilCApp: App {
             .task {
                 await AgentSettingsStore.shared.loadStore()
                 await MobileAgentStore.shared.refresh()
+            }
+            .onChange(of: scenePhase) { _, phase in
+                if phase == .active {
+                    Task {
+                        await AgentSettingsStore.shared.refreshEntitlements()
+                        await MobileAgentStore.shared.refresh()
+                    }
+                }
             }
             .onAppear {
                 _ = SoftwareKeyboard.shared

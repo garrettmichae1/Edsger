@@ -302,7 +302,10 @@ struct BYOKAgentClient: AgentCompleting {
     func complete(messagesJSON: Data, toolsJSON: Data) async throws -> AgentCompletion {
         try Task.checkCancellation()
         try await authorize()
-        return try await connection.complete(choice: choice, key: key, messagesJSON: messagesJSON, toolsJSON: toolsJSON)
+        let result = try await connection.complete(choice: choice, key: key, messagesJSON: messagesJSON, toolsJSON: toolsJSON)
+        try Task.checkCancellation()
+        try await authorize() // Withdrawn access cannot release a returned tool batch.
+        return result
     }
     func complete(messagesJSON: Data, toolsJSON: Data, onStatus: @escaping GenerationStatusHandler) async throws -> AgentCompletion {
         onStatus(.generatingResponse)

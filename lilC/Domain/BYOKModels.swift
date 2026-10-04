@@ -30,10 +30,11 @@ struct BYOKConfiguration: Codable, Sendable {
 }
 
 enum BYOKError: LocalizedError, Equatable, TutorRequestFailure {
-    case consentRequired, missingKey, busy, invalidKey, keychain, invalidResponse, providerUnavailable
+    case premiumRequired, consentRequired, missingKey, busy, invalidKey, keychain, invalidResponse, providerUnavailable
     case providerCode(String)
     var errorDescription: String? {
         switch self {
+        case .premiumRequired: "BYOK requires an active Edsger Pro membership. Your keys and projects are kept."
         case .consentRequired: "Allow sharing with this provider in Settings → BYOK before using it."
         case .missingKey: "Add and test this provider’s API key in Settings → BYOK."
         case .busy: "Wait for the current response or connection test to finish."

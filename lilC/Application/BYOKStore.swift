@@ -12,13 +12,23 @@ final class BYOKStore {
     private(set) var isConfiguring = false
     private(set) var activeRuns = 0
     var canConfigure: Bool { !isConfiguring && activeRuns == 0 }
+    private let premiumAccess: @MainActor () -> Bool
+    private let premiumRevision: @MainActor () -> Int
+    var canUsePremium: Bool { premiumAccess() }
+    var effectiveChatChoice: BYOKChoice? { canUsePremium ? chatChoice : nil }
+    private func requirePremium() throws {
+        guard canUsePremium else { throw BYOKError.premiumRequired }
+    }
     private let defaults: UserDefaults
     private let credentials: any ProviderCredentialStoring
     private let connection: any BYOKConnecting
     private var consentVersions: [BYOKProvider: Int] = [:]
     private static let configurationKey = "edsger.byok.configurations"
 
-    init(defaults: UserDefaults = .standard, credentials: any ProviderCredentialStoring = ProviderKeychain(), connection: any BYOKConnecting = BYOKProviderClient()) {
+    init(defaults: UserDefaults = .standard, credentials: any ProviderCredentialStoring = ProviderKeychain(), connection: any BYOKConnecting = BYOKProviderClient(),
+         premiumAccess: @escaping @MainActor () -> Bool = { AgentSettingsStore.shared.isSubscribed },
+         premiumRevision: @escaping @MainActor () -> Int = { AgentSettingsStore.shared.premiumAccessVersion }) {
+        self.premiumAccess = premiumAccess; self.premiumRevision = premiumRevision
         self.defaults = defaults; self.credentials = credentials; self.connection = connection
         configurations = Self.read([String: BYOKConfiguration].self, Self.configurationKey, defaults) ?? [:]
         chatChoice = Self.read(BYOKChoice.self, "edsger.byok.chat", defaults)
@@ -27,7 +37,8 @@ final class BYOKStore {
         localProjects = Self.read(Set<String>.self, "edsger.byok.agent.local-projects", defaults) ?? []
     }
     var choices: [BYOKChoice] {
-        BYOKProvider.allCases.flatMap { provider -> [BYOKChoice] in
+        guard canUsePremium else { return [] }
+        return BYOKProvider.allCases.flatMap { provider -> [BYOKChoice] in
             guard let config = configurations[provider.rawValue] else { return [] }
             return config.models.filter { config.verifiedModelIDs.contains($0.id) }
                 .map { .init(provider: provider, modelID: $0.id) }
@@ -38,10 +49,12 @@ final class BYOKStore {
         return choice.provider.title + " · " + name
     }
     func requireConsent(_ provider: BYOKProvider) throws {
+        try requirePremium()
         guard let config = configurations[provider.rawValue] else { throw BYOKError.missingKey }
         guard config.sharingConsent else { throw BYOKError.consentRequired }
     }
     func setConsent(_ value: Bool, provider: BYOKProvider) {
+        guard !value || canUsePremium else { return }
         consentVersions[provider, default: 0] += 1
         guard configurations[provider.rawValue] != nil else { return }
         configurations[provider.rawValue]?.sharingConsent = value; persist()
@@ -52,16 +65,22 @@ final class BYOKStore {
         return key
     }
     func loadModels(provider: BYOKProvider, draftKey: String, consent: Bool) async throws -> [BYOKModel] {
+        try requirePremium()
+        let accessVersion = premiumRevision()
         guard canConfigure else { throw BYOKError.busy }
         guard consent else { throw BYOKError.consentRequired }
         let key = try key(provider: provider, draft: draftKey)
         isConfiguring = true; defer { isConfiguring = false }
         let models = try await connection.models(provider: provider, key: key)
         try Task.checkCancellation()
+        try requirePremium()
+        guard premiumRevision() == accessVersion else { throw BYOKError.premiumRequired }
         guard !models.isEmpty else { throw BYOKError.providerCode("unsupported_model") }
         return models
     }
     func save(provider: BYOKProvider, draftKey: String, modelID: String, models: [BYOKModel], consent: Bool) async throws {
+        try requirePremium()
+        let accessVersion = premiumRevision()
         guard canConfigure else { throw BYOKError.busy }
         guard consent else { throw BYOKError.consentRequired }
         guard models.contains(where: { $0.id == modelID }) else { throw BYOKError.providerCode("unsupported_model") }
@@ -70,6 +89,8 @@ final class BYOKStore {
         let consentVersion = consentVersions[provider, default: 0]
         try await connection.verify(choice: .init(provider: provider, modelID: modelID), key: key)
         try Task.checkCancellation()
+        try requirePremium()
+        guard premiumRevision() == accessVersion else { throw BYOKError.premiumRequired }
         guard consentVersions[provider, default: 0] == consentVersion else { throw BYOKError.consentRequired }
         let sameCredential = try credentials.read(provider) == key
         var verified = sameCredential ? configurations[provider.rawValue]?.verifiedModelIDs ?? [] : []
@@ -93,19 +114,20 @@ final class BYOKStore {
         persist()
     }
     func selectChat(_ choice: BYOKChoice?) {
-        guard canConfigure else { return }
+        guard canConfigure, choice == nil || canUsePremium else { return }
         chatChoice = choice; persist()
     }
     func selectAgentDefault(_ choice: BYOKChoice?) {
-        guard canConfigure else { return }
+        guard canConfigure, choice == nil || canUsePremium else { return }
         agentDefault = choice; persist()
     }
     func agentChoice(language: ProgrammingLanguage, project: String) -> BYOKChoice? {
+        guard canUsePremium else { return nil }
         let scope = projectKey(language: language, project: project)
         return localProjects.contains(scope) ? nil : projectChoices[scope] ?? agentDefault
     }
     func selectAgent(_ choice: BYOKChoice?, language: ProgrammingLanguage, project: String) {
-        guard canConfigure else { return }
+        guard canConfigure, choice == nil || canUsePremium else { return }
         let scope = projectKey(language: language, project: project)
         if let choice { projectChoices[scope] = choice; localProjects.remove(scope) }
         else { projectChoices.removeValue(forKey: scope); localProjects.insert(scope) }
@@ -116,7 +138,13 @@ final class BYOKStore {
         try requireConsent(choice.provider)
         guard configurations[choice.provider.rawValue]?.verifiedModelIDs.contains(choice.modelID) == true else { throw BYOKError.missingKey }
         guard let key = try credentials.read(choice.provider) else { throw BYOKError.missingKey }
-        return .init(choice: choice, key: key, connection: connection, authorize: { try await self.requireConsent(choice.provider) })
+        let accessVersion = premiumRevision()
+        let consentVersion = consentVersions[choice.provider, default: 0]
+        return .init(choice: choice, key: key, connection: connection, authorize: { @MainActor in
+            try self.requireConsent(choice.provider)
+            guard self.premiumRevision() == accessVersion else { throw BYOKError.premiumRequired }
+            guard self.consentVersions[choice.provider, default: 0] == consentVersion else { throw BYOKError.consentRequired }
+        })
     }
     func beginRun() throws {
         guard !isConfiguring else { throw BYOKError.busy }

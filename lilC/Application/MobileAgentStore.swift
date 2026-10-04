@@ -15,7 +15,7 @@ final class MobileAgentStore {
     private var isRefreshing = false
     var canChange: Bool { activeRuns == 0 }
     private var settings: AgentSettingsStore { .shared }
-    var isEligible: Bool { MobileAgentConfiguration.isEnabled && settings.membership != nil && settings.sharingConsent }
+    var isEligible: Bool { MobileAgentConfiguration.isEnabled && settings.isSubscribed && settings.sharingConsent }
     var hasAllowance: Bool {
         if let allowance, allowance.renewalDate > Date() { return allowance.available }
         return true // Server, never this hint, authorizes and meters every request.
@@ -46,7 +46,7 @@ final class MobileAgentStore {
         let consentVersion = settings.sharingConsentVersion
         return MobileAgentClient(authorize: { @MainActor in
             guard MobileAgentConfiguration.isEnabled else { throw MobileAgentError.unavailable }
-            guard AgentSettingsStore.shared.membership != nil, let proof = AgentSettingsStore.shared.membershipProof else { throw MobileAgentError.membershipRequired }
+            guard AgentSettingsStore.shared.isSubscribed, let proof = AgentSettingsStore.shared.membershipProof else { throw MobileAgentError.membershipRequired }
             guard AgentSettingsStore.shared.sharingConsent, AgentSettingsStore.shared.sharingConsentVersion == consentVersion else { throw MobileAgentError.consentRequired }
             return proof
         }, didUpdate: { [weak self] snapshot, failure in

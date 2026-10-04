@@ -11,6 +11,13 @@ cp "$ROOT_DIR/lilC/Application/BYOKStore.swift" "$TEST_DIR/Sources/BYOKCore/"
 # This enum bridges only the unrelated IDE workspace dependency for host tests.
 cat > "$TEST_DIR/Sources/BYOKCore/HostLanguage.swift" <<'SWIFT'
 enum ProgrammingLanguage: String { case c, python, javascript, lua }
+// StoreKit itself is exercised by the iPhone build and device acceptance tests.
+// Paid-access tests inject their own state; default host access fails closed.
+@MainActor final class AgentSettingsStore {
+    static let shared = AgentSettingsStore()
+    var isSubscribed: Bool { false }
+    var premiumAccessVersion: Int { 0 }
+}
 SWIFT
 cp "$ROOT_DIR/lilCTests/BYOKTests.swift" "$TEST_DIR/Tests/BYOKCoreTests/"
 cat > "$TEST_DIR/Package.swift" <<'PACKAGE'

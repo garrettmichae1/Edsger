@@ -23,7 +23,7 @@ struct SelectedChatClient: DocumentTutorCompleting {
         await mobile.beginRun()
         do {
             let result: String
-            if let choice = await providers.chatChoice {
+            if let choice = await providers.effectiveChatChoice {
                 let bound = BYOKChatClient(agent: try await providers.client(for: choice))
                 let ordinary = CalculatingTutorClient(tutor: bound, planner: bound, calculator: LocalMathCalculator.shared)
                 let client = DocumentTutorClient(tutor: ordinary, documentTutor: bound, documents: ChatDocumentStore.shared)

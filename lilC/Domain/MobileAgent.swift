@@ -9,6 +9,14 @@ enum EdsgerMembership: String, CaseIterable, Identifiable, Sendable {
     var allowanceUSD: Int { self == .pro ? 5 : 15 }
 }
 
+/// Evaluated only after StoreKit has cryptographically verified a transaction.
+enum MembershipAccess {
+    static func isActive(expiration: Date?, revocation: Date?, upgraded: Bool, now: Date = Date()) -> Bool {
+        guard revocation == nil, !upgraded, let expiration else { return false }
+        return expiration > now
+    }
+}
+
 enum MobileAgentConfiguration {
     static let title = "Dijkstra Super Fast 1.0"
     // Enable only after real Apple sandbox + Cloudflare deployment acceptance.
