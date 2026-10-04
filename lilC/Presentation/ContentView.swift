@@ -130,6 +130,8 @@ private struct HomeScreen: View {
     let workspace: LocalCWorkspace
     let layout: IDEHomeLayoutStore
     @State private var isArranging = false
+    @State private var switchNotice: String?
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.scenePhase) private var scenePhase
     let chooseLanguage: (ProgrammingLanguage) -> Void
     let startLocal: () -> Void
@@ -139,30 +141,61 @@ private struct HomeScreen: View {
     let openSettings: () -> Void
 
     var body: some View {
-        IDEHomeGrid(apps: layout.apps, isArranging: $isArranging,
-                    content: tile, label: accessibilityLabel, selectedLanguage: workspace.language,
-                    select: activate, move: { app, destination in layout.move(app, to: destination) })
-            .overlay(alignment: .bottomTrailing) {
-                if isArranging {
-                    Button("Done") { isArranging = false }
-                        .font(.headline)
-                        .buttonStyle(.borderedProminent)
-                        .buttonBorderShape(.capsule)
-                        .controlSize(.large)
-                        .padding(20)
-                        .accessibilityIdentifier("home-arrange-done")
+        VStack(alignment: .leading, spacing: 0) {
+            VStack(alignment: .leading, spacing: 5) {
+                Text("Workspace Language")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(AppPalette.silver)
+                Text(switchNotice ?? "\(workspace.language.name) Workspace")
+                    .font(.system(size: 20, weight: .bold))
+                    .id(switchNotice ?? workspace.language.name)
+                    .transition(.opacity)
+                    .accessibilityIdentifier("ide-active-workspace")
+                Text("Tap a language to switch your files, editor, and runtime.")
+                    .font(.system(size: 12))
+                    .foregroundStyle(AppPalette.silver)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .padding(.horizontal, 24)
+            .padding(.top, 12)
+            .padding(.bottom, 4)
+            IDEHomeGrid(apps: layout.apps, isArranging: $isArranging,
+                        content: tile, label: accessibilityLabel, selectedLanguage: workspace.language,
+                        select: activate, move: { app, destination in layout.move(app, to: destination) })
+                .overlay(alignment: .bottomTrailing) {
+                    if isArranging {
+                        Button("Done") { isArranging = false }
+                            .font(.headline)
+                            .buttonStyle(.borderedProminent)
+                            .buttonBorderShape(.capsule)
+                            .controlSize(.large)
+                            .padding(20)
+                            .accessibilityIdentifier("home-arrange-done")
+                    }
                 }
-            }
-            .background(AppPalette.background)
-            .foregroundStyle(AppPalette.foreground)
-            .onChange(of: scenePhase) { _, phase in
-                if phase != .active { isArranging = false }
-            }
-            .onDisappear { isArranging = false }
+        }
+        .background(AppPalette.background)
+        .foregroundStyle(AppPalette.foreground)
+        .animation(reduceMotion ? nil : .easeInOut(duration: 0.18), value: switchNotice)
+        .task(id: switchNotice) {
+            guard switchNotice != nil else { return }
+            do { try await Task.sleep(for: .seconds(1.6)) }
+            catch { return }
+            switchNotice = nil
+        }
+        .onChange(of: scenePhase) { _, phase in
+            if phase != .active { isArranging = false }
+        }
+        .onDisappear { isArranging = false }
     }
 
     private func activate(_ app: IDEHomeApp) {
-        if let language = app.language { chooseLanguage(language); return }
+        if let language = app.language {
+            let isSwitching = language != workspace.language
+            chooseLanguage(language)
+            if isSwitching { switchNotice = "Switched to \(language.name)" }
+            return
+        }
         switch app {
         case .newFile: workspace.createStandaloneFile(); startLocal()
         case .directory: openFiles()
@@ -208,7 +241,8 @@ private struct HomeScreen: View {
         case .chat: symbol = "bubble.left.and.bubble.right.fill"; tint = .indigo
         default: symbol = "gearshape.fill"; tint = .gray
         }
-        return AnyView(HomeActionIcon(title: app.title, symbol: symbol, tint: tint))
+        let title = app == .newFile ? "New \(workspace.language.name) File" : app.title
+        return AnyView(HomeActionIcon(title: title, symbol: symbol, tint: tint))
     }
 }
 
@@ -258,6 +292,22 @@ private struct LanguageAppIcon: View {
         }
         .shadow(color: .black.opacity(0.24), radius: 1, y: 2)
         .shadow(color: tint.opacity(selected ? 0.42 : 0.16), radius: selected ? 9 : 5, y: selected ? 0 : 3)
+        .overlay {
+            if selected {
+                RoundedRectangle(cornerRadius: 23, style: .continuous)
+                    .strokeBorder(tint.opacity(0.7), lineWidth: 2)
+                    .padding(-4)
+            }
+        }
+        .overlay(alignment: .topTrailing) {
+            if selected {
+                Image(systemName: "checkmark.circle.fill")
+                    .font(.system(size: 21, weight: .bold))
+                    .foregroundStyle(.white, tint.mix(with: .black, by: 0.25))
+                    .background(Circle().fill(.white).padding(1))
+                    .offset(x: 5, y: -5)
+            }
+        }
     }
 }
 
@@ -297,6 +347,8 @@ private struct HomeActionIcon: View {
             Text(title)
                 .font(.system(size: 15, weight: .semibold))
                 .foregroundStyle(AppPalette.foreground)
+                .lineLimit(2)
+                .minimumScaleFactor(0.8)
                 .multilineTextAlignment(.center)
         }
         .frame(maxWidth: .infinity)
@@ -337,11 +389,10 @@ private struct FilesScreen: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(heading)
                         .font(.system(size: 20, weight: .bold, design: .monospaced))
-                    if workspace.browsePath.isEmpty {
-                        Text("\(workspace.language.name) workspace")
-                            .font(.system(size: 10, weight: .medium, design: .monospaced))
-                            .foregroundStyle(AppPalette.silver)
-                    } else {
+                    Text("\(workspace.language.name) Workspace")
+                        .font(.system(size: 10, weight: .medium, design: .monospaced))
+                        .foregroundStyle(AppPalette.silver)
+                    if !workspace.browsePath.isEmpty {
                         Text(workspace.browsePath)
                             .font(.system(size: 10, weight: .medium, design: .monospaced))
                             .foregroundStyle(AppPalette.silver)
@@ -978,8 +1029,13 @@ private struct LocalModeScreen: View {
                         .font(.system(size: 16, weight: .bold))
                 }
                 .buttonStyle(.appHaptic)
-                Text(workspace.editorTitle)
-                    .font(.system(size: 18, weight: .bold, design: .monospaced))
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(workspace.editorTitle)
+                        .font(.system(size: 18, weight: .bold, design: .monospaced))
+                    Text("\(workspace.language.name) Workspace")
+                        .font(.system(size: 10, weight: .medium, design: .monospaced))
+                        .foregroundStyle(AppPalette.silver)
+                }
                 Spacer()
                 Button {
                     workspace.browsePath = workspace.isCurriculumCatalog ? "" : workspace.currentProjectPath
