@@ -499,7 +499,7 @@ struct EdsgerComposerBar<Additions: View>: View {
                 .focused(focused)
                 .accessibilityLabel("Message EDSGER")
                 .accessibilityIdentifier("edsger-composer")
-                .frame(minHeight: 44)
+                .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
                 .padding(.vertical, 2)
                 .layoutPriority(1)
 
