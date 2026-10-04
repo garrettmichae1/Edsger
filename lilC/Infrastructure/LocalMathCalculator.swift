@@ -68,8 +68,9 @@ private final class MathJob: @unchecked Sendable {
         if status == 5 { return .unavailable("The math engine took too long to start. Please try again.") }
         if status == 4 { return .unavailable("The calculation exceeded its time limit. Try a simpler expression.") }
         if status == 2 { return .unavailable("Calculation stopped.") }
+        if status != 0 { return .unavailable("The on-device math engine could not complete this request. Try again.") }
         guard status == 0, let result = try? JSONDecoder().decode(MathCalculation.self, from: Data(output.utf8)) else {
-            return .unavailable("The calculation exceeded its time limit or the math engine was unavailable.")
+            return .unavailable("The math engine returned an unreadable result. Try again.")
         }
         return result
     }

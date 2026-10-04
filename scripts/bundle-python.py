@@ -66,25 +66,17 @@ shutil.copyfile(root / 'vendor/javascript/Acorn-LICENSE.txt', app / 'Python-Lice
 shutil.copyfile(root / 'lilC/Vendor/Lua/LICENSE.txt', app / 'Python-Licenses/Lua-LICENSE.txt')
 
 # Math lives outside the IDE import path, in a dedicated calculator interpreter.
-import runpy, zipfile
-math_assets = runpy.run_path(str(root / 'scripts/fetch-math-assets.py'))
+import runpy
 math_packages = app / 'math-packages'
-if math_packages.exists(): shutil.rmtree(math_packages)
-math_packages.mkdir()
-for name, _, digest in math_assets['ASSETS']:
-    wheel = math_assets['verified_asset'](name, digest)
-    with zipfile.ZipFile(wheel) as archive:
-        for entry in archive.infolist():
-            relative = pathlib.PurePosixPath(entry.filename)
-            if relative.is_absolute() or '..' in relative.parts:
-                raise SystemExit('Invalid math wheel path')
-            if 'tests' in relative.parts or '__pycache__' in relative.parts:
-                continue
-            archive.extract(entry, math_packages)
+runpy.run_path(str(root / 'scripts/bundle-math-packages.py'))['bundle_math_packages'](math_packages)
 # Keep redistributable package notices in the app's existing license directory too.
 for dist in math_packages.glob('*.dist-info'):
     for license_file in dist.rglob('LICENSE*'):
         if license_file.is_file():
             shutil.copyfile(license_file, app / 'Python-Licenses' / (dist.name + '-' + license_file.name))
+(app / 'Python-Licenses/SymPy-iOS-modifications.txt').write_text(
+    'Edsger modifies SymPy 1.14.0 sympy/external/gmpy.py to use struct.calcsize(\"l\") '
+    'instead of ctypes.sizeof(ctypes.c_long). Both report native C long size. '
+    'This avoids a native FFI dependency in the pure-Python calculator.\n')
 shutil.copyfile(root / 'lilC/Infrastructure/math_bootstrap.py', app / 'math_bootstrap.py')
 print('Bundled SymPy 1.14.0 and mpmath 1.3.0 for offline calculations.')

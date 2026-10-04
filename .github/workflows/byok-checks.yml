@@ -34,6 +34,10 @@ jobs:
           python-version: '3.14'
       - name: Execute actual native Python policy regression checks
         run: python3 scripts/test-python-safety.py
+      - name: Execute packaged SymPy through the native bridge without FFI
+        run: |
+          python3 scripts/fetch-math-assets.py
+          python3 scripts/test-math-native.py
   swift-and-ios:
     runs-on: macos-15
     timeout-minutes: 45

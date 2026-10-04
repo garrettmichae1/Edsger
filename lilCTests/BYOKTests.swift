@@ -179,6 +179,21 @@ struct BYOKTests {
     }
 
     #if !canImport(BYOKCore)
+    @Test func bundledMathEngineEvaluatesDefiniteIntegralWithoutFFI() async throws {
+        let bundle = Bundle.main.bundleURL
+        let frameworks = bundle.appendingPathComponent("Frameworks")
+        let names = try FileManager.default.contentsOfDirectory(atPath: frameworks.path)
+        #expect(!names.contains { $0.hasPrefix("PythonModule--ctypes") })
+        let request = MathRequest(operation: "integrate", expression: "x^2", lower: "0", upper: "1")
+        let result = try await LocalMathCalculator.shared.calculate(request)
+        #expect(result.ok, Comment(rawValue: result.error ?? "No successful math result"))
+        #expect(result.exact == "1/3")
+        let worked = try await LocalMathCalculator.shared.calculateIntegralWork(request)
+        #expect(worked.ok)
+        #expect(worked.exact == "1/3")
+        #expect(worked.steps?.isEmpty == false)
+    }
+
     @Test func providerAgentUsesScopedWorkspaceAndSymPyWithPairedResults() async throws {
         let credentials = MemoryCredentials(), connection = FixtureConnection(), defaults = defaults()
         let store = BYOKStore(defaults: defaults, credentials: credentials, connection: connection)
