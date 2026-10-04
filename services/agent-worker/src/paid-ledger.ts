@@ -48,12 +48,12 @@ export class MobileAgentLedger {
     try {
       const response = await fetch("https://api.deepseek.com/chat/completions", {
         method: "POST", headers: { Authorization: `Bearer ${this.env.DEEPSEEK_API_KEY}`, "Content-Type": "application/json" },
-        body: JSON.stringify(upstream), redirect: "error", signal: AbortSignal.timeout(90_000),
+        body: JSON.stringify(upstream), redirect: "manual", signal: AbortSignal.timeout(90_000),
       });
       if (!response.ok) {
         // Only explicit non-billable rejection releases the hold. Ambiguous 5xx,
         // disconnect or missing usage retains it for operator reconciliation.
-        const knownRejection = [400, 401, 403, 404, 422, 429].includes(response.status);
+        const knownRejection = (response.status >= 300 && response.status < 400) || [400, 401, 403, 404, 422, 429].includes(response.status);
         await this.settle(requestID, null, knownRejection ? "rejected" : "uncertain");
         await response.body?.cancel();
         return paidJSON({ error: response.status === 429 ? "rate_limited" : "service_unavailable" }, response.status === 429 ? 429 : 503);

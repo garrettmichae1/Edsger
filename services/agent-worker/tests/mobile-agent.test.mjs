@@ -50,7 +50,7 @@ async function withProvider(response, fn) {
   globalThis.fetch = async (url, options) => {
     calls++;
     assert.equal(url, 'https://api.deepseek.com/chat/completions');
-    assert.equal(options.redirect, 'error');
+    assert.equal(options.redirect, 'manual');
     assert.equal(options.headers.Authorization, 'Bearer server-only-fixture-key');
     const body = JSON.parse(options.body);
     assert.equal(body.model, 'deepseek-flash');

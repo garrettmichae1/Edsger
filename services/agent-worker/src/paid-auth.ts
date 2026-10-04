@@ -26,7 +26,7 @@ export async function paidIdentity(request: Request, env: Env): Promise<PaidIden
   // Live Apple status closes stale signed-receipt refunds/revocations/plan changes.
   const host = environment === Environment.SANDBOX ? "api.storekit-sandbox.itunes.apple.com" : "api.storekit.itunes.apple.com";
   const response = await fetch(`https://${host}/inApps/v1/subscriptions/${proof.originalTransactionId}`, {
-    headers: { Authorization: `Bearer ${token}` }, redirect: "error", signal: AbortSignal.timeout(15_000),
+    headers: { Authorization: `Bearer ${token}` }, redirect: "manual", signal: AbortSignal.timeout(15_000),
   });
   if (!response.ok) throw Error("service_unavailable");
   const body = await response.json() as { data?: { lastTransactions?: { status?: number; signedTransactionInfo?: string }[] }[] };
